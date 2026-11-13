@@ -3,8 +3,8 @@
 //  Mexa aqui para balancear o jogo.
 // ============================================================
 const GAME_NAME = 'World of Sxan';
-const VERSION = 'v0.8.0';
-const VERSION_NAME = 'A Grande Eldmar';
+const VERSION = 'v0.9.0';
+const VERSION_NAME = 'Portas Abertas';
 
 const PLAYER_SPEED = 3.6;          // tiles por segundo
 const RUN_MUL = 1.65;              // correr (SHIFT) multiplica a velocidade

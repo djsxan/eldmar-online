@@ -109,6 +109,12 @@ input[type=text]:focus { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(2
 .bar span { position: absolute; inset: 0; font-size: 11px; text-align: center; line-height: 15px; color: #fff; font-family: 'Alegreya Sans SC', sans-serif; font-weight: 700; text-shadow: 0 1px 2px #000, 0 0 3px #000; }
 .bar.hp > div { background: linear-gradient(#d24a3a, #8e1e16 60%, #5e120c); }
 .bar.mp > div { background: linear-gradient(#5a86d8, #23489a 60%, #142c66); }
+#worldmap { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; background: rgba(10,6,2,0.6); }
+#worldmap.hidden { display: none; }
+#worldmap .wm-frame { position: relative; padding: 18px; border-radius: 10px; background: radial-gradient(ellipse at center, #e8d6aa, #c4a66e 80%, #8a6a3a); box-shadow: 0 0 0 3px #3a2410, 0 0 0 6px #b08a4a, 0 20px 60px rgba(0,0,0,0.7); }
+#worldmap .wm-title { position: absolute; top: 18px; left: 0; right: 0; text-align: center; font: 700 26px "Cinzel Decorative", serif; color: #4a2410; text-shadow: 0 1px 0 #f4e4c0; pointer-events: none; z-index: 1; }
+#worldmap .wm-hint { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; font: italic 13px "Alegreya", serif; color: #4a3018; pointer-events: none; }
+#worldmap canvas { display: block; border-radius: 6px; }
 .bar.st { height: 9px; }
 .bar.st span { font-size: 8px; line-height: 9px; }
 .bar.st > div { background: linear-gradient(#e8d070, #b8902a 60%, #7a5a14); transition: width .1s; }

@@ -37,7 +37,7 @@ const ZONEC = {
 // Cada material vira uma textura repetível de 4x4 tiles com cor e altura.
 // A luz do sol (fixa) é calculada pelo relevo e já vem embutida.
 const MT = 64, MTS = 256, MTP = MTS / MT;           // texels por tile, tamanho, período em tiles
-const SUN3 = (() => { const v = [-0.85, 1.5, 0.45], l = Math.hypot(...v); return v.map(c => c / l); })();
+const SUN3 = (() => { const v = [-0.9, 0.95, 0.5], l = Math.hypot(...v); return v.map(c => c / l); })();
 function pn(x, y, f, s) {                            // ruído de valor periódico (repete a cada MTP tiles)
   const P = MTP * f, X = x * f, Y = y * f, xi = Math.floor(X), yi = Math.floor(Y), u = smooth(X - xi), v = smooth(Y - yi);
   const m = a => ((a % P) + P) % P;

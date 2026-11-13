@@ -24,7 +24,7 @@ function dayInfo() {
 function sunShadow(day) {
   const t = ((day.phase + 0.25) % 1) * 2;       // 0..1 de dia, 1..2 de noite
   // luz fixa: o sol fica sempre na mesma posição (mesma luz do cenário 3D)
-  return { lx: 0.71, ly: 0.11, a: t <= 1 ? 0.36 * (1 - day.dark) : 0.12 };
+  return { lx: 1.2, ly: 0.17, a: t <= 1 ? 0.44 * (1 - day.dark) : 0.12 };
 }
 // clima global (chuva em alguns períodos — igual para todos)
 function weatherNow() {
@@ -251,6 +251,7 @@ function heroPoseFor(e, now) {
     if (t >= 0 && t < 1 && ACTS[e.anim.a]) P.act = { k: e.anim.a, f: Math.min(11, Math.floor(t * 12)) };
   }
   if (e.cast && e.cast.end > now) P.act = { k: 'cast', f: Math.floor(now / 70) % 12 };
+  if (e.sit && !P.act) { P.sit = e.sit.chair ? 'c' : 'g'; P.walk = -1; return P; }
   if (!P.act && !e.walking && e.idleAnim) {
     const t = (now - e.idleAnim.t0) / e.idleAnim.dur;
     if (t < 1) {
@@ -427,9 +428,9 @@ function objSprite(o, x, y) {
     case O.BANNER: return animSprite('banner');
     case O.FOUNTAIN: return animSprite('fountain');
     case O.FENCE: { const isF = j => WORLD.obj[j] === O.FENCE || WORLD.obj[j] === O.TORCH; return fenceSprite(isF(i - 1) || isF(i + 1)); }
-    case O.WALL: return wallSprite(v, false, h < 0.35);
+    case O.WALL: return wallSprite(v, false, h < 0.35, WORLD.wdir[i]);
     case O.LOWWALL: return wallSprite(v, true, false);
-    case O.GATE: return gateSprite(WORLD.obj[i - 1] === O.GATE || WORLD.obj[i + 1] === O.GATE || WORLD.obj[i - 1] === O.WALL || WORLD.obj[i + 1] === O.WALL);
+    case O.GATE: { const gi = WORLD.gateId[i]; if (gi < 0) return gateSprite(true); return x === WORLD.gates[gi].x1 ? gateHouseSprite(gi) : null; }
     case O.STAIRS: return stairsSprite(WORLD.stair[i], WORLD.stairK[i]);
   }
   return null;
@@ -496,7 +497,7 @@ function castShadow(s, x, y, sh, k) {
 
 // ---------- atmosfera por região ----------
 const ZATM = {
-  [Z.VILLAGE]: { tint: [255, 214, 150], ta: 0.12, fog: 0.0, fogC: [230, 220, 200], rays: 0, crows: 0, embers: 0, dust: 0, snow: 0, rainBias: 0 },
+  [Z.VILLAGE]: { tint: [255, 196, 120], ta: 0.2, fog: 0.05, fogC: [240, 200, 150], rays: 0.35, crows: 0, embers: 0, dust: 0, snow: 0, rainBias: 0 },
   [Z.FIELDS]: { tint: [255, 230, 170], ta: 0.08, fog: 0.04, fogC: [230, 235, 225], rays: 0.2, crows: 0, embers: 0, dust: 0, snow: 0, rainBias: 0 },
   [Z.FOREST]: { tint: [120, 170, 160], ta: 0.16, fog: 0.16, fogC: [170, 200, 185], rays: 1, crows: 0, embers: 0, dust: 0, snow: 0, rainBias: 0 },
   [Z.SWAMP]: { tint: [130, 160, 100], ta: 0.22, fog: 0.42, fogC: [140, 165, 135], rays: 0, crows: 0.2, embers: 0, dust: 0, snow: 0, rainBias: 0.45 },
@@ -658,11 +659,18 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
   for (const id in G.monsters) addEnt(G.monsters[id], 1);
   for (const n of NPCS) addEnt(G.npcs[n.id], 3);
   for (const id in G.players) { const e = G.players[id]; if (!e.carriedBy) addEnt(e, 2); }
-  BUILDINGS.forEach(b => {
+  const inB = me && (me.z || 0) < 0.5 ? bldAt(me.rx, me.ry) : -1;
+  G.bA = G.bA || {};
+  BUILDINGS.forEach((b, bi) => {
     const D = b.x + b.w - 1 + b.y + b.h - 1, p = iso(b.x - 0.5, b.y - 0.5);
-    items.push({ d: D, k: 4, b, sx: p.sx + ox, sy: p.sy + oy });
+    if (p.sx + ox < -900 || p.sx + ox > vw + 900 || p.sy + oy < -900 || p.sy + oy > vh + 600) return;
+    let a = G.bA[bi] ?? 1; const tg = bi === inB ? 0 : 1; a += (tg - a) * Math.min(1, dt / 110); if (Math.abs(a - tg) < 0.03) a = tg; G.bA[bi] = a;
+    if (a < 1) items.push({ d: b.x + b.y - 3, k: 6, b, sx: p.sx + ox, sy: p.sy + oy });
+    if (a <= 0) return;
+    items.push({ d: D, k: 4, b, bi, a, sx: p.sx + ox, sy: p.sy + oy });
+    if (a < 0.5) return;
     for (const it of items) {
-      if (it.k === 4) continue;
+      if (it.k === 4 || it.k === 6) continue;
       const ix = it.k === 0 ? it.x : it.tx, iy = it.k === 0 ? it.y : it.ty;
       if (ix < b.x - 5 || iy < b.y - 5 || ix > b.x + b.w + 2.5 || iy > b.y + b.h + 2.5) continue;
       const behind = ix < b.x + b.w - 0.5 && iy < b.y + b.h - 0.5;
@@ -691,9 +699,9 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
   const labels = [];
   let meX = -999, meY = -999, meD = 1e9;
   if (me && (me.z || 0) < 0.5) { const p = iso(me.rx, me.ry); meX = p.sx + ox; meY = p.sy + oy - 34; meD = me.rx + me.ry; }
-  const fadeA = (s, x, y, d) => {
+  const fadeA = (s, x, y, d, yf) => {
     const l = x - s.ax, t = y - s.ay;
-    return d > meD && meX > l + 6 && meX < l + s.w - 6 && meY > t && meY < t + s.h - 10 && y > meY + 18 ? 0.42 : null;
+    return d > meD && meX > l + 6 && meX < l + s.w - 6 && meY > t && meY < t + s.h - 10 && (yf ?? y) > meY + 18 ? (yf != null && inB >= 0 ? 0.22 : 0.42) : null;
   };
   const drawItem = it => {
     if (it.k === 0) {
@@ -710,10 +718,10 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
       if (it.o === O.MUSHROOM) { const z = zoneAt(it.x, it.y); if (z === Z.SWAMP || (z === Z.FOREST && hash2(it.x, it.y, 17) < 0.3)) G.lights.push({ x: it.sx, y: it.sy - 8, r: 16, c: '90,200,240', a: 0.6 }); }
       return;
     }
+    if (it.k === 6) { const s = interiorSprite(it.b); if (s) pblit(ctx, s, it.sx, it.sy); return; }
     if (it.k === 4) {
-      const s = buildingSprite(it.b, day.night);
-      pblit(ctx, s, it.sx, it.sy, fadeA(s, it.sx, it.sy, it.d));
-      if (it.b.name) { const top = iso(it.b.x + it.b.w / 2 - 0.5, it.b.y + it.b.h / 2 - 0.5); labels.push({ sx: top.sx + ox, sy: top.sy + oy - bldTopArt(it.b) - (it.b.kind === 'temple' ? 150 : 16), title: it.b.name }); }
+      const s = buildingSprite(it.b, day.night), fa = fadeA(s, it.sx, it.sy, it.d, it.sy + (it.b.w + it.b.h) * HTH);
+      pblit(ctx, s, it.sx, it.sy, it.a < 1 ? it.a * (fa ?? 1) : fa);
       if (day.night) for (const [wx, wy, wz] of buildingWindows(it.b)) { const p = iso(wx, wy); G.lights.push({ x: p.sx + ox, y: p.sy + oy - wz, r: 28, c: it.b.kind === 'temple' ? '190,210,255' : '255,190,100', a: 0.85 }); }
       if ((it.b.kind === 'tavern' || it.b.kind === 'house' || it.b.kind === 'smith') && Math.random() < (it.b.kind !== 'house' ? 0.14 : 0.05)) { const p = iso(it.b.x - 0.5 + it.b.w * 0.3, it.b.y - 0.5 + it.b.h * 0.35); spawnPart('smoke', p.sx, p.sy - (bldTopArt(it.b) * 0.9 + 30)); }
       if (it.b.kind === 'smith') { const p = iso(it.b.x - 0.5 + it.b.w * 0.5, it.b.y - 0.5 + it.b.h); G.lights.push({ x: p.sx + ox, y: p.sy + oy - 16, r: 62, c: '255,130,50', a: 1, flick: 1 }); if (Math.random() < 0.1) spawnPart('ember', p.sx, p.sy - 20); }
@@ -776,18 +784,22 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawAtmosphere(ctx, W, H, now, day, cam);
   if (day.dusk > 0.01) { ctx.fillStyle = `rgba(255,120,40,${day.dusk * 0.1})`; ctx.fillRect(0, 0, W, H); }
+  // fim de tarde dourado: tudo um pouco mais escuro e quente, com brilho no alto da tela
+  if (!day.night) { ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = 'rgb(228,206,176)'; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'source-over';
+    if (!GOLD || GOLD.height !== H) { GOLD = ctx.createLinearGradient(0, 0, 0, H); GOLD.addColorStop(0, 'rgba(255,190,110,0.16)'); GOLD.addColorStop(0.45, 'rgba(255,190,110,0)'); GOLD.addColorStop(1, 'rgba(40,20,10,0.12)'); GOLD.height = H; }
+    ctx.fillStyle = GOLD; ctx.fillRect(0, 0, W, H); }
   ctx.globalCompositeOperation = 'soft-light';
   ctx.fillStyle = day.night ? 'rgba(60,80,150,0.35)' : `rgba(${ATM.tint.map(Math.round).join(',')},${0.25 + ATM.ta})`; ctx.fillRect(0, 0, W, H);
   ctx.globalCompositeOperation = 'source-over';
   if (!VIGNETTE || VIGNETTE.width !== W || VIGNETTE.height !== H) {
     VIGNETTE = document.createElement('canvas'); VIGNETTE.width = W; VIGNETTE.height = H;
     const v = VIGNETTE.getContext('2d'), g = v.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
-    g.addColorStop(0, 'rgba(8,6,4,0)'); g.addColorStop(1, 'rgba(8,6,4,0.55)'); v.fillStyle = g; v.fillRect(0, 0, W, H);
+    g.addColorStop(0, 'rgba(12,6,2,0)'); g.addColorStop(1, 'rgba(12,6,2,0.7)'); v.fillStyle = g; v.fillRect(0, 0, W, H);
   }
   ctx.drawImage(VIGNETTE, 0, 0);
   return labels;
 }
-let VIGNETTE = null;
+let VIGNETTE = null, GOLD = null;
 function diamondOutline(ctx, sx, sy, color) {
   ctx.strokeStyle = color; ctx.lineWidth = 1.2;
   ctx.beginPath(); ctx.moveTo(sx, sy - HTH); ctx.lineTo(sx + HTW, sy); ctx.lineTo(sx, sy + HTH); ctx.lineTo(sx - HTW, sy); ctx.closePath(); ctx.stroke();
@@ -900,6 +912,7 @@ function renderMinimap(ctx, size) {
   ctx.translate(-G.me.rx, -G.me.ry);
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(MINI, 0, 0);
+  { const f = typeof fogLayer === 'function' && fogLayer(); if (f) { ctx.imageSmoothingEnabled = true; ctx.drawImage(f, 0, 0); ctx.imageSmoothingEnabled = false; } }
   ctx.fillStyle = '#e04a3a';
   for (const id in G.monsters) { const e = G.monsters[id]; ctx.fillRect(e.rx - 0.7, e.ry - 0.7, 1.4, 1.4); }
   for (const id in G.players) { const e = G.players[id]; if (!e.visible) continue; ctx.fillStyle = id === G.myId ? '#ffffff' : '#6aa8f0'; ctx.fillRect(e.rx - 1.4, e.ry - 1.4, 2.8, 2.8); }

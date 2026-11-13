@@ -165,7 +165,8 @@ function buildPose(cls, P) {
   };
   if (P.act && ACTS[P.act.k]) apply(ACTS[P.act.k], (P.act.f + 0.5) / 12);
   else if (P.idle && IDLES[P.idle.k]) apply(IDLES[P.idle.k], (P.idle.f + 0.5) / 12);
-  if (P.sit) { Q.lA = [1.45, -1.6]; Q.lB = [1.35, -1.5]; Q.drop = 12; Q.aA = [0.5, 0.25, 0.6]; Q.aB = [0.5, 0.25, 0.6]; Q.tl = 0.05; }
+  if (P.sit === 'g') { Q.lA = [1.95, -2.35]; Q.lB = [1.8, -2.25]; Q.drop = 12; Q.aA = [0.9, 0.35, 1.0]; Q.aB = [0.9, 0.35, 1.0]; Q.tl = -0.12; Q.ht = 0.08; }
+  else if (P.sit) { Q.lA = [1.5, -1.55]; Q.lB = [1.45, -1.5]; Q.drop = 12; Q.aA = [0.45, 0.25, 0.7]; Q.aB = [0.45, 0.25, 0.7]; Q.tl = -0.02; }
   if (P.carry) { Q.aA = [2.75, 0.25, 0.4]; Q.aB = [2.75, 0.25, 0.4]; Q.wp = 0.4; }
   if (Q.kn) { Q.lA = [Q.lA[0] - Q.kn * 0.5, Q.lA[1] + Q.kn]; Q.lB = [Q.lB[0] - Q.kn * 0.5, Q.lB[1] + Q.kn]; }
   return Q;

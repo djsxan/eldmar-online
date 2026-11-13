@@ -123,6 +123,14 @@ function hostOnClient(from, m) {
       break;
     }
     case 'giveup': if (p.downed) respawnTemple(p); break;
+    case 'sit': {
+      if (!m.on || p.downed || p.carrying || p.carriedBy) { p.sit = null; break; }
+      const st = m.s != null ? WORLD.seats[m.s | 0] : null;
+      if (st) { if (dist(p.x, p.y, st.x, st.y) > 2.5) break; p.x = st.x; p.y = st.y; p.dir = st.dir; p.sit = 'c'; }
+      else p.sit = 'g';
+      p.walking = false;
+      break;
+    }
   }
 }
 
@@ -136,6 +144,7 @@ function handleMove(p, m) {
   const maxStep = PLAYER_SPEED * (m.r ? RUN_MUL * 1.5 : 1.7) * (dt + 0.25) + 0.4;
   const ok = dist(p.x, p.y, x, y) <= maxStep && canStandZ(x, y, z, 0.18) && Math.abs(z - (+m.z || 0)) < 0.45;
   if (!ok) { Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: p.z }); return; }
+  if (p.sit && dist(p.x, p.y, x, y) > 0.05) p.sit = null;
   p.x = x; p.y = y; p.z = z; p.dir = m.d | 0; p.walking = !!m.w; p.running = !!m.r; p.lastMv = now;
   if (p.casting && dist(p.x, p.y, p.castX, p.castY) > 0.3) { p.casting = null; near(p.x, p.y, { t: 'castend', id: p.id }); }
   if (p.carrying) { const t = S.players[p.carrying]; if (t) { t.x = p.x; t.y = p.y; t.z = p.z; } }
@@ -540,6 +549,7 @@ function hostTick() {
       if (p.cls === 'mage') mr *= 2;
       if (buffOn(p, 'mead')) { hr = Math.ceil(hr * 1.5); mr = Math.ceil(mr * 1.5); }
       if (inSafe(p.x, p.y)) { hr *= 2; mr *= 2; }
+      if (p.sit) { hr = Math.ceil(hr * 2.5); mr = Math.ceil(mr * 2.5); }
       p.hp = Math.min(p.maxHp, p.hp + hr); p.mp = Math.min(p.maxMp, p.mp + mr);
       sendStat(p);
     }
@@ -551,7 +561,7 @@ function hostTick() {
     const pl = [], ml = [];
     for (const p of players) {
       if (dist(p.x, p.y, r.x, r.y) > VIEW_RADIUS) continue;
-      let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0) | (p.running && p.walking ? 256 : 0);
+      let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0) | (p.running && p.walking ? 256 : 0) | (p.sit ? 512 : 0) | (p.sit === 'c' ? 1024 : 0);
       for (const b in BUFF_BITS) if (buffOn(p, b)) fl |= BUFF_BITS[b];
       pl.push([p.id, Math.round(p.x * 100), Math.round(p.y * 100), Math.round(p.z * 100), p.dir | 0, fl, Math.round(p.hp / p.maxHp * 100), p.carrying || 0]);
     }

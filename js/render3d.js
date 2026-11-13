@@ -35,7 +35,7 @@ const FRAME_W = 120, FRAME_H = 150, FOOT_Y = 128; // quadro em unidades de arte 
     cam.top -= shiftY; cam.bottom -= shiftY; cam.updateProjectionMatrix();
     // luzes de estúdio: principal quente (cima/esquerda), preenchimento frio e contraluz
     scene.add(new THREE.HemisphereLight(0xcfd8ff, 0x3a2e22, 0.55));
-    const key = new THREE.DirectionalLight(0xfff0d8, 2.1); key.position.set(-4, 7, 5); scene.add(key);
+    const key = new THREE.DirectionalLight(0xffd6a0, 2.3); key.position.set(-6, 5, 4); scene.add(key);
     const fill = new THREE.DirectionalLight(0x8aa8ff, 0.55); fill.position.set(5, 2, 3); scene.add(fill);
     const rim = new THREE.DirectionalLight(0xffe6c0, 1.2); rim.position.set(2, 4, -6); scene.add(rim);
     // ambiente para reflexos do metal (céu claro em cima, chão escuro embaixo)
@@ -397,7 +397,7 @@ function cache3(key, make, who) {
   return s;
 }
 function rigFor(key, L, opts) { let r = _rigs.get(key); if (!r) { r = buildHumanoid(L, opts); _rigs.set(key, r); } return r; }
-function pose3Key(P) { return (P.dir | 0) + '|' + (P.walk >= 0 ? (P.run ? 'r' : 'w') + P.walk : '') + (P.act ? P.act.k + P.act.f : '') + (P.idle ? P.idle.k + P.idle.f : '') + (P.sit ? 's' : '') + (P.carry ? 'c' : '') + (P.down ? 'd' : ''); }
+function pose3Key(P) { return (P.dir | 0) + '|' + (P.walk >= 0 ? (P.run ? 'r' : 'w') + P.walk : '') + (P.act ? P.act.k + P.act.f : '') + (P.idle ? P.idle.k + P.idle.f : '') + (P.sit ? 's' + P.sit : '') + (P.carry ? 'c' : '') + (P.down ? 'd' : ''); }
 function heroSprite3D(cls, skin, color, P) {
   const lk = cls + ':' + skin + ':' + color;
   return cache3('h3|' + lk + '|' + pose3Key(P) , () => {

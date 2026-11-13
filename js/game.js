@@ -146,7 +146,7 @@ function applySnapshot(m, now) {
       continue;
     }
     e.hp = hpPct; e.maxHp = 100; e.z = z;
-    e.srvDir = dir; e.srvWalk = !!(fl & 1); if (e !== G.me) e.running = !!(fl & 256);
+    e.srvDir = dir; e.srvWalk = !!(fl & 1); if (e !== G.me) { e.running = !!(fl & 256); e.sit = fl & 512 ? { chair: fl & 1024 ? 1 : 0 } : null; }
     e.buf.push({ t: now, x, y });
     if (e.buf.length > 6) e.buf.shift();
   }
@@ -209,7 +209,8 @@ function updateLocal(now, dt) {
   if (!me || me.carriedBy) { if (me) { me.walking = false; } return; }
   if (document.activeElement && document.activeElement.tagName === 'INPUT') G.keys.clear();
   let v = myInput();
-  if (v) { G.path = null; G.pathGoal = null; G.pendingNpc = null; }
+  if (me.sit) { if (v || G.path) standUp(); else { v = null; } }
+  if (v) { G.path = null; G.pathGoal = null; G.pendingNpc = null; G.pendingSeat = null; }
   else if (G.path && G.path.length) {
     // segue o caminho, pulando pontos quando há linha livre
     while (G.path.length > 1 && lineFree(me.x, me.y, G.path[1][0], G.path[1][1], me.z)) G.path.shift();
@@ -218,12 +219,14 @@ function updateLocal(now, dt) {
     else v = [dx / d, dy / d];
   }
   if (me.cast && me.cast.end > now) v = null;
+  if (G.pendingSeat != null && !G.path) { const st = WORLD.seats[G.pendingSeat]; if (dist(me.x, me.y, st.x, st.y) <= 1.7) sitDown(G.pendingSeat); G.pendingSeat = null; }
   if (G.pendingNpc && !G.path) { const n = G.npcs[G.pendingNpc]; if (dist(me.x, me.y, n.x, n.y) <= 3) openDialog(n.id); G.pendingNpc = null; }
   // correr com SHIFT gasta estamina; ao esgotar, precisa recuperar um pouco antes de correr de novo
   if (G.stam == null) { G.stam = STAM_MAX; G.stamT = 0; G.tired = false; }
   const running = !!v && G.keys.has('shift') && !G.tired && !me.downed && !me.carrying && G.stam > 0;
   if (running) { G.stam = Math.max(0, G.stam - STAM_DRAIN * dt); G.stamT = now; if (G.stam <= 0) G.tired = true; }
-  else if (now - G.stamT > STAM_DELAY) G.stam = Math.min(STAM_MAX, G.stam + STAM_REGEN * dt * (v ? 0.6 : 1));
+  else if (now - G.stamT > STAM_DELAY) G.stam = Math.min(STAM_MAX, G.stam + STAM_REGEN * dt * (v ? 0.6 : me.sit ? 2.5 : 1));
+  revealFog(me.x, me.y);
   if (G.tired && G.stam >= STAM_MAX * 0.3) G.tired = false;
   me.running = running;
   let moved = 0;
@@ -278,6 +281,7 @@ function findPath(sx, sy, tx, ty, z, near = 0) {
     for (const [dx, dy] of DIRS8) {
       const nx = x + dx, ny = y + dy, k = key(nx, ny);
       if (prev.has(k) || !walkableTile(nx, ny, z)) continue;
+      if (z === 0 && !edgeOk(x, y, nx, ny)) continue;
       if (dx && dy && (!walkableTile(x + dx, y, z) || !walkableTile(x, y + dy, z))) continue;
       if (z === 0 && WORLD.stair[k]) continue;
       prev.set(k, key(x, y)); q.push([nx, ny]);
@@ -517,6 +521,36 @@ canvas.addEventListener('mousemove', e => {
   canvas.style.cursor = monsterUnderMouse(e.clientX, e.clientY) ? 'crosshair' : npcUnderMouse(e.clientX, e.clientY) ? 'help' : 'pointer';
 });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
+// assento sob o mouse (bancos e cadeiras)
+function seatUnderMouse(cx, cy) {
+  const S = SCALE, w = screenToWorld(cx, cy);
+  let best = -1, bd = 1.2;
+  WORLD.seats.forEach((st, k) => { const d = Math.hypot(st.x - w.x, st.y - w.y); if (d < bd) { bd = d; best = k; } });
+  return best;
+}
+// sentar: no chão (C) ou num assento
+function sitDown(seat) {
+  const me = G.me; if (!me || me.downed || me.carrying || me.carriedBy) return;
+  if (seat != null && seat >= 0) {
+    const st = WORLD.seats[seat];
+    me.sit = { seat, chair: 1, ox: me.x, oy: me.y }; me.x = me.rx = st.x; me.y = me.ry = st.y; me.dir = st.dir;
+    Net.send({ t: 'sit', on: 1, s: seat });
+  } else { me.sit = { chair: 0 }; Net.send({ t: 'sit', on: 1 }); }
+  G.path = null; G.pathGoal = null; me.walking = false;
+}
+function standUp() {
+  const me = G.me; if (!me || !me.sit) return;
+  const s = me.sit; me.sit = null;
+  if (s.chair) {
+    // sai do assento para o lugar livre mais perto
+    let spot = null;
+    for (const rr of [0.8, 1.0, 1.3]) for (let a = 0; a < 6.28 && !spot; a += 0.4) { const x = me.x + Math.cos(a) * rr, y = me.y + Math.sin(a) * rr; if (canStandZ(x, y, 0) && edgeOk(Math.round(me.x), Math.round(me.y), Math.round(x), Math.round(y))) spot = [x, y]; }
+    if (!spot && s.ox != null) spot = [s.ox, s.oy];
+    if (spot) { me.x = me.rx = spot[0]; me.y = me.ry = spot[1]; }
+  }
+  Net.send({ t: 'sit', on: 0 });
+  Net.send({ t: 'mv', x: Math.round(me.x * 100) / 100, y: Math.round(me.y * 100) / 100, z: Math.round(me.z * 100) / 100, d: me.dir, w: 0 }, true);
+}
 canvas.addEventListener('mousedown', e => {
   if (!G.started) return;
   $('chat-input').blur();
@@ -527,10 +561,17 @@ canvas.addEventListener('mousedown', e => {
     if (G.target && dist(me.x, me.y, mon.rx, mon.ry) > CLASSES[me.cls].range) showToast('Fora de alcance: aproxime-se para atacar.');
     return;
   }
+  const seat = seatUnderMouse(e.clientX, e.clientY);
+  if (seat >= 0 && !npcUnderMouse(e.clientX, e.clientY)) {
+    const st = WORLD.seats[seat];
+    if (dist(me.x, me.y, st.x, st.y) <= 1.7) sitDown(seat);
+    else { G.path = findPath(me.x, me.y, st.x, st.y, me.z, 1); G.pathGoal = G.path ? { x: st.x, y: st.y } : null; G.pendingSeat = G.path ? seat : null; }
+    return;
+  }
   const npc = npcUnderMouse(e.clientX, e.clientY);
   if (npc) {
     if (dist(me.x, me.y, npc.x, npc.y) <= 3) openDialog(npc.id);
-    else { G.path = findPath(me.x, me.y, Math.round(npc.x), Math.round(npc.y), me.z, 1); G.pathGoal = G.path ? { x: Math.round(npc.x), y: Math.round(npc.y) } : null; G.pendingNpc = npc.id; }
+    else { G.path = findPath(me.x, me.y, Math.round(npc.x), Math.round(npc.y), me.z, 2); G.pathGoal = G.path ? { x: Math.round(npc.x), y: Math.round(npc.y) } : null; G.pendingNpc = npc.id; }
     return;
   }
   if (e.button !== 0 || me.carriedBy) return;
@@ -557,7 +598,7 @@ window.addEventListener('keydown', e => {
   }
   const k = e.key.toLowerCase();
   if (k === 'enter') { input.focus(); e.preventDefault(); return; }
-  if (k === 'escape') { if (G.dialog) closeDialog(); else { setTarget(null); G.path = null; G.pathGoal = null; } return; }
+  if (k === 'escape') { if (G.mapOpen) { toggleWorldMap(); return; } if (G.dialog) closeDialog(); else { setTarget(null); G.path = null; G.pathGoal = null; } return; }
   if (k >= '1' && k <= '4') { castSkill(+k - 1); return; }
   if (k === 'q') { drinkPot('hp'); return; }
   if (k === 'e') { drinkPot('mp'); return; }
@@ -565,6 +606,8 @@ window.addEventListener('keydown', e => {
   if (k === 'f' && !e.repeat) { const d = nearestDowned(); if (d) { G.reviving = d.id; Net.send({ t: 'revive', id: d.id, on: true }); } return; }
   if (k === 'g' && !e.repeat) { if (G.me.carrying) Net.send({ t: 'carry' }); else { const d = nearestDowned(); if (d) Net.send({ t: 'carry', id: d.id }); } return; }
   if (k === 'x') { attackNearest(); return; }
+  if (k === 'c' && !e.repeat) { if (G.me.sit) standUp(); else if (!G.me.walking) sitDown(null); return; }
+  if (k === 'm' && !e.repeat) { toggleWorldMap(); return; }
   if (k === ' ' || k === 'tab') {
     e.preventDefault();
     let best = null, bd = 99;
@@ -598,6 +641,8 @@ function frame() {
     for (const id in G.monsters) { const m = G.monsters[id]; interp(m, now); if (m.dieAt && now > m.dieAt + 650) delete G.monsters[id]; }
     for (const id in G.npcs) updateIdle(G.npcs[id], now);
     cam = { x: G.me.rx, y: G.me.ry, z: G.me.z };
+    updateGates(dt);
+    if (G.mapOpen && now - (G.mapT || 0) > 300) { G.mapT = now; drawWorldMap(); }
   } else {
     const t = now / 11000;
     lobbyCam.x = CENTER + Math.cos(t) * 7; lobbyCam.y = CENTER + Math.sin(t) * 7;
@@ -841,3 +886,98 @@ function updateSavedInfo() {
 
 buildLobby();
 requestAnimationFrame(frame);
+
+// ============================================================
+//  NÉVOA DO MAPA (o que você já explorou) e MAPA DO MUNDO (M)
+// ============================================================
+const FOG_R = 13;
+function fogKey() { return 'wos-fog-' + ((G.me && G.me.name) || 'x'); }
+function loadFog() {
+  G.fog = new Uint8Array(MAP_W * MAP_H);
+  try { const s = localStorage.getItem(fogKey()); if (s) { const bin = atob(s); for (let i = 0; i < MAP_W * MAP_H; i++) if (bin.charCodeAt(i >> 3) & (1 << (i & 7))) G.fog[i] = 1; } } catch (e) { }
+  G.fogDirty = true; G.fogT = 0;
+}
+function saveFog() {
+  try { const bytes = new Uint8Array(MAP_W * MAP_H / 8); for (let i = 0; i < MAP_W * MAP_H; i++) if (G.fog[i]) bytes[i >> 3] |= 1 << (i & 7); let s = ''; for (const b of bytes) s += String.fromCharCode(b); localStorage.setItem(fogKey(), btoa(s)); } catch (e) { }
+}
+function revealFog(x, y) {
+  if (!G.fog || G.fogKeyName !== fogKey()) { G.fogKeyName = fogKey(); loadFog(); }
+  const tx = Math.round(x), ty = Math.round(y);
+  if (tx === G.fogTx && ty === G.fogTy) return;
+  G.fogTx = tx; G.fogTy = ty;
+  for (let dy = -FOG_R; dy <= FOG_R; dy++) for (let dx = -FOG_R; dx <= FOG_R; dx++) {
+    if (dx * dx + dy * dy > FOG_R * FOG_R || !inBounds(tx + dx, ty + dy)) continue;
+    const i = (ty + dy) * MAP_W + tx + dx; if (!G.fog[i]) { G.fog[i] = 1; G.fogDirty = true; }
+  }
+  const now = performance.now();
+  if (G.fogDirty && now - G.fogT > 4000) { G.fogT = now; saveFog(); }
+}
+// camada de névoa (pergaminho onde não foi explorado), com bordas suaves
+function fogLayer() {
+  if (!G.fog) return null;
+  if (G.fogCanvas && !G.fogDirty) return G.fogCanvas;
+  const c = G.fogCanvas || (G.fogCanvas = document.createElement('canvas')); c.width = MAP_W; c.height = MAP_H;
+  const x = c.getContext('2d'), img = x.createImageData(MAP_W, MAP_H);
+  for (let i = 0; i < MAP_W * MAP_H; i++) { const n = hash2(i % MAP_W, i / MAP_W | 0, 9) * 18; img.data[i * 4] = 196 + n; img.data[i * 4 + 1] = 176 + n; img.data[i * 4 + 2] = 134 + n; img.data[i * 4 + 3] = G.fog[i] ? 0 : 255; }
+  x.putImageData(img, 0, 0);
+  G.fogDirty = false;
+  return c;
+}
+// nomes das regiões no mapa: setores pelo centro; anéis em 4 pontos ao redor da cidade
+const ZONE_LABELS = (() => {
+  const acc = {}, out = [];
+  for (let y = 0; y < MAP_H; y += 2) for (let x = 0; x < MAP_W; x += 2) { const z = WORLD.zone[y * MAP_W + x], g = WORLD.ground[y * MAP_W + x]; if (g === T.WATER) continue; const a = acc[z] || (acc[z] = [0, 0, 0]); a[0] += x; a[1] += y; a[2]++; }
+  const ring = { [Z.OUTSKIRTS]: 50, [Z.FIELDS]: 72, [Z.WILD]: 114 };
+  for (const [z, a] of Object.entries(acc)) {
+    if (+z === Z.VILLAGE) continue;
+    if (ring[z]) for (let k = 0; k < 4; k++) { const an = Math.PI / 4 + k * Math.PI / 2 + 0.35, x = C + Math.cos(an) * ring[z], y = C + Math.sin(an) * ring[z]; if (inBounds(Math.round(x), Math.round(y)) && WORLD.zone[Math.round(y) * MAP_W + Math.round(x)] === +z) out.push({ z: +z, x, y }); }
+    else out.push({ z: +z, x: a[0] / a[2], y: a[1] / a[2] });
+  }
+  return out;
+})();
+function toggleWorldMap() {
+  G.mapOpen = !G.mapOpen;
+  $('worldmap').classList.toggle('hidden', !G.mapOpen);
+  if (G.mapOpen) drawWorldMap();
+}
+function drawWorldMap() {
+  if (!G.mapOpen || !G.me) return;
+  const cv = $('wm-canvas'), size = Math.min(innerWidth, innerHeight) * 0.86, dpr = Math.min(2, devicePixelRatio || 1);
+  cv.width = size * dpr; cv.height = size * dpr; cv.style.width = size + 'px'; cv.style.height = size + 'px';
+  const x = cv.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const s = size / (MAP_W * Math.SQRT2) * 1.02;
+  const P = (wx, wy) => { const dx = (wx - MAP_W / 2) * s, dy = (wy - MAP_H / 2) * s; return [size / 2 + (dx - dy) * Math.SQRT1_2, size / 2 + (dx + dy) * Math.SQRT1_2]; };
+  x.save(); x.translate(size / 2, size / 2); x.rotate(Math.PI / 4); x.scale(s, s); x.translate(-MAP_W / 2, -MAP_H / 2);
+  x.imageSmoothingEnabled = false; x.drawImage(MINI, 0, 0);
+  x.imageSmoothingEnabled = true; const f = fogLayer(); if (f) { x.filter = 'blur(1.5px)'; x.drawImage(f, 0, 0); x.filter = 'none'; }
+  x.restore();
+  // tom de pergaminho por cima de tudo
+  x.globalCompositeOperation = 'multiply'; x.fillStyle = 'rgba(230,205,160,0.55)'; x.fillRect(0, 0, size, size); x.globalCompositeOperation = 'source-over';
+  const seen = (wx, wy) => G.fog && G.fog[Math.round(wy) * MAP_W + Math.round(wx)];
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  const label = (t, wx, wy, sz, col) => { const [px, py] = P(wx, wy); x.font = '700 ' + sz + 'px "Cinzel", serif'; x.lineWidth = 3; x.strokeStyle = 'rgba(240,226,190,0.85)'; x.strokeText(t, px, py); x.fillStyle = col; x.fillText(t, px, py); };
+  for (const L of ZONE_LABELS) if (seen(L.x, L.y)) label(ZONES[L.z].name + (ZONES[L.z].stars ? ' ' + '★'.repeat(ZONES[L.z].stars) : ''), L.x, L.y, 13, '#4a2e14');
+  if (seen(C, C)) label('Eldmar', C, C + 2, 20, '#5a1a10');
+  // marcos: lojas e NPCs já vistos
+  const icons = { priest: '✚', merchant: '⚖', innkeeper: '🍺', smith: '⚒', captain: '!' };
+  for (const n of NPCS) if (icons[n.kind] && seen(n.x, n.y)) { const [px, py] = P(n.x, n.y); x.font = '700 12px serif'; x.fillStyle = '#2a1a0a'; x.fillText(icons[n.kind], px, py); }
+  // jogadores
+  for (const id in G.players) {
+    const e = G.players[id]; if (!e.visible && id !== G.myId) continue;
+    const [px, py] = P(e.rx, e.ry), me = id === G.myId;
+    x.beginPath(); x.arc(px, py, me ? 6 : 4.5, 0, 7); x.fillStyle = me ? '#c8281e' : '#2a5ab8'; x.fill(); x.lineWidth = 1.5; x.strokeStyle = '#f4e8c8'; x.stroke();
+    x.font = '600 11px "Alegreya Sans SC", sans-serif'; x.fillStyle = '#2a1a0a'; x.fillText(e.name, px, py - 12);
+  }
+}
+
+// portões: abrem sozinhos quando alguém se aproxima e fecham depois
+function updateGates(dt) {
+  G.gateF = G.gateF || WORLD.gates.map(() => 0);
+  WORLD.gates.forEach((gt, k) => {
+    const cx = (gt.x0 + gt.x1) / 2, cy = gt.y;
+    let near = false;
+    for (const id in G.players) { const e = G.players[id]; if ((e.visible || id === G.myId) && (e.z || 0) < 0.5 && Math.abs(e.rx - cx) < 4 + (gt.x1 - gt.x0) / 2 && Math.abs(e.ry - cy) < 4.5) near = true; }
+    const tgt = near ? 1 : 0;
+    G.gateF[k] = clamp(G.gateF[k] + Math.sign(tgt - G.gateF[k]) * dt / 0.9, 0, 1);
+  });
+}

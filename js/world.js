@@ -83,22 +83,75 @@ const BUILDINGS = [
   { x: C + 21, y: C - 8, ...BH('shop', 6, 5, 5.4, 3.0, 'Arcanos & Varinhas', { v: 2 }) },
   { x: C + 13, y: C + 9, ...BH('shop', 5, 5, 4.8, 2.8, 'Alfaiataria Real', { v: 3 }) },
   { x: C + 21, y: C + 15, ...BH('shop', 6, 4, 4.2, 2.6, 'Pergaminhos & Mapas', { v: 4 }) },
+  { x: C - 5, y: C - 19, ...BH('castle', 12, 10, 6.6, 4.4, 'Castelo de Eldmar') },
 ];
-// portas: em frente à face de baixo (+y) de cada construção
-const doorOf = b => ({ x: b.x + b.w / 2 - 0.5, y: b.y + b.h + 0.8 });
+// porta: sempre centrada num tile da face de baixo (+y)
+const doorCol = b => Math.floor((b.w - 1) / 2);
+const doorOf = b => ({ x: b.x + doorCol(b), y: b.y + b.h + 0.8 });
+// mobília dos interiores (coordenadas locais em tiles: i = coluna, j = linha; a porta fica na linha h-1)
+// direções de quem senta: 1 = olha +x, 3 = olha -y, 5 = olha -x, 7 = olha +y
+function interiorLayout(b) {
+  const w = b.w, h = b.h, F = [], taken = new Set(), key = (i, j) => i + ',' + j, dc = doorCol(b);
+  const corridor = (i, j) => i === dc && j >= h - 2;
+  const can = (i, j) => i >= 0 && j >= 0 && i < w && j < h && !taken.has(key(i, j)) && !corridor(i, j);
+  const put = (t, i, j, o = {}) => {
+    const tw = o.w || 1, th = o.h || 1;
+    for (let a = 0; a < tw; a++) for (let c = 0; c < th; c++) if (!can(i + a, j + c)) return false;
+    for (let a = 0; a < tw; a++) for (let c = 0; c < th; c++) taken.add(key(i + a, j + c));
+    F.push({ t, i, j, w: tw, h: th, block: o.block !== false, seat: o.seat, v: o.v || 0 });
+    return true;
+  };
+  let npc = null;
+  const npcAt = (i, j) => { taken.add(key(i, j)); npc = { i, j }; };
+  const k = b.kind;
+  if (k === 'house') {
+    put('bed', 0, 0, { h: 2 }); put('fireplace', w - 2, 0); put('barrel', w - 1, 0); put('chest', 1, 0);
+    if (put('table', w - 2, h - 3)) { put('chair', w - 1, h - 3, { seat: 5 }); put('chair', w - 3, h - 3, { seat: 1 }); }
+    put('shelf', 0, h - 2); if (h >= 5) put('crate', 0, h - 1);
+    put('rug', dc, 1, { block: false });
+  } else if (k === 'shop') {
+    if (!b.v) npcAt(dc, 0);
+    for (let i = 0; i < w; i++) if (i !== dc) put('shelf', i, 0, { v: b.v });
+    put('counter', 1, 1, { w: w - 2, v: b.v });
+    put('display', 0, h - 2, { v: b.v }); put('display', w - 1, h - 2, { v: b.v });
+    if (b.v === 3) put('mannequin', w - 1, 2); else if (b.v === 2) put('orb', w - 1, 2); else if (b.v === 1) put('cauldron', w - 1, 2); else put('crate', w - 1, 2);
+  } else if (k === 'smith') {
+    put('forge', 0, 0, { w: 2 }); npcAt(3, 1); put('anvil', 4, 1); put('barrel', 4, 0);
+    for (let j = 0; j < 3; j++) put('rack', w - 1, j);
+    put('trough', 0, 2, { w: 2 });
+  } else if (k === 'tavern') {
+    npcAt(1, 0); put('barrel', 0, 0); put('barrel', 2, 0); put('counter', 0, 1, { w: 3 }); put('fireplace', w - 2, 0); put('shelf', 3, 0);
+    for (const [ti, tj] of [[5, 2], [1, 3], [5, 4]]) if (put('table', ti, tj)) { put('chair', ti - 1, tj, { seat: 1 }); put('chair', ti + 1, tj, { seat: 5 }); }
+  } else if (k === 'temple') {
+    put('altar', dc - 1, 0, { w: 3 }); npcAt(dc, 1); put('candles', 1, 0); put('candles', w - 2, 0);
+    for (const j of [3, 5]) { put('pew', 1, j, { w: dc - 1, seat: 3 }); put('pew', dc + 1, j, { w: w - dc - 2, seat: 3 }); }
+  } else if (k === 'barracks') {
+    put('bunk', 0, 0, { h: 2 }); put('bunk', 1, 0, { h: 2 }); put('bunk', w - 1, 0, { h: 2 }); put('bunk', w - 2, 0, { h: 2 });
+    npcAt(dc, 1); put('rack', 2, 0); put('rack', w - 3, 0);
+    if (put('table', w - 3, 3)) { put('chair', w - 4, 3, { seat: 1 }); put('chair', w - 2, 3, { seat: 5 }); }
+  } else if (k === 'stable') {
+    put('hay', 0, 0); put('hay', w - 1, 0); put('trough', 1, 0, { w: w - 2 }); put('hay', 0, h - 2); put('crate', w - 1, h - 2);
+  } else if (k === 'castle') {
+    put('throne', dc, 0, { seat: 7 }); put('banner', dc - 2, 0); put('banner', dc + 2, 0); put('candles', dc - 4, 0); put('candles', dc + 4, 0);
+    put('fireplace', 0, 1); put('fireplace', 0, h - 3);
+    for (const ti of [2, w - 3]) if (put('table', ti, 3, { h: h - 5 })) for (let j = 3; j < h - 2; j++) { put('chair', ti - 1, j, { seat: 1 }); put('chair', ti + 1, j, { seat: 5 }); }
+    put('rug', dc, 2, { block: false });
+  }
+  return { F, npc };
+}
+const npcIn = (b, fb) => { const L = interiorLayout(b); return L.npc ? { x: b.x + L.npc.i, y: b.y + L.npc.j } : fb; };
 const BLD_BY = k => BUILDINGS.find(b => b.kind === k);
 const NPCS = [
-  { id: 'priest', name: 'Irmã Lúmina', kind: 'priest', ...doorOf(BUILDINGS[0]) },
-  { id: 'merchant', name: 'Borin, o Mercador', kind: 'merchant', ...doorOf(BUILDINGS[1]) },
-  { id: 'innkeeper', name: 'Greta, a Taverneira', kind: 'innkeeper', ...doorOf(BUILDINGS[3]) },
-  { id: 'smith', name: 'Hrodgar, o Ferreiro', kind: 'smith', ...doorOf(BUILDINGS[2]) },
-  { id: 'captain', name: 'Capitã Mirela Varn', kind: 'captain', ...doorOf(BUILDINGS[4]) },
+  { id: 'priest', name: 'Irmã Lúmina', kind: 'priest', ...npcIn(BUILDINGS[0]) },
+  { id: 'merchant', name: 'Borin, o Mercador', kind: 'merchant', ...npcIn(BUILDINGS[1]) },
+  { id: 'innkeeper', name: 'Greta, a Taverneira', kind: 'innkeeper', ...npcIn(BUILDINGS[3]) },
+  { id: 'smith', name: 'Hrodgar, o Ferreiro', kind: 'smith', ...npcIn(BUILDINGS[2]) },
+  { id: 'captain', name: 'Capitã Mirela Varn', kind: 'captain', ...npcIn(BUILDINGS[4]) },
   { id: 'guard1', name: 'Sentinela Aldric', kind: 'guard', x: C - 3, y: C + 30.4 },
   { id: 'guard2', name: 'Sentinela Bren', kind: 'guard', x: C + 4, y: C + 30.4 },
   { id: 'guard3', name: 'Sentinela Odo', kind: 'guard', x: C - 1.4, y: C - 29.4 },
   { id: 'guard4', name: 'Sentinela Wyn', kind: 'guard', x: C + 2.4, y: C - 29.4 },
 ];
-NPCS[0].x += 1.5; // a sacerdotisa fica ao lado da porta, para não bloquear
 const TEMPLE_SPAWN = { x: BUILDINGS[0].x + 4, y: BUILDINGS[0].y + BUILDINGS[0].h + 2 };
 const MOUNTAIN = { x: 50, y: 52, r: 20 };
 const RIVER_PTS = [[70, 74], [76, 100], [72, 128], [80, 172], [112, 198], [152, 214], [192, 234], [234, 254]];
@@ -116,6 +169,10 @@ function generateWorld() {
   const stair = new Uint8Array(N);     // escadas: direção para onde sobem (1..4)
   const stairK = new Uint8Array(N);    // degrau da escada (0 = de baixo, 1 = de cima)
   const tvar = new Uint8Array(N);      // variação das torres (3 = torre alta com cone)
+  const wdir = new Uint8Array(N);      // muralhas: lado de fora (1:+x 2:-x 3:+y 4:-y)
+  const gateId = new Int8Array(N).fill(-1);
+  const gates = [];
+  const seats = [];
   const rdir = new Uint8Array(N);      // direção da estrada (1 = ao longo de x, 2 = de y)
   const height = new Uint8Array(N);    // altura dos penhascos (0..4)
   const flow = new Float32Array(N * 2); // direção da correnteza do rio
@@ -299,15 +356,18 @@ function generateWorld() {
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
     if (!(x === x0 || x === x1 || y === y0 || y === y1) || inTower(x, y)) continue;
     const i = idx(x, y);
-    if (isGate(x, y)) { set(x, y, T.FLOORSTONE, O.GATE); fl1[i] = 1; continue; }
+    wdir[i] = y === y0 ? 4 : y === y1 ? 3 : x === x0 ? 2 : 1;
+    if (isGate(x, y)) { set(x, y, T.FLOORSTONE, O.GATE); continue; }
     set(x, y, null, O.WALL); fl1[i] = 1;
   }
+  const addGate = (gx0, gx1, gy, out, kind) => { const gi = gates.length; gates.push({ x0: gx0, x1: gx1, y: gy, out, kind }); for (let x = gx0; x <= gx1; x++) gateId[idx(x, gy)] = gi; };
+  addGate(C - 1, C + 2, y1, 1, 'main'); addGate(C, C + 1, y0, -1, 'small');
   for (const [tx, ty] of towers) {
     for (let y = ty; y <= ty + 1; y++) for (let x = tx; x <= tx + 1; x++) { set(x, y, T.FLOORSTONE, O.PART); fl1[idx(x, y)] = 1; }
     obj[idx(tx + 1, ty + 1)] = O.TOWER;
     tvar[idx(tx + 1, ty + 1)] = Math.floor(R(tx, ty, 2) * 3);
   }
-  for (const [tx, ty] of gateTowers) tvar[idx(tx + 1, ty + 1)] = 3;
+  for (const [tx, ty] of gateTowers) { tvar[idx(tx + 1, ty + 1)] = 3; for (let y = ty; y <= ty + 1; y++) for (let x = tx; x <= tx + 1; x++) fl1[idx(x, y)] = 0; }
   reserve(x0, y0, x1, y0 + 1); reserve(x0, y1 - 1, x1, y1); reserve(x0, y0, x0 + 1, y1); reserve(x1 - 1, y0, x1, y1);
 
   // ---- castelo central (Hogwarts/Porto Real): muralha própria, salão no andar de cima ----
@@ -315,21 +375,23 @@ function generateWorld() {
   const inKT = (x, y) => kt.some(([tx, ty]) => x >= tx && x <= tx + 1 && y >= ty && y <= ty + 1);
   for (let y = KEEP.y0; y <= KEEP.y1; y++) for (let x = KEEP.x0; x <= KEEP.x1; x++) {
     const i = idx(x, y), onWall = x === KEEP.x0 || x === KEEP.x1 || y === KEEP.y0 || y === KEEP.y1;
-    set(x, y, T.FLOORSTONE, O.NONE);
+    set(x, y, vnoise(x / 3, y / 3, 620) > 0.62 ? T.GRASS : T.FLOORSTONE, O.NONE);
     if (inKT(x, y)) continue;
     if (onWall) {
-      if (y === KEEP.y1 && (x === C || x === C + 1)) { set(x, y, null, O.GATE); fl1[i] = 1; continue; }
-      set(x, y, null, O.WALL); fl1[i] = 1;
-    } else fl1[i] = 2;
+      wdir[i] = y === KEEP.y0 ? 4 : y === KEEP.y1 ? 3 : x === KEEP.x0 ? 2 : 1;
+      if (y === KEEP.y1 && (x === C || x === C + 1)) { set(x, y, T.FLOORSTONE, O.GATE); continue; }
+      set(x, y, null, O.WALL);
+    }
   }
+  addGate(C, C + 1, KEEP.y1, 1, 'keep');
   for (const [tx, ty] of kt) {
-    for (let y = ty; y <= ty + 1; y++) for (let x = tx; x <= tx + 1; x++) { set(x, y, T.FLOORSTONE, O.PART); fl1[idx(x, y)] = 1; }
+    for (let y = ty; y <= ty + 1; y++) for (let x = tx; x <= tx + 1; x++) set(x, y, T.FLOORSTONE, O.PART);
     obj[idx(tx + 1, ty + 1)] = O.TOWER; tvar[idx(tx + 1, ty + 1)] = 3;
   }
   reserve(KEEP.x0 - 2, KEEP.y0 - 2, KEEP.x1 + 2, KEEP.y1 + 2);
 
   // ---- escadas de 2 degraus (rampas) até a muralha ----
-  const stairs = [[C - 8, y1 - 2, 3], [C + 9, y1 - 2, 3], [C + 6, y0 + 2, 4], [x0 + 2, C + 10, 2], [x1 - 2, C - 6, 1], [KEEP.x0 + 2, C - 9, 2]];
+  const stairs = [[C - 8, y1 - 2, 3], [C + 9, y1 - 2, 3], [C + 6, y0 + 2, 4], [x0 + 2, C + 10, 2], [x1 - 2, C - 6, 1]];
   for (const [sx, sy, d] of stairs) {
     const dx = d === 1 ? 1 : d === 2 ? -1 : 0, dy = d === 3 ? 1 : d === 4 ? -1 : 0;
     for (let k = 0; k < 2; k++) { const x = sx + dx * k, y = sy + dy * k, i = idx(x, y); set(x, y, T.FLOORSTONE, O.STAIRS); stair[i] = d; stairK[i] = k; fl1[i] = 3; }
@@ -344,7 +406,7 @@ function generateWorld() {
   street(KEEP.x0 - 2, KEEP.y0, KEEP.x0 - 1, KEEP.y1); street(KEEP.x1 + 1, KEEP.y0, KEEP.x1 + 2, KEEP.y1);
   street(x0 + 2, C + 5, x1 - 2, C + 6);                    // rua do mercado (leste-oeste)
   street(C + 19, C - 20, C + 20, y1 - 3);                  // beco dos mercadores (estreito, como o Beco Diagonal)
-  street(C - 10, C + 8, C + 11, C + 19);                   // praça do mercado
+  street(C - 7, C + 9, C + 8, C + 17);                     // praça do mercado
   street(x0 + 2, C - 16, KEEP.x0 - 3, C - 15);             // rua do templo
   street(C - 24, C - 20, C - 23, C + 5);
   street(C - 24, C + 19, C + 18, C + 20);                  // rua de baixo
@@ -369,16 +431,38 @@ function generateWorld() {
     for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) { bld[idx(x, y)] = bi; obj[idx(x, y)] = O.NONE; ground[idx(x, y)] = T.COBBLE; }
   });
 
+  // ---- interiores ----
+  BUILDINGS.forEach((b, bi) => {
+    const L = interiorLayout(b);
+    for (const f of L.F) {
+      for (let a = 0; a < f.w; a++) for (let c = 0; c < f.h; c++) { const i = idx(b.x + f.i + a, b.y + f.j + c); if (f.block) obj[i] = O.PART; }
+      if (f.seat) { if (f.t === 'pew') for (let a = 0; a < f.w; a++) seats.push({ x: b.x + f.i + a, y: b.y + f.j, dir: f.seat, h: 0.45, bi }); else seats.push({ x: b.x + f.i + (f.w - 1) / 2, y: b.y + f.j + (f.h - 1) / 2, dir: f.seat, h: f.t === 'throne' ? 0.6 : 0.45, bi }); }
+    }
+  });
+  // ---- chão da cidade: pedra gasta, terra nas vielas, grama nos cantos, lajes na avenida ----
+  for (let y = y0 + 2; y <= y1 - 2; y++) for (let x = x0 + 2; x <= x1 - 2; x++) {
+    const i = idx(x, y);
+    if (bld[i] >= 0 || fl1[i] || obj[i] === O.PART || obj[i] === O.GATE || obj[i] === O.STAIRS || inBox(x, y, KEEP.x0, KEEP.y0, KEEP.x1, KEEP.y1)) continue;
+    const n = vnoise(x / 4, y / 4, 640), n2 = vnoise(x / 2.2, y / 2.2, 641);
+    let nb = false; for (const [dx, dy] of DIRS8) if (bld[idx(x + dx, y + dy)] >= 0) nb = true;
+    if (rdir[i] && Math.abs(x - C - 0.5) <= 2 && y > KEEP.y1) ground[i] = T.FLOORSTONE;              // avenida real em lajes
+    else if (rdir[i]) ground[i] = n2 > 0.78 ? T.DIRT : T.COBBLE;
+    else if (nb) ground[i] = n > 0.45 ? T.DIRT : n2 > 0.6 ? T.GRASS : T.COBBLE;                      // vielas entre casas
+    else ground[i] = n > 0.62 ? T.GRASS : n > 0.42 ? T.DIRT : T.COBBLE;
+    if (!rdir[i] && obj[i] === O.NONE && hash2(x, y, 642) < 0.05) obj[i] = O.RUBBLE;
+  }
+  // bancos ao ar livre também são assentos
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (obj[idx(x, y)] === O.BENCH) seats.push({ x, y, dir: 7, h: 0.45, bi: -1 });
   // ---- decoração ----
   const nearBld = (x, y) => { for (let yy = y - 1; yy <= y + 1; yy++) for (let xx = x - 1; xx <= x + 1; xx++) if (bld[idx(xx, yy)] >= 0) return true; return false; };
   const deco = (x, y, o) => { const i = idx(x, y); if (bld[i] < 0 && !stair[i] && !fl1[i] && !nearBld(x, y)) obj[i] = o; };
   const decoAny = (x, y, o) => { const i = idx(x, y); if (bld[i] < 0 && !stair[i] && !fl1[i]) obj[i] = o; };
   // praça do mercado
   decoAny(C, C + 13, O.FOUNTAIN);
-  for (const [dx, dy] of [[-8, 9], [-5, 9], [6, 9], [9, 9], [-8, 17], [-5, 17], [6, 17], [9, 17], [-9, 13], [10, 13]]) decoAny(C + dx, C + dy, O.STALL);
-  for (const [dx, dy] of [[-3, 11], [4, 11], [-3, 15], [4, 15]]) decoAny(C + dx, C + dy, O.BENCH);
-  for (const [dx, dy] of [[-10, 10], [11, 10], [-10, 18], [11, 18], [-6, 12], [7, 15]]) decoAny(C + dx, C + dy, (dx + dy) % 2 ? O.BARREL : O.CRATE);
-  decoAny(C - 7, C + 14, O.CART);
+  for (const [dx, dy] of [[-6, 10], [-3, 10], [5, 10], [7, 10], [-6, 16], [-3, 16], [5, 16], [7, 16]]) decoAny(C + dx, C + dy, O.STALL);
+  for (const [dx, dy] of [[-3, 12], [4, 12], [-3, 14], [4, 14]]) decoAny(C + dx, C + dy, O.BENCH);
+  for (const [dx, dy] of [[-7, 12], [8, 13], [-7, 17], [8, 17]]) decoAny(C + dx, C + dy, (dx + dy) % 2 ? O.BARREL : O.CRATE);
+  decoAny(C - 6, C + 14, O.CART);
   // avenida real: postes de luz, estandartes e estátuas na frente do castelo
   for (let y = KEEP.y1 + 4; y < y1 - 2; y += 5) { decoAny(C - 2, y, O.LAMP); decoAny(C + 3, y, O.LAMP); }
   decoAny(C - 3, KEEP.y1 + 2, O.STATUE); decoAny(C + 4, KEEP.y1 + 2, O.STATUE);
@@ -387,8 +471,9 @@ function generateWorld() {
   decoAny(C - 1, y0 + 1, O.BRAZIER); decoAny(C + 2, y0 + 1, O.BRAZIER);
   for (let y = C - 18; y < y1 - 4; y += 6) { decoAny(C + 18, y, O.LAMP); decoAny(C + 21, y + 3, O.LAMP); }
   for (let x = x0 + 5; x < x1 - 4; x += 7) { if (Math.abs(x - C) > 4) { decoAny(x, C + 4, O.LAMP); } }
-  // bandeiras do castelo
-  for (const x of [KEEP.x0 + 4, KEEP.x0 + 8, KEEP.x1 - 4, KEEP.x1 - 8]) decoAny(x, KEEP.y1 + 2, O.BANNER);
+  // bandeiras do castelo e pátio interno
+  for (const x of [KEEP.x0 + 4, KEEP.x1 - 4]) decoAny(x, KEEP.y1 + 2, O.BANNER);
+  for (const [x, y, o] of [[C - 4, KEEP.y1 - 3, O.FLOWERBED], [C + 5, KEEP.y1 - 3, O.FLOWERBED], [C - 6, KEEP.y1 - 4, O.TREE], [C + 7, KEEP.y1 - 4, O.TREE], [C - 1, KEEP.y1 - 2, O.BRAZIER], [C + 2, KEEP.y1 - 2, O.BRAZIER], [C - 6, KEEP.y1 - 2, O.BENCH], [C + 7, KEEP.y1 - 2, O.BENCH], [KEEP.x0 + 2, KEEP.y0 + 2, O.TREE], [KEEP.x1 - 2, KEEP.y0 + 2, O.TREE], [C - 4, KEEP.y1 - 6, O.STATUE], [C + 5, KEEP.y1 - 6, O.STATUE]]) decoAny(x, y, o);
   // catedral: cemitério e jardim
   const T0 = BUILDINGS[0];
   for (let k = 0; k < 12; k++) { const gx = T0.x + [0, 1, 2, 6, 7, 8][k % 6], gy = T0.y + T0.h + 2 + Math.floor(k / 6) * 2; deco(gx, gy, O.GRAVE); }
@@ -420,8 +505,10 @@ function generateWorld() {
     obj[i] = r < 0.06 ? O.TREE : r < 0.09 ? O.BUSH : r < 0.2 ? O.TALLGRASS : r < 0.26 ? O.FLOWER : O.NONE;
   }
   for (const n of NPCS) obj[idx(Math.round(n.x), Math.round(n.y))] = O.NONE;
+  for (let k = seats.length - 1; k >= 0; k--) if (seats[k].bi < 0) seats.splice(k, 1);
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (obj[idx(x, y)] === O.BENCH) seats.push({ x, y, dir: 7, h: 0.45, bi: -1 });
 
-  return { ground, obj, zone, bld, fl1, stair, stairK, tvar, rdir, height, flow, river };
+  return { ground, obj, zone, bld, fl1, stair, stairK, tvar, rdir, wdir, gateId, gates, seats, height, flow, river };
 }
 
 const WORLD = generateWorld();
@@ -434,10 +521,35 @@ function walkableTile(x, y, z = 0) {
   const i = y * MAP_W + x;
   if (z === 1) return WORLD.fl1[i] > 0;
   const g = WORLD.ground[i];
-  return g !== T.WATER && g !== T.CLIFF && !BLOCKING.has(WORLD.obj[i]) && WORLD.bld[i] < 0 && !NPC_AT.has(i);
+  return g !== T.WATER && g !== T.CLIFF && !BLOCKING.has(WORLD.obj[i]) && !NPC_AT.has(i);
 }
 // posição livre (contínua) — testa um círculo de raio r
+// paredes das construções (finas), com abertura na porta
+function wallHit(x, y, r) {
+  const tx = Math.round(x), ty = Math.round(y);
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    if (!inBounds(tx + dx, ty + dy)) continue;
+    const bi = WORLD.bld[(ty + dy) * MAP_W + tx + dx]; if (bi < 0) continue;
+    const b = BUILDINGS[bi], X0 = b.x - 0.5, X1 = X0 + b.w, Y0 = b.y - 0.5, Y1 = Y0 + b.h, t = 0.12;
+    if (x < X0 - r - t || x > X1 + r + t || y < Y0 - r - t || y > Y1 + r + t) continue;
+    if (Math.abs(x - X0) < r + t || Math.abs(x - X1) < r + t || Math.abs(y - Y0) < r + t) return true;
+    if (Math.abs(y - Y1) < r + t && Math.abs(x - (b.x + doorCol(b))) > 0.62 - r) return true;
+  }
+  return false;
+}
+// passagem entre dois tiles vizinhos (para o caminho do clique): só entra/sai de construção pela porta
+function edgeOk(ax, ay, bx, by) {
+  const B = (x, y) => WORLD.bld[y * MAP_W + x];
+  const a = B(ax, ay), c = B(bx, by);
+  if (ax !== bx && ay !== by) return a === c && B(ax, by) === a && B(bx, ay) === a;
+  if (a === c) return true;
+  const inB = a >= 0 ? a : c, ix = a >= 0 ? ax : bx, iy = a >= 0 ? ay : by, ox = a >= 0 ? bx : ax, oy = a >= 0 ? by : ay;
+  if (a >= 0 && c >= 0) return false;
+  const b = BUILDINGS[inB];
+  return ix === b.x + doorCol(b) && iy === b.y + b.h - 1 && ox === ix && oy === iy + 1;
+}
 function canStand(x, y, z = 0, r = 0.28) {
+  if (z === 0 && wallHit(x, y, r)) return false;
   return walkableTile(Math.round(x - r), Math.round(y - r), z) && walkableTile(Math.round(x + r), Math.round(y - r), z) &&
     walkableTile(Math.round(x - r), Math.round(y + r), z) && walkableTile(Math.round(x + r), Math.round(y + r), z);
 }
@@ -446,6 +558,7 @@ function inSafe(x, y) { return zoneAt(x, y) === Z.VILLAGE; }
 function tileAt(x, y) { return Math.round(y) * MAP_W + Math.round(x); }
 // telhado/andar acima? (para esconder o andar 1 quando o jogador está embaixo)
 function covered(x, y) { const i = tileAt(x, y); return WORLD.fl1[i] > 0; }
+function bldAt(x, y) { const tx = Math.round(x), ty = Math.round(y); if (!inBounds(tx, ty)) return -1; const bi = WORLD.bld[ty * MAP_W + tx]; if (bi < 0) return -1; const b = BUILDINGS[bi]; return x > b.x - 0.5 && x < b.x + b.w - 0.5 && y > b.y - 0.5 && y < b.y + b.h - 0.5 ? bi : -1; }
 
 // tiles alcançáveis a partir do templo (monstros só nascem nesses)
 const REACH = (() => {
@@ -483,6 +596,7 @@ function canStandZ(x, y, z, r = 0.24) {
     if (WORLD.stair[i]) continue;
     if (!walkableTile(tx, ty, L)) return false;
   }
+  if (L === 0 && wallHit(x, y, r)) return false;
   const h = stairH(x, y);
   if (h >= 0 && Math.abs(h - z) > 0.4) return false; // não entra na rampa pela lateral
   return true;
