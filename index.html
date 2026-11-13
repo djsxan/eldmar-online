@@ -4,144 +4,144 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Eldmar Online</title>
-<style>
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #0f172a; color: #e5e7eb; font-family: system-ui, -apple-system, Segoe UI, sans-serif; }
-  canvas#game { display: block; position: fixed; inset: 0; cursor: crosshair; }
-  .hidden { display: none !important; }
-
-  /* ---------- lobby ---------- */
-  #lobby { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px;
-    background: radial-gradient(circle at 50% 30%, #1e3a5f, #0b1220 70%); z-index: 10; }
-  .card { width: min(420px, 100%); background: rgba(15, 23, 42, 0.92); border: 1px solid #334155; border-radius: 14px; padding: 28px; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
-  h1 { margin: 0 0 4px; font-size: 34px; letter-spacing: 1px; color: #fbbf24; text-shadow: 0 2px 0 #7c2d12; }
-  .sub { margin: 0 0 22px; color: #94a3b8; font-size: 14px; }
-  label { display: block; font-size: 13px; color: #cbd5e1; margin: 12px 0 6px; }
-  .row { display: flex; gap: 8px; }
-  input[type=text] { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #f1f5f9; font-size: 15px; }
-  input[type=color] { width: 48px; height: 42px; padding: 2px; border: 1px solid #475569; border-radius: 8px; background: #0f172a; }
-  button { padding: 10px 16px; border-radius: 8px; border: 0; font-weight: 600; font-size: 15px; cursor: pointer; background: #2563eb; color: #fff; }
-  button:hover { background: #1d4ed8; }
-  button:disabled, input:disabled { opacity: .5; cursor: default; }
-  button.gold { background: #d97706; width: 100%; margin-top: 18px; }
-  button.gold:hover { background: #b45309; }
-  .or { text-align: center; color: #64748b; font-size: 12px; margin: 16px 0 4px; }
-  #status { min-height: 20px; margin-top: 14px; font-size: 13px; color: #93c5fd; }
-  #status.err { color: #fca5a5; }
-  #saved { font-size: 12px; color: #a7f3d0; margin-top: 6px; min-height: 14px; }
-  .help { margin-top: 18px; font-size: 12px; color: #94a3b8; line-height: 1.6; border-top: 1px solid #334155; padding-top: 12px; }
-  kbd { background: #1e293b; border: 1px solid #475569; border-radius: 4px; padding: 0 5px; font-size: 11px; }
-
-  /* ---------- HUD ---------- */
-  .panel { position: fixed; background: rgba(15, 23, 42, 0.82); border: 1px solid #334155; border-radius: 10px; padding: 10px 12px; z-index: 5; }
-  #stats { top: 12px; left: 12px; width: 230px; }
-  #stats .top { display: flex; justify-content: space-between; font-weight: 700; margin-bottom: 6px; }
-  #hud-lvl { color: #fbbf24; }
-  .bar { position: relative; height: 16px; background: #111827; border-radius: 4px; overflow: hidden; margin-top: 5px; }
-  .bar > div { height: 100%; transition: width .2s; }
-  .bar span { position: absolute; inset: 0; font-size: 11px; text-align: center; line-height: 16px; text-shadow: 0 1px 2px #000; }
-  #hp-fill { background: linear-gradient(#ef4444, #b91c1c); }
-  #xp-fill { background: linear-gradient(#a78bfa, #6d28d9); }
-  #hud-zone { font-size: 11px; color: #94a3b8; margin-top: 6px; }
-  #map-panel { top: 12px; right: 12px; padding: 6px; }
-  #minimap { display: block; width: 160px; height: 160px; image-rendering: pixelated; border-radius: 6px; }
-  #room-box { font-size: 12px; margin-top: 6px; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-  #room-code { font-weight: 700; color: #fbbf24; letter-spacing: 1px; }
-  #btn-copy { padding: 4px 8px; font-size: 11px; }
-  #chat { left: 12px; bottom: 12px; width: min(380px, calc(100vw - 24px)); }
-  #chat-log { height: 130px; overflow-y: auto; font-size: 13px; line-height: 1.4; margin-bottom: 6px; }
-  #chat-log b { color: #93c5fd; }
-  #chat-log .sys { color: #fcd34d; font-style: italic; }
-  #chat-input { width: 100%; padding: 6px 8px; font-size: 13px; }
-  #spells { right: 12px; bottom: 12px; display: flex; gap: 8px; }
-  .spell { position: relative; width: 54px; height: 54px; border-radius: 8px; border: 1px solid #475569; display: grid; place-items: center; font-size: 24px; cursor: pointer; overflow: hidden; background: #1e293b; user-select: none; }
-  .spell small { position: absolute; top: 2px; left: 4px; font-size: 10px; color: #cbd5e1; }
-  .spell .cd { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.65); height: 0; }
-  #keys { right: 12px; bottom: 80px; font-size: 11px; color: #94a3b8; line-height: 1.7; }
-  #toast { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.8); padding: 8px 16px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 20; text-align: center; max-width: calc(100vw - 32px); }
-  #toast.show { opacity: 1; }
-  #disconnected { position: fixed; inset: 0; background: rgba(0,0,0,.75); display: grid; place-items: center; z-index: 30; text-align: center; }
-  @media (max-width: 700px) { #keys { display: none; } #stats { width: 180px; } #minimap { width: 110px; height: 110px; } }
-</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Cinzel+Decorative:wght@700;900&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 <canvas id="game"></canvas>
+<div id="vignette"></div>
 
+<!-- ================= LOBBY ================= -->
 <div id="lobby">
-  <div class="card">
+  <div class="scroll">
+    <div class="crest">⚜</div>
     <h1>Eldmar Online</h1>
-    <p class="sub">RPG multiplayer no navegador</p>
+    <p class="sub">Um reino de aventuras para você e seus companheiros</p>
 
-    <label for="name">Nome do personagem</label>
-    <div class="row">
-      <input type="text" id="name" maxlength="16" placeholder="Aventureiro">
-      <input type="color" id="color" value="#3b82f6" title="Cor da roupa">
-    </div>
-    <div id="saved"></div>
+    <div class="lobby-grid">
+      <section>
+        <h2>I · Seu herói</h2>
+        <label for="name">Nome</label>
+        <input type="text" id="name" maxlength="16" placeholder="Ex.: Sir Galvão" autocomplete="off">
+        <label>Cor do brasão</label>
+        <div id="swatches"></div>
+        <div id="saved"></div>
+        <div id="saved-info"></div>
+      </section>
 
-    <button class="gold" id="btn-create">Criar sala nova</button>
-    <div class="or">— ou entre na sala de um amigo —</div>
-    <div class="row">
-      <input type="text" id="code" maxlength="8" placeholder="Código da sala" style="text-transform:uppercase">
-      <button id="btn-join">Entrar</button>
+      <section class="wide">
+        <h2>II · Escolha sua vocação</h2>
+        <div id="classes"></div>
+      </section>
     </div>
-    <div id="status"></div>
 
-    <div class="help">
-      Quem cria a sala é o <b>host</b>: o mundo roda no navegador dele, então ele precisa ficar com o jogo aberto.
-      Depois é só mandar o código (ou o link) para os amigos.
-    </div>
+    <section class="start">
+      <h2>III · Parta em jornada</h2>
+      <div class="start-row">
+        <button class="btn gold" id="btn-create">⚔ Criar um novo reino</button>
+        <span class="or">ou</span>
+        <input type="text" id="code" maxlength="8" placeholder="Código da sala" autocomplete="off">
+        <button class="btn" id="btn-join">Entrar no reino</button>
+      </div>
+      <div id="status"></div>
+      <p class="hint">Quem cria o reino é o <b>anfitrião</b>: o mundo roda no navegador dele, então ele precisa manter o jogo aberto. Depois é só mandar o código ou o link aos amigos.</p>
+    </section>
+    <div id="version"></div>
   </div>
 </div>
 
+<!-- ================= HUD ================= -->
 <div id="hud" class="hidden">
-  <div id="stats" class="panel">
-    <div class="top"><span id="hud-name"></span><span id="hud-lvl"></span></div>
-    <div class="bar"><div id="hp-fill"></div><span id="hp-text"></span></div>
-    <div class="bar"><div id="xp-fill"></div><span id="xp-text"></span></div>
-    <div id="hud-zone"></div>
+  <div id="char" class="frame">
+    <canvas id="portrait" width="76" height="76"></canvas>
+    <div class="char-info">
+      <div id="hud-name"></div>
+      <div id="hud-class"></div>
+      <div class="bar hp"><div id="hp-fill"></div><span id="hp-text"></span></div>
+      <div class="bar mp"><div id="mp-fill"></div><span id="mp-text"></span></div>
+      <div class="bar xp"><div id="xp-fill"></div><span id="xp-text"></span></div>
+      <div class="char-foot"><span class="coin">●</span> <span id="gold">0</span> <span id="combat-state"></span></div>
+      <div id="buffs"></div>
+    </div>
   </div>
 
-  <div id="map-panel" class="panel">
-    <canvas id="minimap" width="192" height="192"></canvas>
-    <div id="room-box" class="hidden">Sala: <span id="room-code"></span><button id="btn-copy">Copiar link</button></div>
+  <div id="target-frame" class="frame hidden">
+    <div class="tg-top"><span id="tg-name"></span><span id="tg-stars"></span></div>
+    <div class="bar hp"><div id="tg-fill"></div><span id="tg-text"></span></div>
+    <div id="tg-range"></div>
   </div>
 
-  <div id="chat" class="panel">
+  <div id="map-panel" class="frame">
+    <div class="map-ring"><canvas id="minimap" width="168" height="168"></canvas></div>
+    <div id="zone-name"></div>
+    <div id="zone-stars"></div>
+    <div class="map-foot"><span id="daytime"></span><span>Sala <b id="room-code"></b></span></div>
+    <button class="btn small" id="btn-copy">Copiar convite</button>
+  </div>
+
+  <div id="chat" class="frame parchment">
     <div id="chat-log"></div>
-    <input type="text" id="chat-input" maxlength="140" placeholder="Enter para conversar">
+    <input type="text" id="chat-input" maxlength="140" placeholder="Enter para falar...">
   </div>
 
-  <div id="keys" class="panel">
-    <kbd>W A S D</kbd> / setas ou clique: andar<br>
-    Clique no monstro: atacar<br>
-    <kbd>Espaço</kbd> mirar no mais próximo<br>
-    <kbd>Esc</kbd> cancelar alvo
+  <div id="hotbar" class="frame">
+    <div class="slot skill" id="slot0"><canvas width="48" height="48"></canvas><span class="key">1</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot0-t"></span></div>
+    <div class="slot skill" id="slot1"><canvas width="48" height="48"></canvas><span class="key">2</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot1-t"></span></div>
+    <div class="slot skill" id="slot2"><canvas width="48" height="48"></canvas><span class="key">3</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot2-t"></span></div>
+    <div class="slot skill" id="slot3"><canvas width="48" height="48"></canvas><span class="key">4</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot3-t"></span></div>
+    <div class="sep"></div>
+    <div class="slot pot" id="pot-hp" data-tip="Poção de Vida&#10;Recupera 35% da vida.&#10;Tecla Q"><canvas width="48" height="48"></canvas><span class="key">Q</span><span class="count" id="pot-hp-n">0</span></div>
+    <div class="slot pot" id="pot-mp" data-tip="Poção de Mana&#10;Recupera 40% da mana.&#10;Tecla E"><canvas width="48" height="48"></canvas><span class="key">E</span><span class="count" id="pot-mp-n">0</span></div>
+    <div id="passive"></div>
   </div>
 
-  <div id="spells" class="panel">
-    <div class="spell" id="sp-fire" title="Bola de fogo (1 ou F)"><small>1</small>🔥<div class="cd" id="cd-fire"></div></div>
-    <div class="spell" id="sp-heal" title="Curar (2 ou H)"><small>2</small>💚<div class="cd" id="cd-heal"></div></div>
+  <button id="btn-help" class="frame">?</button>
+  <div id="help" class="frame parchment hidden">
+    <h3>Controles</h3>
+    <div><kbd>W A S D</kbd> / setas / clique no chão — andar</div>
+    <div><kbd>Clique</kbd> no monstro — mirar (ataca sozinho quando estiver no alcance)</div>
+    <div><kbd>Espaço</kbd> — mirar no monstro mais próximo</div>
+    <div><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd> — habilidades</div>
+    <div><kbd>Q</kbd> poção de vida · <kbd>E</kbd> poção de mana</div>
+    <div><kbd>Roda do mouse</kbd> — zoom</div>
+    <div><kbd>Enter</kbd> — chat · <kbd>Esc</kbd> — cancelar</div>
+    <div>Clique nos moradores para conversar, comprar e descansar.</div>
+    <div>Fora de combate, vida e mana se recuperam sozinhas.</div>
   </div>
 </div>
 
+<!-- diálogo com NPC -->
+<div id="dialog" class="hidden">
+  <div class="frame parchment dlg">
+    <canvas id="dlg-portrait" width="96" height="140"></canvas>
+    <div class="dlg-body">
+      <div class="dlg-head"><span id="dlg-name"></span><span class="dlg-gold"><span class="coin">●</span> <span id="dlg-gold">0</span></span></div>
+      <p id="dlg-text"></p>
+      <div id="dlg-opts"></div>
+    </div>
+  </div>
+</div>
+
+<div id="banner"><div id="banner-title"></div><div id="banner-sub"></div></div>
 <div id="toast"></div>
+<div id="tooltip" class="hidden"></div>
 <div id="disconnected" class="hidden">
-  <div class="card">
-    <h1 style="font-size:24px">Conexão perdida</h1>
-    <p class="sub">O host fechou o jogo ou a internet caiu.</p>
-    <button onclick="location.reload()">Voltar ao início</button>
+  <div class="scroll small-scroll">
+    <h1 style="font-size:28px">Conexão perdida</h1>
+    <p class="sub">O anfitrião fechou o jogo ou a internet caiu.</p>
+    <button class="btn gold" onclick="location.reload()">Voltar ao início</button>
   </div>
 </div>
 
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="js/world.js"></script>
+<script src="js/config.js"></script>
 <script src="js/net.js"></script>
+<script src="js/sprites.js"></script>
 <script src="js/render.js"></script>
+<script src="js/server.js"></script>
 <script src="js/game.js"></script>
-<script>
-  document.getElementById('sp-fire').onclick = () => castLocal('fire');
-  document.getElementById('sp-heal').onclick = () => castLocal('heal');
-</script>
 </body>
 </html>

@@ -1,279 +1,27 @@
 // ============================================================
-//  JOGO — regras, monstros, combate e controles.
-//  A parte "S" (servidor) só roda no navegador de quem criou a sala.
-//  A parte "G" (cliente) roda em todo mundo, inclusive no host.
-// ============================================================
-const STEP_MS = 230;        // tempo para andar 1 tile
-const ATK_MS = 1000;        // intervalo do ataque corpo a corpo
-const FIRE_CD = 3000, HEAL_CD = 5000;
-const MAX_MON = 70;
-
-const MON = {
-  rat:      { name: 'Rato',      hp: 14,  dmg: [1, 3],  xp: 6,   speed: 650, atk: 1400 },
-  slime:    { name: 'Gosma',     hp: 26,  dmg: [2, 5],  xp: 12,  speed: 800, atk: 1500 },
-  wolf:     { name: 'Lobo',      hp: 45,  dmg: [4, 9],  xp: 25,  speed: 420, atk: 1200 },
-  skeleton: { name: 'Esqueleto', hp: 80,  dmg: [6, 13], xp: 50,  speed: 600, atk: 1300 },
-  orc:      { name: 'Orc',       hp: 140, dmg: [9, 19], xp: 100, speed: 520, atk: 1300 },
-};
-
-const need = l => Math.floor(20 * Math.pow(l, 1.7));   // xp para passar de nível
-const maxHpFor = l => 90 + 15 * l;
-const cheb = (ax, ay, bx, by) => Math.max(Math.abs(ax - bx), Math.abs(ay - by));
-const rint = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
-const pick = a => a[Math.floor(Math.random() * a.length)];
-
-// ============================================================
-//  SERVIDOR (host)
-// ============================================================
-const S = { players: {}, monsters: {}, nextMid: 1, nextSpawn: 0, lastRegen: 0, filled: false };
-
-function pub(p) { return { id: p.id, name: p.name, color: p.color, x: p.x, y: p.y, hp: p.hp, maxHp: p.maxHp, lvl: p.lvl, xp: p.xp }; }
-function monList() { return Object.values(S.monsters).map(m => [m.id, m.type, m.x, m.y, m.hp]); }
-function sendStat(p) { Net.toAll({ t: 'pstat', id: p.id, hp: p.hp, maxHp: p.maxHp, lvl: p.lvl, xp: p.xp }); }
-function sfx(x, y, text, color) { Net.toAll({ t: 'fx', x, y, text: String(text), color }); }
-function sys(text) { Net.toAll({ t: 'chat', name: '', text }); }
-
-function townSpot() {
-  for (let i = 0; i < 60; i++) {
-    const x = CENTER + rint(-4, 4), y = CENTER + rint(-4, 4);
-    if (walkable(x, y)) return { x, y };
-  }
-  return { x: CENTER + 2, y: CENTER + 2 };
-}
-
-function occupied(x, y, self) {
-  for (const id in S.monsters) { const m = S.monsters[id]; if (m !== self && m.x === x && m.y === y) return true; }
-  for (const id in S.players) { const p = S.players[id]; if (p.x === x && p.y === y) return true; }
-  return false;
-}
-function monCanStand(x, y, m) { return walkable(x, y) && !inSafe(x, y) && !occupied(x, y, m); }
-
-function spawnMonster() {
-  const x = rint(2, MAP_W - 3), y = rint(2, MAP_H - 3);
-  const d = cheb(x, y, CENTER, CENTER);
-  if (d < SAFE_R + 4 || !monCanStand(x, y, null)) return false;
-  for (const id in S.players) if (cheb(x, y, S.players[id].x, S.players[id].y) < 9) return false;
-  const type = d < 16 ? pick(['rat', 'rat', 'slime'])
-    : d < 25 ? pick(['slime', 'wolf', 'rat'])
-    : d < 34 ? pick(['wolf', 'skeleton'])
-    : pick(['skeleton', 'orc', 'orc']);
-  const id = S.nextMid++;
-  S.monsters[id] = { id, type, x, y, homeX: x, homeY: y, hp: MON[type].hp, nextMove: 0, nextAtk: 0 };
-  return true;
-}
-
-function hostOnClient(from, m) {
-  const p = S.players[from];
-  if (m.t === 'hello') {
-    if (p) return;
-    const lvl = Math.max(1, Math.min(300, m.lvl | 0 || 1));
-    const xp = Math.max(0, Math.min(need(lvl) - 1, m.xp | 0));
-    const s = townSpot();
-    const np = {
-      id: from, name: String(m.name || 'Aventureiro').slice(0, 16),
-      color: /^#[0-9a-f]{6}$/i.test(m.color) ? m.color : '#3b82f6',
-      x: s.x, y: s.y, lvl, xp, maxHp: maxHpFor(lvl), hp: maxHpFor(lvl),
-      target: null, nextAtk: 0, nextFire: 0, nextHeal: 0,
-    };
-    S.players[from] = np;
-    Net.toOne(from, { t: 'welcome', you: from, players: Object.values(S.players).map(pub), monsters: monList() });
-    Net.toOthers({ t: 'pjoin', p: pub(np) }, from);
-    sys(`${np.name} entrou no mundo.`);
-    return;
-  }
-  if (!p) return;
-  switch (m.t) {
-    case 'move':
-      if (Number.isInteger(m.x) && Number.isInteger(m.y) && walkable(m.x, m.y) && cheb(p.x, p.y, m.x, m.y) <= 1) {
-        p.x = m.x; p.y = m.y;
-        Net.toOthers({ t: 'pmove', id: from, x: p.x, y: p.y }, from);
-      } else {
-        Net.toOne(from, { t: 'pmove', id: from, x: p.x, y: p.y, tp: 1 });
-      }
-      break;
-    case 'target':
-      p.target = m.id && S.monsters[m.id] ? m.id : null;
-      break;
-    case 'chat': {
-      const text = String(m.text || '').slice(0, 140).trim();
-      if (text) Net.toAll({ t: 'chat', id: from, name: p.name, text });
-      break;
-    }
-    case 'spell':
-      castSpell(p, m.s);
-      break;
-  }
-}
-
-function hostOnLeave(id) {
-  const p = S.players[id];
-  if (!p) return;
-  delete S.players[id];
-  Net.toAll({ t: 'pleave', id });
-  sys(`${p.name} saiu.`);
-}
-
-function castSpell(p, s) {
-  const now = Date.now();
-  if (s === 'heal') {
-    if (now < p.nextHeal) return;
-    p.nextHeal = now + HEAL_CD;
-    const h = Math.min(p.maxHp - p.hp, 20 + p.lvl * 5);
-    p.hp += h;
-    sfx(p.x, p.y, `+${h}`, '#4ade80');
-    sendStat(p);
-  } else if (s === 'fire') {
-    const m = S.monsters[p.target];
-    if (now < p.nextFire || !m || inSafe(p.x, p.y) || cheb(p.x, p.y, m.x, m.y) > 5) return;
-    p.nextFire = now + FIRE_CD;
-    Net.toAll({ t: 'proj', x1: p.x, y1: p.y, x2: m.x, y2: m.y });
-    damageMonster(m, p, rint(6 + p.lvl * 2, 12 + p.lvl * 3));
-  }
-}
-
-function damageMonster(m, p, dmg) {
-  m.hp -= dmg;
-  sfx(m.x, m.y, dmg, '#fde047');
-  if (m.hp > 0) return;
-  delete S.monsters[m.id];
-  Net.toAll({ t: 'mdie', id: m.id, x: m.x, y: m.y });
-  for (const id in S.players) if (S.players[id].target === m.id) S.players[id].target = null;
-  gainXp(p, MON[m.type].xp);
-}
-
-function gainXp(p, amount) {
-  p.xp += amount;
-  sfx(p.x, p.y, `+${amount} xp`, '#c4b5fd');
-  while (p.xp >= need(p.lvl)) {
-    p.xp -= need(p.lvl);
-    p.lvl++;
-    p.maxHp = maxHpFor(p.lvl);
-    p.hp = p.maxHp;
-    sfx(p.x, p.y, 'LEVEL UP!', '#facc15');
-    sys(`${p.name} avançou para o nível ${p.lvl}!`);
-  }
-  sendStat(p);
-}
-
-function damagePlayer(p, dmg, m) {
-  p.hp -= dmg;
-  sfx(p.x, p.y, dmg, '#f87171');
-  if (p.hp > 0) { sendStat(p); return; }
-  sys(`${p.name} foi derrotado por um ${MON[m.type].name}.`);
-  p.xp = Math.floor(p.xp / 2);
-  p.hp = p.maxHp;
-  p.target = null;
-  const s = townSpot();
-  p.x = s.x; p.y = s.y;
-  Net.toAll({ t: 'pmove', id: p.id, x: p.x, y: p.y, tp: 1 });
-  Net.toOne(p.id, { t: 'died' });
-  sendStat(p);
-}
-
-function stepToward(m, tx, ty) {
-  const cur = cheb(m.x, m.y, tx, ty);
-  let best = null, bestScore = Infinity;
-  for (const [dx, dy] of DIRS8) {
-    const nx = m.x + dx, ny = m.y + dy;
-    if (!monCanStand(nx, ny, m)) continue;
-    const d = cheb(nx, ny, tx, ty);
-    if (d > cur) continue;
-    const score = d * 10 + Math.hypot(nx - tx, ny - ty) + Math.random() * 0.5;
-    if (score < bestScore) { bestScore = score; best = [nx, ny]; }
-  }
-  if (best) { m.x = best[0]; m.y = best[1]; }
-}
-
-function hostTick() {
-  const now = Date.now();
-  const players = Object.values(S.players);
-
-  // nascer monstros (no começo enche tudo, depois 1 a cada 2s)
-  if (!S.filled) {
-    for (let i = 0; i < 3000 && Object.keys(S.monsters).length < MAX_MON; i++) spawnMonster();
-    S.filled = true;
-  } else if (now >= S.nextSpawn && Object.keys(S.monsters).length < MAX_MON) {
-    for (let i = 0; i < 40; i++) if (spawnMonster()) break;
-    S.nextSpawn = now + 2000;
-  }
-
-  // ataques corpo a corpo dos jogadores
-  for (const p of players) {
-    if (!p.target) continue;
-    const m = S.monsters[p.target];
-    if (!m) { p.target = null; continue; }
-    if (now >= p.nextAtk && cheb(p.x, p.y, m.x, m.y) <= 1 && !inSafe(p.x, p.y)) {
-      p.nextAtk = now + ATK_MS;
-      damageMonster(m, p, rint(2 + p.lvl, 6 + p.lvl * 2));
-    }
-  }
-
-  // inteligência dos monstros
-  for (const m of Object.values(S.monsters)) {
-    const d = MON[m.type];
-    let tgt = null, best = 99;
-    for (const p of players) {
-      if (inSafe(p.x, p.y)) continue;
-      const dist = cheb(m.x, m.y, p.x, p.y);
-      if (dist <= 7 && dist < best) { best = dist; tgt = p; }
-    }
-    if (tgt) {
-      if (best <= 1) {
-        if (now >= m.nextAtk) { m.nextAtk = now + d.atk; damagePlayer(tgt, rint(d.dmg[0], d.dmg[1]), m); }
-      } else if (now >= m.nextMove) {
-        stepToward(m, tgt.x, tgt.y);
-        m.nextMove = now + d.speed;
-        m.nextAtk = Math.max(m.nextAtk, now + 300);
-      }
-    } else if (now >= m.nextMove) {
-      m.nextMove = now + d.speed * (2 + Math.random() * 4);
-      const [dx, dy] = pick(DIRS8);
-      const nx = m.x + dx, ny = m.y + dy;
-      if (monCanStand(nx, ny, m) && cheb(nx, ny, m.homeX, m.homeY) <= 6) { m.x = nx; m.y = ny; }
-    }
-  }
-
-  // regeneração de vida (mais rápida na cidade)
-  if (now - S.lastRegen >= 1000) {
-    S.lastRegen = now;
-    for (const p of players) {
-      if (p.hp >= p.maxHp) continue;
-      p.hp = Math.min(p.maxHp, p.hp + (inSafe(p.x, p.y) ? 4 + p.lvl : 1));
-      sendStat(p);
-    }
-  }
-
-  Net.toAll({ t: 'mstate', l: monList() });
-}
-
-// Timer num Web Worker: continua rodando mesmo com a aba do host em segundo plano
-function startHostLoop() {
-  try {
-    const src = 'setInterval(() => postMessage(0), 100);';
-    const w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
-    w.onmessage = hostTick;
-  } catch (e) {
-    setInterval(hostTick, 100);
-  }
-}
-
-// ============================================================
-//  CLIENTE (todo mundo)
+//  CLIENTE — roda em todo mundo (inclusive no host).
+//  Recebe o estado do servidor, anima, desenha e lê os controles.
 // ============================================================
 const G = {
-  myId: null, me: null, players: {}, monsters: {}, fx: [], projs: [],
-  target: null, path: null, hover: null, keys: new Set(), cd: { fire: 0, heal: 0 }, started: false,
+  myId: null, me: null, players: {}, monsters: {}, npcs: {},
+  fx: [], nums: [], effects: [], parts: [], lights: [], timers: [], shake: 0,
+  target: null, path: null, hover: null, keys: new Set(), cdEnd: [0, 0, 0, 0],
+  started: false, view: { ox: 0, oy: 0 }, dialog: null, pendingNpc: null,
 };
 
 function mkEnt(o) {
-  return Object.assign({ rx: o.x, ry: o.y, fromX: o.x, fromY: o.y, moveStart: 0, dur: 1, face: 1, walking: false, say: null, sayUntil: 0, nextMove: 0 }, o);
+  return Object.assign({ rx: o.x, ry: o.y, fromX: o.x, fromY: o.y, moveStart: 0, dur: 1, face: 1, back: false, walking: false, say: null, sayUntil: 0, nextMove: 0, buffs: {} }, o);
+}
+for (const n of NPCS) G.npcs[n.id] = mkEnt({ ...n, face: n.x > CENTER ? -1 : 1 });
+
+function lookAt(e, tx, ty) {
+  const sdx = (tx - ty) - (e.x - e.y), sdy = (tx + ty) - (e.x + e.y);
+  if (sdx) e.face = sdx > 0 ? 1 : -1;
+  e.back = sdy < 0;
 }
 function moveEnt(e, x, y, dur) {
-  if (cheb(e.x, e.y, x, y) > 2) { // teletransporte
-    e.x = e.rx = e.fromX = x; e.y = e.ry = e.fromY = y; e.dur = 1; return;
-  }
-  const sdx = (x - y) - (e.x - e.y);
-  if (sdx) e.face = sdx > 0 ? 1 : -1;
+  if (cheb(e.x, e.y, x, y) > 2) { e.x = e.rx = e.fromX = x; e.y = e.ry = e.fromY = y; e.dur = 1; return; }
+  lookAt(e, x, y);
   e.fromX = e.rx; e.fromY = e.ry; e.x = x; e.y = y;
   e.moveStart = performance.now(); e.dur = dur;
 }
@@ -283,21 +31,30 @@ function interp(e, now) {
   e.ry = e.fromY + (e.y - e.fromY) * t;
   e.walking = t < 1;
 }
+function later(ms, fn) { if (!ms || ms <= 0) fn(); else G.timers.push({ at: performance.now() + ms, fn }); }
 
 function applyMonsters(list) {
   const seen = new Set();
-  for (const [id, type, x, y, hp] of list) {
+  for (const [id, type, x, y, hp, flags] of list) {
     seen.add(id);
     const e = G.monsters[id];
-    if (!e) G.monsters[id] = mkEnt({ id, type, x, y, hp, maxHp: MON[type].hp });
+    if (!e) G.monsters[id] = mkEnt({ id, type, x, y, hp, maxHp: MON[type].hp, flags, face: Math.random() < 0.5 ? 1 : -1 });
     else {
-      if (e.x !== x || e.y !== y) moveEnt(e, x, y, MON[type].speed);
-      e.hp = hp;
+      if (e.x !== x || e.y !== y) moveEnt(e, x, y, MON[type].speed * (flags & 1 ? 2 : 1));
+      e.hp = hp; e.flags = flags;
     }
   }
-  for (const id in G.monsters) if (!seen.has(+id)) delete G.monsters[id];
-  if (G.target && !G.monsters[G.target]) setTarget(null);
+  for (const id in G.monsters) if (!seen.has(+id) && !G.monsters[id].dieAt) delete G.monsters[id];
+  if (G.target && (!G.monsters[G.target] || G.monsters[G.target].dieAt)) setTarget(null);
 }
+
+function setBuffs(e, list) {
+  const now = performance.now();
+  e.buffs = {};
+  for (const [k, ms] of list || []) e.buffs[k] = now + ms;
+}
+
+const EFFECT_MS = { whirl: 520, warcry: 800, wall: 600, agile: 600, potion: 500, pierce: 500, rain: 900, boom: 500, nova: 700, heal: 1000, lvlup: 1600, meteor: 1600 };
 
 function clientOnServer(m) {
   const now = performance.now();
@@ -305,13 +62,13 @@ function clientOnServer(m) {
     case 'welcome':
       G.myId = m.you;
       G.players = {};
-      for (const p of m.players) G.players[p.id] = mkEnt(p);
+      for (const p of m.players) { G.players[p.id] = mkEnt(p); setBuffs(G.players[p.id], p.buffs); }
       G.me = G.players[G.myId];
       G.monsters = {};
       applyMonsters(m.monsters);
       startGame();
       break;
-    case 'pjoin': G.players[m.p.id] = mkEnt(m.p); break;
+    case 'pjoin': G.players[m.p.id] = mkEnt(m.p); setBuffs(G.players[m.p.id], m.p.buffs); break;
     case 'pleave': delete G.players[m.id]; break;
     case 'pmove': {
       const e = G.players[m.id];
@@ -324,27 +81,76 @@ function clientOnServer(m) {
     case 'pstat': {
       const e = G.players[m.id];
       if (!e) break;
-      Object.assign(e, { hp: m.hp, maxHp: m.maxHp, lvl: m.lvl, xp: m.xp });
-      if (m.id === G.myId) { saveChar(); updateHud(); }
+      const oldLvl = e.lvl;
+      Object.assign(e, { hp: m.hp, maxHp: m.maxHp, mp: m.mp, maxMp: m.maxMp, lvl: m.lvl, xp: m.xp, gold: m.gold, pots: m.pots, combat: m.combat });
+      setBuffs(e, m.buffs);
+      if (m.id === G.myId) {
+        G.cdEnd = m.cds.map(r => now + r);
+        saveChar();
+        updateHud();
+        if (m.lvl > oldLvl) showBanner(`Nível ${m.lvl}!`, 'Sua força cresce, aventureiro.');
+      }
       break;
     }
     case 'mstate': applyMonsters(m.l); break;
-    case 'mdie':
-      delete G.monsters[m.id];
+    case 'mdie': {
+      const e = G.monsters[m.id];
+      if (e) e.dieAt = now + (m.d || 0);
       if (G.target === m.id) setTarget(null);
       break;
-    case 'fx':
-      G.fx.push({ x: m.x, y: m.y, text: m.text, color: m.color, t0: now, dx: (Math.random() - 0.5) * 16 });
+    }
+    case 'hit':
+      later(m.d, () => {
+        const t = performance.now();
+        const e = m.k === 'm' ? G.monsters[m.id] : G.players[m.id];
+        const pos = e ? tileW(e.rx, e.ry) : tileW(m.x, m.y);
+        if (e) e.hitAt = t;
+        const mine = m.k === 'p' && m.id === G.myId;
+        G.nums.push({ wx: pos.x, wy: pos.y, text: String(m.dmg), color: m.k === 'm' ? (m.crit ? '#fde047' : '#ffffff') : (mine ? '#ef4444' : '#fca5a5'), crit: m.crit, big: m.crit, t0: t, vx: (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.6) });
+        for (let k = 0; k < 6; k++) spawnPart('spark', pos.x, pos.y - 16, { color: m.k === 'm' ? 'rgba(255,240,180,A)' : 'rgba(255,90,90,A)' });
+        if (mine) { G.shake = Math.max(G.shake, 3); flashDamage(); }
+      });
       break;
-    case 'proj': G.projs.push({ ...m, t0: now }); break;
+    case 'fx':
+      later(m.d, () => {
+        G.nums.push({ wx: tileW(m.x, m.y).x, wy: tileW(m.x, m.y).y - 14, text: m.text, color: m.color, small: !m.big, big: m.big, t0: performance.now(), vx: 0 });
+      });
+      break;
+    case 'anim': {
+      const e = (m.w === 'p' ? G.players : G.monsters)[m.id];
+      if (!e) break;
+      e.anim = { a: m.a, t0: now, tx: m.tx, ty: m.ty };
+      if (m.tx != null && (m.tx !== e.x || m.ty !== e.y)) lookAt(e, m.tx, m.ty);
+      if (m.s) { e.shout = m.s; e.shoutUntil = now + 1600; }
+      if (m.proj) {
+        const rel = m.a === 'shoot' ? 230 : 130;
+        for (let k = 0; k < (m.n || 1); k++) {
+          const from = tileW(e.rx, e.ry, 24); from.x += (e.face || 1) * 10;
+          G.effects.push({ a: 'proj', kind: m.proj, from, tx: m.tx, ty: m.ty, x: m.tx, y: m.ty, t0: now + rel + k * 160, dur: Math.max(120, m.d - rel) });
+        }
+      }
+      break;
+    }
+    case 'aoe':
+      G.effects.push({ a: m.a, x: m.x, y: m.y, x2: m.x2, y2: m.y2, k: m.k, id: m.id, t0: now + (m.d || 0), dur: EFFECT_MS[m.a] || 600, seed: Math.floor(Math.random() * 1000) });
+      if (m.a === 'lvlup') later(m.d, () => G.nums.push({ wx: tileW(m.x, m.y).x, wy: tileW(m.x, m.y).y - 30, text: 'LEVEL UP!', color: '#fde047', big: true, t0: performance.now(), vx: 0 }));
+      break;
+    case 'cast': {
+      const e = G.players[m.id];
+      if (e) { e.cast = { start: now, end: now + m.ms, el: m.el }; e.anim = { a: 'cast', t0: now }; }
+      break;
+    }
+    case 'castend': { const e = G.players[m.id]; if (e) e.cast = null; break; }
     case 'chat': {
       addChat(m.name, m.text);
       const e = m.id && G.players[m.id];
       if (e) { e.say = m.text; e.sayUntil = now + 4500; }
       break;
     }
+    case 'err': showToast(m.text); break;
+    case 'npc': if (G.dialog && G.dialog.id === m.n) setDialogText(m.text); break;
     case 'died':
-      showToast('Você foi derrotado! Voltou para a cidade e perdeu metade da experiência do nível.');
+      showBanner('Você caiu em batalha', 'Despertou no Templo da Aurora e perdeu metade da experiência do nível.', true);
       setTarget(null);
       break;
   }
@@ -352,10 +158,11 @@ function clientOnServer(m) {
 
 // ---------- movimento local ----------
 function monsterAt(x, y) {
-  for (const id in G.monsters) { const m = G.monsters[id]; if (m.x === x && m.y === y) return m; }
+  for (const id in G.monsters) { const m = G.monsters[id]; if (!m.dieAt && m.x === x && m.y === y) return m; }
   return null;
 }
 function canWalk(x, y) { return walkable(x, y) && !monsterAt(x, y); }
+function stepMs() { return G.me.buffs.agile > performance.now() ? STEP_MS * 0.62 : STEP_MS; }
 
 function tryStep(dx, dy, now) {
   const me = G.me;
@@ -364,16 +171,17 @@ function tryStep(dx, dy, now) {
   for (const [ax, ay] of opts) {
     const nx = me.x + ax, ny = me.y + ay;
     if (!canWalk(nx, ny)) continue;
-    moveEnt(me, nx, ny, STEP_MS);
-    me.nextMove = now + STEP_MS;
+    const ms = stepMs();
+    moveEnt(me, nx, ny, ms);
+    me.nextMove = now + ms;
     Net.send({ t: 'move', x: nx, y: ny });
+    if (Math.random() < 0.3) { const w = tileW(me.rx, me.ry); spawnPart('dust', w.x, w.y); }
     return true;
   }
   return false;
 }
 
-// Busca em largura: menor caminho até um tile que satisfaça isGoal
-function findPath(sx, sy, isGoal, maxNodes = 4000) {
+function findPath(sx, sy, isGoal, maxNodes = 5000) {
   const key = (x, y) => y * MAP_W + x;
   const prev = new Map([[key(sx, sy), -1]]);
   const queue = [[sx, sy]];
@@ -398,27 +206,26 @@ function findPath(sx, sy, isGoal, maxNodes = 4000) {
 function updateLocal(now) {
   const me = G.me;
   if (now < me.nextMove) return;
+  if (me.cast && me.cast.end > now) return; // conjurando: fica parado
+  if (document.activeElement && document.activeElement.tagName === 'INPUT') { G.keys.clear(); }
   let dx = 0, dy = 0;
   const k = G.keys;
-  // direções da TELA convertidas para o mapa isométrico
   if (k.has('w') || k.has('arrowup')) { dx -= 1; dy -= 1; }
   if (k.has('s') || k.has('arrowdown')) { dx += 1; dy += 1; }
   if (k.has('a') || k.has('arrowleft')) { dx -= 1; dy += 1; }
   if (k.has('d') || k.has('arrowright')) { dx += 1; dy -= 1; }
   dx = Math.sign(dx); dy = Math.sign(dy);
-  if (dx || dy) { G.path = null; tryStep(dx, dy, now); return; }
+  if (dx || dy) { G.path = null; G.pendingNpc = null; tryStep(dx, dy, now); return; }
 
   if (G.path && G.path.length) {
     const n = G.path.shift();
     if (cheb(n.x, n.y, me.x, me.y) !== 1 || !tryStep(n.x - me.x, n.y - me.y, now) || me.x !== n.x || me.y !== n.y) G.path = null;
     return;
   }
-  // perseguir o alvo até ficar do lado
-  const t = G.target && G.monsters[G.target];
-  if (t && cheb(me.x, me.y, t.x, t.y) > 1 && cheb(me.x, me.y, t.x, t.y) < 15) {
-    const p = findPath(me.x, me.y, (x, y) => cheb(x, y, t.x, t.y) <= 1, 1500);
-    if (p && p.length) tryStep(p[0].x - me.x, p[0].y - me.y, now);
-    else me.nextMove = now + 200;
+  if (G.pendingNpc) {
+    const n = G.npcs[G.pendingNpc];
+    if (cheb(me.x, me.y, n.x, n.y) <= 3) openDialog(n.id);
+    G.pendingNpc = null;
   }
 }
 
@@ -426,31 +233,39 @@ function setTarget(id) {
   if (G.target === id) return;
   G.target = id;
   Net.send({ t: 'target', id });
+  updateTargetFrame();
 }
 
-function castLocal(s) {
-  const now = performance.now();
-  if (s === 'fire') {
+function castSkill(i) {
+  const sk = SKILLS[G.me.cls][i], now = performance.now();
+  if (!sk) return;
+  if (now < G.cdEnd[i]) return;
+  if (G.me.mp < sk.mp) { showToast('Mana insuficiente.'); return; }
+  if (sk.tgt) {
     const t = G.target && G.monsters[G.target];
-    if (!t) { showToast('Selecione um monstro primeiro (clique nele).'); return; }
-    if (cheb(G.me.x, G.me.y, t.x, t.y) > 5) { showToast('Alvo muito longe (máximo 5 tiles).'); return; }
-    if (inSafe(G.me.x, G.me.y)) { showToast('Não é possível atacar dentro da cidade.'); return; }
-    if (now < G.cd.fire) return;
-    G.cd.fire = now + FIRE_CD;
-  } else {
-    if (now < G.cd.heal) return;
-    G.cd.heal = now + HEAL_CD;
+    if (!t) { showToast('Selecione um monstro como alvo (clique nele ou aperte Espaço).'); return; }
+    if (cheb(G.me.x, G.me.y, t.x, t.y) > sk.range) { showToast(`Alvo fora de alcance (máximo ${sk.range} tiles).`); return; }
   }
-  Net.send({ t: 'spell', s });
+  const slot = document.querySelectorAll('.slot.skill')[i];
+  if (slot) { slot.classList.remove('pressed'); void slot.offsetWidth; slot.classList.add('pressed'); }
+  Net.send({ t: 'skill', i });
+}
+function drinkPot(k) {
+  if (!G.me.pots || G.me.pots[k] <= 0) { showToast(`Sem ${ITEMS[k].name}. Compre no Empório do Borin.`); return; }
+  Net.send({ t: 'pot', k });
 }
 
 // ---------- salvar personagem no navegador ----------
+const SAVE_KEY = 'eldmar-chars-v2';
+function loadChars() { try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; } catch (e) { return {}; } }
+function charKey(name, cls) { return name.trim().toLowerCase() + '|' + cls; }
 function saveChar() {
   const me = G.me;
-  try { localStorage.setItem('eldmar-char', JSON.stringify({ name: me.name, color: me.color, lvl: me.lvl, xp: me.xp })); } catch (e) { }
-}
-function loadChar() {
-  try { return JSON.parse(localStorage.getItem('eldmar-char')) || {}; } catch (e) { return {}; }
+  try {
+    const all = loadChars();
+    all[charKey(me.name, me.cls)] = { name: me.name, cls: me.cls, color: me.color, lvl: me.lvl, xp: me.xp, gold: me.gold, pots: me.pots, t: Date.now() };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(all));
+  } catch (e) { }
 }
 
 // ============================================================
@@ -459,26 +274,78 @@ function loadChar() {
 const $ = id => document.getElementById(id);
 const canvas = $('game'), ctx = canvas.getContext('2d');
 const mini = $('minimap'), mctx = mini.getContext('2d');
-let W = 0, H = 0;
+let W = 0, H = 0, DPR = 1;
 
 function resize() {
-  const dpr = window.devicePixelRatio || 1;
+  DPR = Math.min(2, window.devicePixelRatio || 1);
   W = window.innerWidth; H = window.innerHeight;
-  canvas.width = W * dpr; canvas.height = H * dpr;
+  canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
   canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 window.addEventListener('resize', resize);
+resize();
+
+function bar(id, v, max, text) {
+  $(id + '-fill').style.width = (100 * Math.max(0, Math.min(1, v / max))) + '%';
+  $(id + '-text').textContent = text;
+}
 
 function updateHud() {
   const me = G.me;
   if (!me) return;
   $('hud-name').textContent = me.name;
-  $('hud-lvl').textContent = `Nível ${me.lvl}`;
-  $('hp-fill').style.width = (100 * me.hp / me.maxHp) + '%';
-  $('hp-text').textContent = `${me.hp} / ${me.maxHp}`;
-  $('xp-fill').style.width = (100 * me.xp / need(me.lvl)) + '%';
-  $('xp-text').textContent = `${me.xp} / ${need(me.lvl)} xp`;
+  $('hud-class').textContent = `${CLASSES[me.cls].name} · Nível ${me.lvl}`;
+  bar('hp', me.hp, me.maxHp, `${me.hp} / ${me.maxHp}`);
+  bar('mp', me.mp, me.maxMp, `${me.mp} / ${me.maxMp}`);
+  bar('xp', me.xp, need(me.lvl), `${me.xp} / ${need(me.lvl)} xp`);
+  $('gold').textContent = me.gold;
+  $('pot-hp-n').textContent = me.pots ? me.pots.hp : 0;
+  $('pot-mp-n').textContent = me.pots ? me.pots.mp : 0;
+  const st = $('combat-state');
+  st.textContent = me.combat ? '⚔ Em combate' : (me.hp < me.maxHp || me.mp < me.maxMp ? '✦ Descansando (regenerando)' : '✦ Descansado');
+  st.className = me.combat ? 'combat' : 'rest';
+  SKILLS[me.cls].forEach((sk, i) => $('slot' + i).classList.toggle('nomana', me.mp < sk.mp));
+  const buffs = $('buffs');
+  buffs.innerHTML = '';
+  const now = performance.now();
+  for (const k in me.buffs) {
+    if (me.buffs[k] <= now) continue;
+    const d = document.createElement('div');
+    d.className = 'buff ' + k; d.title = BUFF_NAMES[k] || k;
+    d.dataset.end = me.buffs[k];
+    buffs.appendChild(d);
+  }
+  if (G.dialog) refreshDialogGold();
+}
+
+function updateTargetFrame() {
+  const f = $('target-frame');
+  const t = G.target && G.monsters[G.target];
+  if (!t) { f.classList.add('hidden'); return; }
+  f.classList.remove('hidden');
+  const z = ZONES[zoneAt(t.x, t.y)];
+  $('tg-name').textContent = MON[t.type].name;
+  $('tg-stars').textContent = '★'.repeat(Math.max(1, z.stars));
+  bar('tg', t.hp, t.maxHp, `${Math.max(0, t.hp)} / ${t.maxHp}`);
+  const d = cheb(G.me.x, G.me.y, t.x, t.y), r = CLASSES[G.me.cls].range;
+  const rs = $('tg-range');
+  const safe = inSafe(G.me.x, G.me.y);
+  rs.textContent = safe ? 'Você está na zona protegida' : d <= r ? '⚔ Ao alcance' : `Fora de alcance (${d} / ${r})`;
+  rs.className = !safe && d <= r ? 'ok' : 'far';
+}
+
+function updateSlots(now) {
+  for (let i = 0; i < 4; i++) {
+    const left = Math.max(0, G.cdEnd[i] - now), sk = SKILLS[G.me.cls][i];
+    const el = $('slot' + i);
+    el.style.setProperty('--cd', left > 0 ? (left / sk.cd * 360) + 'deg' : '0deg');
+    $('slot' + i + '-t').textContent = left > 0 ? (left / 1000).toFixed(left < 1000 ? 1 : 0) : '';
+  }
+  for (const b of document.querySelectorAll('.buff')) {
+    const left = (+b.dataset.end - now) / 1000;
+    b.textContent = left > 0 ? (left > 60 ? Math.ceil(left / 60) + 'm' : Math.ceil(left) + '') : '';
+    if (left <= 0) b.remove();
+  }
 }
 
 function addChat(name, text) {
@@ -488,11 +355,9 @@ function addChat(name, text) {
     const b = document.createElement('b'); b.textContent = name + ': ';
     line.appendChild(b);
     line.appendChild(document.createTextNode(text));
-  } else {
-    line.className = 'sys'; line.textContent = text;
-  }
+  } else { line.className = 'sys'; line.textContent = text; }
   log.appendChild(line);
-  while (log.children.length > 60) log.firstChild.remove();
+  while (log.children.length > 80) log.firstChild.remove();
   log.scrollTop = log.scrollHeight;
 }
 
@@ -501,38 +366,121 @@ function showToast(text) {
   const t = $('toast');
   t.textContent = text; t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+}
+let bannerTimer = 0;
+function showBanner(title, sub, dark) {
+  const b = $('banner');
+  $('banner-title').textContent = title; $('banner-sub').textContent = sub;
+  b.className = dark ? 'show dark' : 'show';
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => b.className = '', 3200);
+}
+function flashDamage() {
+  const v = $('vignette');
+  v.classList.remove('hit'); void v.offsetWidth; v.classList.add('hit');
 }
 
+// ---------- diálogo com NPCs ----------
+const GUARD_TEXT = 'Ao redor do vilarejo há terras perigosas: os Campos (★) ao redor da paliçada, o Bosque Sombrio (★★) ao norte, o Pântano Pútrido (★★) a leste, as Colinas de Ossos (★★★) ao sul, o Acampamento Orc (★★★) a oeste e, perto do mar, as Terras Selvagens (★★★★).';
+const NPC_DIALOG = {
+  merchant: { greet: 'Bem-vindo ao meu empório! Tenho as melhores poções da região. O que vai levar?', opts: [
+    ['Poção de Vida — 20 ouro', { a: 'buy', item: 'hp', qty: 1 }], ['5 Poções de Vida — 100 ouro', { a: 'buy', item: 'hp', qty: 5 }],
+    ['Poção de Mana — 25 ouro', { a: 'buy', item: 'mp', qty: 1 }], ['5 Poções de Mana — 125 ouro', { a: 'buy', item: 'mp', qty: 5 }]] },
+  priest: { greet: 'A luz da Aurora te saúda, filho. Se estiver ferido, posso abençoá-lo.', opts: [['Receber a bênção (grátis)', { a: 'bless' }]] },
+  innkeeper: { greet: 'Entre, entre! Na Taverna do Javali tem bebida gelada, comida quente e muita conversa.', opts: [
+    ['Hidromel — 15 ouro (+10% de dano por 3 min)', { a: 'mead' }], ['Ensopado de javali — 10 ouro (recupera tudo)', { a: 'stew' }], ['Ouvir os boatos da taverna', { a: 'rumor' }]] },
+  guard: { greet: 'Alto lá, aventureiro. Fique atento lá fora: quanto mais longe do vilarejo, mais perigoso.', opts: [['Quais são as regiões?', { local: GUARD_TEXT }]] },
+};
+
+function npcUnderMouse(mx, my) {
+  for (const n of NPCS) {
+    const e = G.npcs[n.id], p = iso(e.x, e.y);
+    const sx = (p.sx + G.view.ox) * ZOOM, sy = (p.sy + G.view.oy) * ZOOM;
+    if (mx > sx - 14 * ZOOM && mx < sx + 14 * ZOOM && my > sy - 48 * ZOOM && my < sy + 6 * ZOOM) return n;
+  }
+  return null;
+}
+
+function openDialog(id) {
+  const n = NPCS.find(q => q.id === id), def = NPC_DIALOG[n.kind];
+  G.dialog = { id };
+  $('dlg-name').textContent = n.name;
+  setDialogText(def.greet);
+  const box = $('dlg-opts');
+  box.innerHTML = '';
+  for (const [label, act] of def.opts) {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.onclick = () => { if (act.local) setDialogText(act.local); else Net.send({ t: 'npc', n: id, ...act }); };
+    box.appendChild(b);
+  }
+  const close = document.createElement('button');
+  close.textContent = 'Até logo'; close.className = 'ghost';
+  close.onclick = closeDialog;
+  box.appendChild(close);
+  const pc = $('dlg-portrait'), pctx = pc.getContext('2d');
+  pctx.setTransform(1, 0, 0, 1, 0, 0); pctx.clearRect(0, 0, pc.width, pc.height);
+  pctx.setTransform(3, 0, 0, 3, pc.width / 2, pc.height - 6);
+  drawPerson(pctx, NPC_LOOK[n.kind], 0);
+  refreshDialogGold();
+  $('dialog').classList.remove('hidden');
+}
+function setDialogText(t) { $('dlg-text').textContent = t; }
+function refreshDialogGold() { $('dlg-gold').textContent = G.me ? G.me.gold : 0; }
+function closeDialog() { G.dialog = null; $('dialog').classList.add('hidden'); }
+
+// ---------- mouse e teclado ----------
 function screenToTile(mx, my) {
-  const f = unIso(mx - G.view.ox, my - G.view.oy);
+  const f = unIso(mx / ZOOM - G.view.ox, my / ZOOM - G.view.oy);
   return { x: Math.round(f.x), y: Math.round(f.y) };
 }
 function monsterUnderMouse(mx, my) {
-  let found = null, bestD = Infinity;
+  let found = null, bestD = -Infinity;
   for (const id in G.monsters) {
-    const e = G.monsters[id], p = iso(e.rx, e.ry);
-    const sx = p.sx + G.view.ox, sy = p.sy + G.view.oy;
-    if (mx > sx - 18 && mx < sx + 18 && my > sy - 44 && my < sy + 8) {
+    const e = G.monsters[id];
+    if (e.dieAt) continue;
+    const p = iso(e.rx, e.ry), big = MON[e.type].big ? 1.5 : 1;
+    const sx = (p.sx + G.view.ox) * ZOOM, sy = (p.sy + G.view.oy) * ZOOM;
+    if (mx > sx - 18 * ZOOM * big && mx < sx + 18 * ZOOM * big && my > sy - 40 * ZOOM * big && my < sy + 8 * ZOOM) {
       const d = e.x + e.y;
-      if (found === null || d > bestD) { found = e; bestD = d; }
+      if (d > bestD) { found = e; bestD = d; }
     }
   }
   return found;
 }
 
-canvas.addEventListener('mousemove', e => { if (G.started) G.hover = screenToTile(e.clientX, e.clientY); });
+canvas.addEventListener('mousemove', e => {
+  if (!G.started) return;
+  G.hover = screenToTile(e.clientX, e.clientY);
+  canvas.style.cursor = monsterUnderMouse(e.clientX, e.clientY) ? 'crosshair' : npcUnderMouse(e.clientX, e.clientY) ? 'help' : 'pointer';
+});
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('mousedown', e => {
   if (!G.started) return;
   $('chat-input').blur();
   const mon = monsterUnderMouse(e.clientX, e.clientY);
-  if (mon) { setTarget(G.target === mon.id ? null : mon.id); G.path = null; return; }
+  if (mon) {
+    setTarget(G.target === mon.id ? null : mon.id);
+    if (G.target && cheb(G.me.x, G.me.y, mon.x, mon.y) > CLASSES[G.me.cls].range) showToast('Alvo fora de alcance — aproxime-se para atacar.');
+    return;
+  }
+  const npc = npcUnderMouse(e.clientX, e.clientY);
+  if (npc) {
+    if (cheb(G.me.x, G.me.y, npc.x, npc.y) <= 3) openDialog(npc.id);
+    else { G.path = findPath(G.me.x, G.me.y, (x, y) => cheb(x, y, npc.x, npc.y) <= 1); G.pendingNpc = npc.id; }
+    return;
+  }
   if (e.button !== 0) return;
   const t = screenToTile(e.clientX, e.clientY);
   if (!canWalk(t.x, t.y)) return;
+  G.pendingNpc = null;
   G.path = findPath(G.me.x, G.me.y, (x, y) => x === t.x && y === t.y);
 });
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  ZOOM = Math.max(1.25, Math.min(3, ZOOM * (e.deltaY < 0 ? 1.1 : 0.9)));
+}, { passive: false });
 
 window.addEventListener('keydown', e => {
   if (!G.started) return;
@@ -547,14 +495,15 @@ window.addEventListener('keydown', e => {
   }
   const k = e.key.toLowerCase();
   if (k === 'enter') { input.focus(); e.preventDefault(); return; }
-  if (k === 'escape') { setTarget(null); G.path = null; return; }
-  if (k === '1' || k === 'f') { castLocal('fire'); return; }
-  if (k === '2' || k === 'h') { castLocal('heal'); return; }
-  if (k === ' ' || k === 'tab') { // espaço/tab: mirar no monstro mais próximo
+  if (k === 'escape') { if (G.dialog) closeDialog(); else { setTarget(null); G.path = null; } return; }
+  if (k >= '1' && k <= '4') { castSkill(+k - 1); return; }
+  if (k === 'q') { drinkPot('hp'); return; }
+  if (k === 'e') { drinkPot('mp'); return; }
+  if (k === ' ' || k === 'tab') {
     e.preventDefault();
     let best = null, bd = 99;
-    for (const id in G.monsters) { const m = G.monsters[id], d = cheb(m.x, m.y, G.me.x, G.me.y); if (d < bd) { bd = d; best = m; } }
-    if (best && bd <= 8) setTarget(best.id);
+    for (const id in G.monsters) { const m = G.monsters[id]; if (m.dieAt) continue; const d = cheb(m.x, m.y, G.me.x, G.me.y); if (d < bd && m.id !== G.target) { bd = d; best = m; } }
+    if (best && bd <= 9) setTarget(best.id);
     return;
   }
   if (k.startsWith('arrow')) e.preventDefault();
@@ -563,25 +512,71 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => G.keys.delete(e.key.toLowerCase()));
 window.addEventListener('blur', () => G.keys.clear());
 
-function updateCooldowns(now) {
-  for (const s of ['fire', 'heal']) {
-    const total = s === 'fire' ? FIRE_CD : HEAL_CD;
-    const left = Math.max(0, G.cd[s] - now);
-    $('cd-' + s).style.height = (100 * left / total) + '%';
-  }
-}
-
-let lastMini = 0;
+// ---------- laço de desenho ----------
+let lastMini = 0, lastHudTick = 0;
+const lobbyCam = { x: CENTER, y: CENTER };
 function frame() {
   const now = performance.now();
-  updateLocal(now);
-  for (const id in G.players) interp(G.players[id], now);
-  for (const id in G.monsters) interp(G.monsters[id], now);
-  renderScene(ctx, W, H, now);
-  updateCooldowns(now);
-  if (now - lastMini > 200) { lastMini = now; renderMinimap(mctx, mini.width); }
-  $('hud-zone').textContent = inSafe(G.me.x, G.me.y) ? 'Cidade (zona protegida)' : 'Zona de caça';
+  // temporizadores (dano chegando depois da flecha, etc.)
+  if (G.timers.length) {
+    const due = G.timers.filter(t => t.at <= now);
+    G.timers = G.timers.filter(t => t.at > now);
+    for (const t of due) t.fn();
+  }
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (G.started) {
+    updateLocal(now);
+    for (const id in G.players) interp(G.players[id], now);
+    for (const id in G.monsters) {
+      const m = G.monsters[id];
+      interp(m, now);
+      if (m.dieAt && now > m.dieAt + 650) delete G.monsters[id];
+    }
+    renderScene(ctx, W, H, now, { x: G.me.rx, y: G.me.ry }, DPR);
+    updateSlots(now);
+    if (now - lastMini > 200) {
+      lastMini = now;
+      renderMinimap(mctx, mini.width);
+      const z = ZONES[zoneAt(G.me.x, G.me.y)];
+      $('zone-name').textContent = z.name;
+      $('zone-stars').textContent = z.stars ? '★'.repeat(z.stars) + '☆'.repeat(4 - z.stars) : 'Zona protegida';
+      const d = dayInfo();
+      $('daytime').textContent = d.night ? '🌙 Noite' : d.dusk > 0.3 ? '🌅 Crepúsculo' : '☀ Dia';
+      updateTargetFrame();
+    }
+    if (now - lastHudTick > 1000) { lastHudTick = now; updateHud(); }
+    if (G.dialog) { const n = G.npcs[G.dialog.id]; if (cheb(G.me.x, G.me.y, n.x, n.y) > 4) closeDialog(); }
+  } else {
+    // fundo do lobby: câmera passeando pelo vilarejo
+    const t = now / 9000;
+    lobbyCam.x = CENTER + Math.cos(t) * 5; lobbyCam.y = CENTER + Math.sin(t) * 5;
+    renderScene(ctx, W, H, now, lobbyCam, DPR);
+    drawClassPreviews(now);
+  }
   requestAnimationFrame(frame);
+}
+
+function buildHotbar() {
+  const cls = G.me.cls;
+  SKILLS[cls].forEach((sk, i) => {
+    const el = $('slot' + i);
+    drawSkillIcon(el.querySelector('canvas').getContext('2d'), sk.id, 48);
+    el.querySelector('.cost').textContent = sk.mp;
+    el.dataset.tip = `${sk.name}\n${sk.desc}\nMana: ${sk.mp} · Recarga: ${sk.cd / 1000}s${sk.cast ? ` · Conjuração: ${sk.cast / 1000}s` : ''}${sk.range ? ` · Alcance: ${sk.range}` : ''}`;
+    el.onclick = () => castSkill(i);
+  });
+  drawSkillIcon($('pot-hp').querySelector('canvas').getContext('2d'), 'hp', 48);
+  drawSkillIcon($('pot-mp').querySelector('canvas').getContext('2d'), 'mp', 48);
+  $('pot-hp').onclick = () => drinkPot('hp');
+  $('pot-mp').onclick = () => drinkPot('mp');
+  const p = CLASSES[cls].passive;
+  $('passive').dataset.tip = `Aptidão: ${p.name}\n${p.desc}`;
+  $('passive').textContent = p.name;
+  // retrato
+  const pc = $('portrait'), pctx = pc.getContext('2d');
+  pctx.setTransform(1, 0, 0, 1, 0, 0); pctx.clearRect(0, 0, pc.width, pc.height);
+  pctx.setTransform(2.6, 0, 0, 2.6, pc.width / 2 - 2, pc.height + 52);
+  drawHero(pctx, 0, 0, { cls, color: G.me.color, face: 1 }, 0);
 }
 
 function startGame() {
@@ -589,40 +584,53 @@ function startGame() {
   G.started = true;
   $('lobby').classList.add('hidden');
   $('hud').classList.remove('hidden');
-  resize();
+  buildHotbar();
   updateHud();
-  addChat('', 'Bem-vindo a Eldmar! Clique nos monstros para atacar. Enter abre o chat.');
-  requestAnimationFrame(frame);
+  addChat('', `Bem-vindo a Eldmar, ${G.me.name}! Fale com os moradores clicando neles. Enter abre o chat.`);
+  showBanner('Vilarejo de Eldmar', 'Zona protegida — monstros não entram aqui.');
 }
 
+// tooltips
+const tip = $('tooltip');
+document.addEventListener('mouseover', e => {
+  const el = e.target.closest('[data-tip]');
+  if (!el) { tip.classList.add('hidden'); return; }
+  const [title, ...rest] = el.dataset.tip.split('\n');
+  tip.innerHTML = '';
+  const h = document.createElement('b'); h.textContent = title; tip.appendChild(h);
+  for (const r of rest) { const d = document.createElement('div'); d.textContent = r; tip.appendChild(d); }
+  tip.classList.remove('hidden');
+  const r = el.getBoundingClientRect();
+  tip.style.left = Math.max(8, Math.min(window.innerWidth - 268, r.left + r.width / 2 - 130)) + 'px';
+  tip.style.top = Math.max(8, r.top - tip.offsetHeight - 10) + 'px';
+});
+
 // ============================================================
-//  LOBBY (tela inicial)
+//  LOBBY
 // ============================================================
+const HERALDRY = ['#b91c1c', '#1d4ed8', '#15803d', '#7e22ce', '#b45309', '#0f766e', '#be185d', '#3f3f46'];
+let chosenClass = 'knight', chosenColor = HERALDRY[0];
+
 function randomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let s = '';
   for (let i = 0; i < 5; i++) s += chars[Math.floor(Math.random() * chars.length)];
   return s;
 }
-
 function setStatus(text, err) { const s = $('status'); s.textContent = text; s.className = err ? 'err' : ''; }
 function lockLobby(b) { for (const el of document.querySelectorAll('#lobby button, #lobby input')) el.disabled = b; }
 
 function helloMsg() {
-  const saved = loadChar();
   const name = $('name').value.trim() || 'Aventureiro';
-  const sameChar = saved.name === name;
-  return { t: 'hello', name, color: $('color').value, lvl: sameChar ? saved.lvl : 1, xp: sameChar ? saved.xp : 0 };
+  const saved = loadChars()[charKey(name, chosenClass)] || {};
+  return { t: 'hello', name, color: chosenColor, cls: chosenClass, lvl: saved.lvl, xp: saved.xp, gold: saved.gold, pots: saved.pots };
 }
-
-function showRoom(code) {
-  $('room-code').textContent = Net.offline ? 'offline' : code;
-  $('room-box').classList.remove('hidden');
-}
+function showRoom(code) { $('room-code').textContent = Net.offline ? 'offline' : code; }
 
 function createRoom(code = randomCode(), tries = 0) {
+  if (!$('name').value.trim()) { setStatus('Escolha um nome para seu herói.', true); $('name').focus(); return; }
   lockLobby(true);
-  setStatus('Criando sala...');
+  setStatus('Erguendo o reino...');
   Net.onClient = hostOnClient;
   Net.onServer = clientOnServer;
   Net.onPeerLeave = hostOnLeave;
@@ -641,14 +649,13 @@ function createRoom(code = randomCode(), tries = 0) {
 }
 
 function joinRoom() {
+  if (!$('name').value.trim()) { setStatus('Escolha um nome para seu herói.', true); $('name').focus(); return; }
   const code = $('code').value.trim().toUpperCase();
   if (!code) { setStatus('Digite o código da sala.', true); return; }
   lockLobby(true);
-  setStatus('Conectando na sala ' + code + '...');
+  setStatus('Cavalgando até a sala ' + code + '...');
   Net.onServer = clientOnServer;
-  Net.onDisconnected = () => {
-    $('disconnected').classList.remove('hidden');
-  };
+  Net.onDisconnected = () => $('disconnected').classList.remove('hidden');
   Net.join(code, err => {
     if (err) {
       const msg = err.type === 'peer-unavailable' ? 'Sala não encontrada. Confira o código (o criador da sala precisa estar com o jogo aberto).'
@@ -664,14 +671,89 @@ function joinRoom() {
   });
 }
 
-(function initLobby() {
-  const saved = loadChar();
-  if (saved.name) $('name').value = saved.name;
-  if (saved.color) $('color').value = saved.color;
-  if (saved.lvl) $('saved').textContent = `Personagem salvo: ${saved.name} (nível ${saved.lvl})`;
+// pré-visualização animada das classes
+const previews = [];
+function drawClassPreviews(now) {
+  for (const { cls, c } of previews) {
+    const pctx = c.getContext('2d');
+    pctx.setTransform(1, 0, 0, 1, 0, 0);
+    pctx.clearRect(0, 0, c.width, c.height);
+    const sel = cls === chosenClass;
+    const cycle = (now / 1000) % 4;
+    const anims = { knight: 'swing', archer: 'shoot', mage: 'cast' };
+    const o = { cls, color: chosenColor, face: 1, walking: sel && cycle < 2, anim: sel && cycle > 2.6 ? { a: anims[cls], t0: now - (cycle - 2.6) * 1000 } : null };
+    if (o.anim && (now - o.anim.t0) > ANIM_MS[o.anim.a]) o.anim = null;
+    pctx.setTransform(2.4, 0, 0, 2.4, c.width / 2, c.height - 14);
+    ell(pctx, 0, 2, 16, 5, 'rgba(0,0,0,0.25)');
+    drawHero(pctx, 0, 0, o, sel ? now : 0);
+  }
+}
+
+function buildLobby() {
+  $('version').textContent = `${VERSION} · ${VERSION_NAME}`;
+  const box = $('classes');
+  for (const [cls, c] of Object.entries(CLASSES)) {
+    const card = document.createElement('div');
+    card.className = 'class-card' + (cls === chosenClass ? ' sel' : '');
+    card.dataset.cls = cls;
+    const cv = document.createElement('canvas'); cv.width = 150; cv.height = 160;
+    previews.push({ cls, c: cv });
+    const h = document.createElement('h3'); h.textContent = c.name;
+    const role = document.createElement('div'); role.className = 'role'; role.textContent = c.role;
+    const desc = document.createElement('p'); desc.textContent = c.desc;
+    const stats = document.createElement('div'); stats.className = 'stats';
+    for (const [k, v] of Object.entries(c.stats)) {
+      const row = document.createElement('div');
+      const lab = document.createElement('span'); lab.textContent = k;
+      const pips = document.createElement('i');
+      for (let n = 0; n < 5; n++) { const s = document.createElement('b'); if (n < v) s.className = 'on'; pips.appendChild(s); }
+      row.append(lab, pips); stats.appendChild(row);
+    }
+    const sk = document.createElement('div'); sk.className = 'skills';
+    for (const s of SKILLS[cls]) {
+      const ic = document.createElement('canvas'); ic.width = 30; ic.height = 30;
+      drawSkillIcon(ic.getContext('2d'), s.id, 30);
+      ic.dataset.tip = `${s.name}\n${s.desc}\nMana: ${s.mp} · Recarga: ${s.cd / 1000}s`;
+      sk.appendChild(ic);
+    }
+    const pas = document.createElement('div'); pas.className = 'passive-line';
+    pas.textContent = '✦ ' + c.passive.name; pas.dataset.tip = `Aptidão: ${c.passive.name}\n${c.passive.desc}`;
+    card.append(cv, h, role, desc, stats, sk, pas);
+    card.onclick = () => {
+      chosenClass = cls;
+      for (const el of document.querySelectorAll('.class-card')) el.classList.toggle('sel', el.dataset.cls === cls);
+      updateSavedInfo();
+    };
+    box.appendChild(card);
+  }
+  const sw = $('swatches');
+  for (const col of HERALDRY) {
+    const b = document.createElement('button');
+    b.className = 'swatch' + (col === chosenColor ? ' sel' : '');
+    b.style.background = col; b.title = 'Cor do brasão';
+    b.onclick = () => { chosenColor = col; for (const el of sw.children) el.classList.toggle('sel', el === b); };
+    sw.appendChild(b);
+  }
+  // personagens salvos
+  const chars = Object.values(loadChars()).sort((a, b) => (b.t || 0) - (a.t || 0)).slice(0, 4);
+  const sv = $('saved');
+  for (const ch of chars) {
+    if (!CLASSES[ch.cls]) continue;
+    const b = document.createElement('button');
+    b.className = 'saved-char';
+    b.textContent = `${ch.name} · ${CLASSES[ch.cls].name} nv. ${ch.lvl}`;
+    b.onclick = () => {
+      $('name').value = ch.name; chosenClass = ch.cls; chosenColor = ch.color || chosenColor;
+      for (const el of document.querySelectorAll('.class-card')) el.classList.toggle('sel', el.dataset.cls === ch.cls);
+      for (const el of $('swatches').children) el.classList.toggle('sel', el.style.background && el.title && rgbToHex(el.style.background) === chosenColor);
+      updateSavedInfo();
+    };
+    sv.appendChild(b);
+  }
+  if (!chars.length) sv.classList.add('hidden');
+  $('name').addEventListener('input', updateSavedInfo);
   const urlCode = new URLSearchParams(location.search).get('sala');
   if (urlCode) $('code').value = urlCode.toUpperCase();
-
   $('btn-create').onclick = () => createRoom();
   $('btn-join').onclick = joinRoom;
   $('code').addEventListener('keydown', e => { if (e.key === 'Enter') joinRoom(); });
@@ -679,4 +761,16 @@ function joinRoom() {
     const link = location.origin + location.pathname + '?sala=' + Net.room;
     navigator.clipboard.writeText(link).then(() => showToast('Link copiado! Mande para seus amigos.'), () => showToast(link));
   };
-})();
+  $('btn-help').onclick = () => $('help').classList.toggle('hidden');
+  if (chars[0]) { $('name').value = chars[0].name; }
+  updateSavedInfo();
+}
+function rgbToHex(rgb) { const m = rgb.match(/\d+/g); return m ? '#' + m.slice(0, 3).map(v => (+v).toString(16).padStart(2, '0')).join('') : ''; }
+function updateSavedInfo() {
+  const name = $('name').value.trim();
+  const s = name && loadChars()[charKey(name, chosenClass)];
+  $('saved-info').textContent = s ? `Continuar jornada: ${s.name}, ${CLASSES[s.cls].name} nível ${s.lvl} (${s.gold || 0} ouro)` : name ? `Novo herói: ${name}, ${CLASSES[chosenClass].name}` : '';
+}
+
+buildLobby();
+requestAnimationFrame(frame);
