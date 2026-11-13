@@ -3,8 +3,8 @@
 //  Mexa aqui para balancear o jogo.
 // ============================================================
 const GAME_NAME = 'World of Sxan';
-const VERSION = 'v0.6.2';
-const VERSION_NAME = 'HerÃ³is Forjados';
+const VERSION = 'v0.7.0';
+const VERSION_NAME = 'Mundo Esculpido';
 
 const PLAYER_SPEED = 3.6;          // tiles por segundo
 const OUT_OF_COMBAT_MS = 5000;     // sem lutar por 5s = fora de combate (regenera)

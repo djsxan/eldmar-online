@@ -580,6 +580,7 @@ function frame() {
   const now = performance.now(), dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
   if (G.timers.length) { const due = G.timers.filter(t => t.at <= now); G.timers = G.timers.filter(t => t.at > now); for (const t of due) t.fn(); }
   R3.budget = G.started ? 3 : 2;
+  S3.budget = G.started ? 2 : 5;
   let cam = lobbyCam;
   if (G.started) {
     updateLocal(now, dt);

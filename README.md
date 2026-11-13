@@ -1,6 +1,6 @@
 # World of Sxan
 
-RPG multiplayer isométrico de fantasia medieval com cenário pintado à mão, direto no navegador.
+RPG multiplayer isométrico de fantasia medieval com visual pré-renderizado (modelos 3D transformados em imagens, como no Diablo II), direto no navegador.
 
 **Jogar:** https://djsxan.github.io/eldmar-online/
 
@@ -48,7 +48,7 @@ Cada vocação tem 3 skins (Comum, Rara, Lendária) e cada ataque tem sua própr
 ## Como funciona
 
 - Sem servidor: os navegadores se conectam direto via WebRTC ([PeerJS](https://peerjs.com/)), com um canal rápido para posições.
-- Toda a arte é gerada por código e guardada em cache; o mundo é desenhado em baixa resolução e ampliado.
+- Toda a arte é gerada por código: personagens, monstros e cenário são modelos 3D (Three.js) fotografados no ângulo do mapa e guardados em cache como imagens. O chão tem texturas com relevo iluminadas por um sol fixo.
 
 | Arquivo | Conteúdo |
 |---|---|

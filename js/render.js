@@ -23,8 +23,8 @@ function dayInfo() {
 // direção da sombra (o sol cruza o céu da esquerda para a direita)
 function sunShadow(day) {
   const t = ((day.phase + 0.25) % 1) * 2;       // 0..1 de dia, 1..2 de noite
-  if (t <= 1) { const len = 0.35 + Math.abs(t - 0.5) * 1.5; return { lx: (t - 0.5) * 1.8 * len, ly: 0.32 * len, a: 0.34 * (1 - day.dark) }; }
-  return { lx: 0.25, ly: 0.2, a: 0.12 };          // luar
+  // luz fixa: o sol fica sempre na mesma posição (mesma luz do cenário 3D)
+  return { lx: 0.71, ly: 0.11, a: t <= 1 ? 0.36 * (1 - day.dark) : 0.12 };
 }
 // clima global (chuva em alguns períodos — igual para todos)
 function weatherNow() {
@@ -429,7 +429,7 @@ function objSprite(o, x, y) {
     case O.FENCE: { const isF = j => WORLD.obj[j] === O.FENCE || WORLD.obj[j] === O.TORCH; return fenceSprite(isF(i - 1) || isF(i + 1)); }
     case O.WALL: return wallSprite(v, false, h < 0.35);
     case O.LOWWALL: return wallSprite(v, true, false);
-    case O.GATE: return gateSprite();
+    case O.GATE: return gateSprite(WORLD.obj[i - 1] === O.GATE || WORLD.obj[i + 1] === O.GATE || WORLD.obj[i - 1] === O.WALL || WORLD.obj[i + 1] === O.WALL);
     case O.STAIRS: return stairsSprite(WORLD.stair[i]);
   }
   return null;
@@ -713,9 +713,9 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     if (it.k === 4) {
       const s = buildingSprite(it.b, day.night);
       pblit(ctx, s, it.sx, it.sy, fadeA(s, it.sx, it.sy, it.d));
-      if (it.b.name) { const top = iso(it.b.x + it.b.w / 2 - 0.5, it.b.y + it.b.h / 2 - 0.5); labels.push({ sx: top.sx + ox, sy: top.sy + oy - (it.b.wall + it.b.roof + (it.b.kind === 'temple' ? 38 : 8)) * 2, title: it.b.name }); }
+      if (it.b.name) { const top = iso(it.b.x + it.b.w / 2 - 0.5, it.b.y + it.b.h / 2 - 0.5); labels.push({ sx: top.sx + ox, sy: top.sy + oy - bldTopArt(it.b) - (it.b.kind === 'temple' ? 150 : 16), title: it.b.name }); }
       if (day.night) for (const [wx, wy, wz] of buildingWindows(it.b)) { const p = iso(wx, wy); G.lights.push({ x: p.sx + ox, y: p.sy + oy - wz, r: 28, c: it.b.kind === 'temple' ? '190,210,255' : '255,190,100', a: 0.85 }); }
-      if ((it.b.kind === 'tavern' || it.b.kind === 'house' || it.b.kind === 'smith') && Math.random() < (it.b.kind !== 'house' ? 0.14 : 0.05)) { const p = iso(it.b.x - 0.5 + it.b.w * 0.3, it.b.y - 0.5 + it.b.h * 0.35); spawnPart('smoke', p.sx, p.sy - (it.b.wall * 2 + it.b.roof * 1.5 + 28)); }
+      if ((it.b.kind === 'tavern' || it.b.kind === 'house' || it.b.kind === 'smith') && Math.random() < (it.b.kind !== 'house' ? 0.14 : 0.05)) { const p = iso(it.b.x - 0.5 + it.b.w * 0.3, it.b.y - 0.5 + it.b.h * 0.35); spawnPart('smoke', p.sx, p.sy - (bldTopArt(it.b) * 0.9 + 30)); }
       if (it.b.kind === 'smith') { const p = iso(it.b.x - 0.5 + it.b.w * 0.5, it.b.y - 0.5 + it.b.h); G.lights.push({ x: p.sx + ox, y: p.sy + oy - 16, r: 62, c: '255,130,50', a: 1, flick: 1 }); if (Math.random() < 0.1) spawnPart('ember', p.sx, p.sy - 20); }
       return;
     }
