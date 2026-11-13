@@ -1,15 +1,14 @@
 // ============================================================
-//  RENDER — o mundo é desenhado numa tela pequena (resolução de
-//  pixel art) e depois ampliada sem suavização. Isso dá o visual
-//  retrô e deixa o jogo MUITO mais leve.
+//  RENDER — mundo pintado em resolução de tela.
+//  Sombras projetadas pelo sol, clima e atmosfera por região,
+//  luzes à noite e correção de cor cinematográfica.
 // ============================================================
-let SCALE = 6;                         // quantos pixels de tela por pixel de arte
-const low = document.createElement('canvas'), lctx = low.getContext('2d');
+let SCALE = 2;                                  // pixels de tela por unidade de arte (zoom contínuo)
 const lightC = document.createElement('canvas'), lightX = lightC.getContext('2d');
-let LW = 0, LH = 0, lastFrameT = performance.now(), SPAWN_MUL = 1;
+const shadowC = document.createElement('canvas'), shadowX = shadowC.getContext('2d');
+let lastFrameT = performance.now(), SPAWN_MUL = 1;
 
 function wind(x, y, now) { return Math.sin(now / 1400 + x * 0.37 + y * 0.21) + Math.sin(now / 530 + x * 1.1) * 0.35; }
-function windFrame(x, y, now) { const w = wind(x, y, now); return w > 0.55 ? 2 : w < -0.55 ? 0 : 1; }
 
 // ---------- dia e noite (igual para todos: usa o relógio) ----------
 const DAY_CYCLE_MS = 12 * 60 * 1000;
@@ -17,12 +16,22 @@ function dayInfo() {
   const ph = (Date.now() % DAY_CYCLE_MS) / DAY_CYCLE_MS;
   const sun = Math.cos(ph * Math.PI * 2);
   const k = clamp((0.15 - sun) / 0.65, 0, 1);
-  const dark = smooth(k) * 0.66;
+  const dark = smooth(k) * 0.62;
   const dusk = Math.max(0, 1 - Math.abs(sun + 0.05) / 0.35);
-  return { dark, dusk, night: dark > 0.3, phase: ph };
+  return { dark, dusk, night: dark > 0.3, phase: ph, sun };
 }
-
-// ---------- partículas ----------
+// direção da sombra (o sol cruza o céu da esquerda para a direita)
+function sunShadow(day) {
+  const t = ((day.phase + 0.25) % 1) * 2;       // 0..1 de dia, 1..2 de noite
+  if (t <= 1) { const len = 0.35 + Math.abs(t - 0.5) * 1.5; return { lx: (t - 0.5) * 1.8 * len, ly: 0.32 * len, a: 0.34 * (1 - day.dark) }; }
+  return { lx: 0.25, ly: 0.2, a: 0.12 };          // luar
+}
+// clima global (chuva em alguns períodos — igual para todos)
+function weatherNow() {
+  const t = Date.now() / 1000;
+  const rain = clamp((Math.sin(t / 260) + Math.sin(t / 97) * 0.4 - 0.75) * 2.2, 0, 1);
+  return { rain, wind: 0.6 + Math.sin(t / 40) * 0.4 };
+}
 function spawnPart(kind, x, y, extra) {
   if (G.parts.length > 350) return;
   const p = { kind, x, y, vx: 0, vy: 0, t0: performance.now(), life: 1000, seed: Math.random() * 100, ...extra };
@@ -55,7 +64,7 @@ function drawParticles(ctx, ox, oy, now, dt) {
     if (p.kind === 'blood' || p.kind === 'shard') p.vy += 0.00012 * ART * dt;
     const x = Math.round(p.x + ox), y = Math.round(p.y + oy);
     switch (p.kind) {
-      case 'smoke': ctx.fillStyle = `rgba(130,130,130,${0.35 * (1 - t)})`; { const r = 1 + Math.round(t * 4); ctx.fillRect(x + Math.round(Math.sin(age / 500 + p.seed) * 2) - r, y - r, r * 2, r * 2); } break;
+      case 'smoke': softDab(ctx, x + Math.sin(age / 500 + p.seed) * 4, y, 5 + t * 14, '#8a8a8a', 0.4 * (1 - t)); break;
       case 'ember': ctx.fillStyle = `rgba(255,${150 + Math.round(p.seed * 9 % 80)},60,${1 - t})`; ctx.fillRect(x, y, 1, 1); G.lights.push({ x, y, r: 6, c: '255,150,60', a: 0.5 * (1 - t) }); break;
       case 'leaf': ctx.fillStyle = p.color; ctx.globalAlpha = t > 0.8 ? (1 - t) * 5 : 1; ctx.fillRect(x + Math.round(Math.sin(age / 400 + p.seed) * 4), y, 2, 1); ctx.globalAlpha = 1; break;
       case 'butterfly': {
@@ -74,7 +83,7 @@ function drawParticles(ctx, ox, oy, now, dt) {
       case 'sparkle': ctx.fillStyle = (p.color || 'rgba(255,240,150,A)').replace('A', String(1 - t)); ctx.fillRect(x, y - 1, 1, 3); ctx.fillRect(x - 1, y, 3, 1); break;
       case 'dust': ctx.fillStyle = `rgba(170,150,110,${0.45 * (1 - t)})`; ctx.fillRect(x - 1, y, 2 + Math.round(t * 2), 1); break;
       case 'shard': ctx.fillStyle = `rgba(210,240,255,${1 - t})`; ctx.fillRect(x, y, 1, 2); break;
-      case 'mist': ctx.fillStyle = `rgba(230,245,255,${0.35 * (1 - t)})`; { const r = 1 + Math.round(t * 3); ctx.fillRect(x - r, y - r, r * 2, r * 2); } break;
+      case 'mist': softDab(ctx, x, y, 6 + t * 12, '#eef6ff', 0.4 * (1 - t)); break;
       case 'snow': ctx.fillStyle = `rgba(240,248,255,${1 - t})`; ctx.fillRect(x, y, 1, 1); break;
       case 'blood': ctx.fillStyle = `rgba(150,30,30,${1 - t})`; ctx.fillRect(x, y, 1, 1); break;
     }
@@ -332,17 +341,20 @@ function drawAuras1(ctx, e, sx, sy, now) {
 }
 
 // ---------- objetos ----------
+// ---------- objetos ----------
 const TREE_TINT = { [Z.FOREST]: 3, [Z.SWAMP]: 3, [Z.WILD]: 1 };
-function objSprite(o, x, y, now) {
+const SWAY = { [O.TREE]: 0.035, [O.PINE]: 0.025, [O.BUSH]: 0.03, [O.TALLGRASS]: 0.09, [O.REEDS]: 0.08 };
+const CASTS = new Set([O.TREE, O.PINE, O.DEADTREE, O.BUSH, O.ROCK, O.WALL, O.LOWWALL, O.STATUE, O.LAMP, O.BANNER, O.TENT, O.WELL, O.STALL, O.HAY, O.BARREL, O.CRATE, O.CART, O.GRAVE, O.DUMMY, O.WEAPONRACK, O.STUMP, O.TORCH, O.BRAZIER, O.FENCE, O.GATE]);
+function objSprite(o, x, y) {
   const h = hash2(x, y, 17), v = Math.floor(h * 3), i = y * MAP_W + x, z = WORLD.zone[i];
   switch (o) {
-    case O.TREE: return treeSprite(v, windFrame(x, y, now), h > 0.88 && z !== Z.FOREST ? 2 : (TREE_TINT[z] || 0));
-    case O.PINE: return pineSprite(v, windFrame(x, y, now));
+    case O.TREE: return treeSprite(v, 1, h > 0.88 && z !== Z.FOREST ? 2 : (TREE_TINT[z] || 0));
+    case O.PINE: return pineSprite(v);
     case O.ROCK: return rockSprite(v, z === Z.FOREST || z === Z.SWAMP ? 1 : 0);
-    case O.BUSH: return bushSprite(v, windFrame(x, y, now));
-    case O.TALLGRASS: return grassSprite(v, windFrame(x, y, now), z === Z.BONES || z === Z.ORCS || WORLD.ground[i] === T.DEAD ? 1 : 0);
+    case O.BUSH: return bushSprite(v);
+    case O.TALLGRASS: return grassSprite(v, 1, z === Z.BONES || z === Z.ORCS || WORLD.ground[i] === T.DEAD ? 1 : 0);
     case O.MUSHROOM: return smallSprite('mushroom', z === Z.SWAMP || (z === Z.FOREST && h < 0.3) ? 2 + (v & 1) : v & 1);
-    case O.REEDS: return smallSprite('reeds', v, windFrame(x, y, now));
+    case O.REEDS: return smallSprite('reeds', v);
     case O.STUMP: return smallSprite('stump');
     case O.LOG: return smallSprite('log', v & 1);
     case O.DEADTREE: return smallSprite('deadtree', v);
@@ -362,12 +374,12 @@ function objSprite(o, x, y, now) {
     case O.WEAPONRACK: return smallSprite('weaponrack');
     case O.CART: return smallSprite('cart');
     case O.TABLE: return smallSprite('table');
-    case O.CAMPFIRE: return animSprite('campfire', Math.floor(now / 120 + x) % 4);
-    case O.TORCH: return animSprite('torch', Math.floor(now / 140 + x + y) % 4);
-    case O.BRAZIER: return animSprite('brazier', Math.floor(now / 130 + x) % 4);
-    case O.LAMP: return animSprite('lamp', 0);
-    case O.BANNER: return animSprite('banner', Math.floor(now / 260 + x) % 4);
-    case O.FOUNTAIN: return animSprite('fountain', Math.floor(now / 160) % 4);
+    case O.CAMPFIRE: return animSprite('campfire');
+    case O.TORCH: return animSprite('torch');
+    case O.BRAZIER: return animSprite('brazier');
+    case O.LAMP: return animSprite('lamp');
+    case O.BANNER: return animSprite('banner');
+    case O.FOUNTAIN: return animSprite('fountain');
     case O.FENCE: { const isF = j => WORLD.obj[j] === O.FENCE || WORLD.obj[j] === O.TORCH; return fenceSprite(isF(i - 1) || isF(i + 1)); }
     case O.WALL: return wallSprite(v, false, h < 0.35);
     case O.LOWWALL: return wallSprite(v, true, false);
@@ -376,70 +388,216 @@ function objSprite(o, x, y, now) {
   }
   return null;
 }
-function objLight(o, sx, sy, x, y) {
-  if (o === O.TORCH) G.lights.push({ x: sx, y: sy - 48, r: 40, c: '255,170,80', a: 0.9, flick: 1 });
-  else if (o === O.LAMP) G.lights.push({ x: sx + 12, y: sy - 66, r: 48, c: '255,215,140', a: 1, flick: 1 });
-  else if (o === O.BRAZIER) G.lights.push({ x: sx, y: sy - 36, r: 46, c: '255,160,70', a: 1, flick: 1 });
-  else if (o === O.CAMPFIRE) { G.lights.push({ x: sx, y: sy - 12, r: 50, c: '255,150,60', a: 1, flick: 1 }); if (Math.random() < 0.06) spawnPart('smoke', sx - G.view.ox, sy - G.view.oy - 24); if (Math.random() < 0.08) spawnPart('ember', sx - G.view.ox, sy - G.view.oy - 12); }
-  else if (o === O.MUSHROOM) { const z = zoneAt(x, y); if (z === Z.SWAMP || (z === Z.FOREST && hash2(x, y, 17) < 0.3)) G.lights.push({ x: sx, y: sy - 6, r: 14, c: '90,200,240', a: 0.55 }); }
+function drawSway(ctx, s, x, y, k, alpha) {
+  if (!k) { pblit(ctx, s, x, y, alpha); return; }
+  ctx.save(); ctx.translate(x, y); ctx.transform(1, 0, k, 1, 0, 0); pblit(ctx, s, 0, 0, alpha); ctx.restore();
+}
+// partes animadas ao vivo (fogo, bandeira, água)
+function liveParts(ctx, o, sx, sy, x, y, now) {
+  switch (o) {
+    case O.TORCH: liveFlame(ctx, sx, sy - 46, 0.62, now, x * 3 + y); G.lights.push({ x: sx, y: sy - 52, r: 42, c: '255,170,80', a: 0.95, flick: 1 }); if (Math.random() < 0.04) spawnPart('ember', sx - G.view.ox, sy - G.view.oy - 60); break;
+    case O.BRAZIER: liveFlame(ctx, sx, sy - 34, 0.9, now, x + y * 5); G.lights.push({ x: sx, y: sy - 44, r: 50, c: '255,160,70', a: 1, flick: 1 }); if (Math.random() < 0.08) spawnPart('ember', sx - G.view.ox, sy - G.view.oy - 50); break;
+    case O.CAMPFIRE: liveFlame(ctx, sx, sy - 6, 1.35, now, x * 7 + y); G.lights.push({ x: sx, y: sy - 16, r: 56, c: '255,150,60', a: 1, flick: 1 }); if (Math.random() < 0.08) spawnPart('smoke', sx - G.view.ox, sy - G.view.oy - 30); if (Math.random() < 0.1) spawnPart('ember', sx - G.view.ox, sy - G.view.oy - 16); break;
+    case O.LAMP: { const f = 0.85 + Math.sin(now / 90 + x) * 0.08; softDab(ctx, sx + 14, sy - 66, 10 * f, '#ffd890', 0.55); G.lights.push({ x: sx + 14, y: sy - 66, r: 50, c: '255,215,140', a: 1, flick: 1 }); break; }
+    case O.BANNER: {
+      const top = sy - 94, left = sx + 2, wv = now / 420 + x * 0.7;
+      ctx.beginPath(); ctx.moveTo(left, top);
+      for (let k = 0; k <= 8; k++) { const t = k / 8; ctx.lineTo(left + t * 28, top + Math.sin(wv + t * 3) * 2.5 * t); }
+      for (let k = 8; k >= 0; k--) { const t = k / 8; ctx.lineTo(left + t * 28 - 2 * t, top + 46 + Math.sin(wv + t * 3 + 1) * 3 * t - (t > 0.5 ? (t - 0.5) * 10 : 0)); }
+      ctx.closePath(); ctx.fillStyle = lgrad(ctx, left, 0, left + 28, 0, [[0, '#1e3058'], [0.5, '#2c447a'], [1, '#1a284a']]); ctx.fill();
+      dab(ctx, left + 13, top + 20 + Math.sin(wv + 1.5) * 1.5, 5, 5, '#c9a24a'); dab(ctx, left + 13, top + 20 + Math.sin(wv + 1.5) * 1.5, 2.4, 2.4, '#1e3058');
+      break;
+    }
+    case O.FOUNTAIN: {
+      for (let k = 0; k < 18; k++) {
+        const t = ((now / 1100) + k / 18) % 1, a = k / 18 * Math.PI * 2;
+        const px_ = sx + Math.cos(a) * 26 * t, py = sy - 46 + t * 34 - Math.sin(t * Math.PI) * 14 + Math.sin(a) * 9 * t;
+        dab(ctx, px_, py, 1.4, 1.4, `rgba(210,235,255,${0.85 - t * 0.5})`);
+      }
+      softDab(ctx, sx, sy - 44, 6, '#e8f6ff', 0.6);
+      break;
+    }
+  }
+}
+function drawWaterfallLive(ctx, sx, sy, H, now) {
+  const top = sy - H + 4, bot = sy + 16, t = now / 1000;
+  // cortina de água com bordas irregulares (mais estreita no alto)
+  ctx.save();
+  ctx.beginPath();
+  for (let k = 0; k <= 10; k++) { const f = k / 10, y = top + (bot - top) * f, w = 18 + f * 16 + Math.sin(t * 3 + f * 9) * 1.5; ctx.lineTo(sx - 4 - w + Math.sin(f * 5 + t) * 2, y); }
+  for (let k = 10; k >= 0; k--) { const f = k / 10, y = top + (bot - top) * f, w = 18 + f * 16 + Math.sin(t * 3 + f * 9 + 2) * 1.5; ctx.lineTo(sx - 4 + w + Math.sin(f * 4 - t) * 2, y); }
+  ctx.closePath(); ctx.clip();
+  ctx.fillStyle = lgrad(ctx, 0, top, 0, bot, [[0, 'rgba(170,215,240,0.95)'], [0.5, 'rgba(110,170,215,0.92)'], [1, 'rgba(225,242,255,0.97)']]);
+  ctx.fillRect(sx - 60, top - 4, 120, bot - top + 8);
+  for (let k = 0; k < 34; k++) {
+    const xx = sx - 4 + (hash2(k, 3, 5) - 0.5) * 66, sp = 0.7 + hash2(k, 4, 5) * 0.6, ph = (t * 1.4 * sp + hash2(k, 5, 5)) % 1;
+    const y1 = top + ph * (bot - top + 30) - 24, y2 = y1 + 10 + hash2(k, 6, 5) * 16;
+    ctx.strokeStyle = 'rgba(255,255,255,' + (0.3 + hash2(k, 7, 5) * 0.45) + ')'; ctx.lineWidth = 0.8 + hash2(k, 8, 5) * 1.8;
+    ctx.beginPath(); ctx.moveTo(xx, y1); ctx.lineTo(xx + Math.sin(ph * 3) * 1.5, y2); ctx.stroke();
+  }
+  ctx.restore();
+  // espuma e névoa na base
+  for (let k = 0; k < 10; k++) { const f = (t * 0.8 + k / 10) % 1; softDab(ctx, sx - 4 + (hash2(k, 9, 3) - 0.5) * 70, bot - 2 - f * 10, 8 + f * 12, '#f4fbff', 0.6 * (1 - f)); }
+  softDab(ctx, sx - 4, top + 2, 14, '#e8f6ff', 0.35);
+}
+
+// ---------- sombras projetadas ----------
+function castShadow(s, x, y, sh, k) {
+  const sil = silhouette(s);
+  shadowX.setTransform(k, 0, -sh.lx * k, -sh.ly * k, x * k, y * k);
+  shadowX.drawImage(sil.c, -sil.ax, -sil.ay, sil.w, sil.h);
+}
+
+// ---------- atmosfera por região ----------
+const ZATM = {
+  [Z.VILLAGE]: { tint: [255, 214, 150], ta: 0.12, fog: 0.0, fogC: [230, 220, 200], rays: 0, crows: 0, embers: 0, dust: 0, snow: 0, rainBias: 0 },
+  [Z.FIELDS]: { tint: [255, 230, 170], ta: 0.08, fog: 0.04, fogC: [230, 235, 225], rays: 0.2, crows: 0, embers: 0, dust: 0, snow: 0, rainBias: 0 },
+  [Z.FOREST]: { tint: [120, 170, 160], ta: 0.16, fog: 0.16, fogC: [170, 200, 185], rays: 1, crows: 0, embers: 0, dust: 0, snow: 0, rainBias: 0 },
+  [Z.SWAMP]: { tint: [130, 160, 100], ta: 0.22, fog: 0.42, fogC: [140, 165, 135], rays: 0, crows: 0.2, embers: 0, dust: 0, snow: 0, rainBias: 0.45 },
+  [Z.BONES]: { tint: [140, 140, 155], ta: 0.3, fog: 0.3, fogC: [160, 160, 170], rays: 0, crows: 1, embers: 0, dust: 1, snow: 0, rainBias: 0.1 },
+  [Z.ORCS]: { tint: [235, 150, 80], ta: 0.18, fog: 0.16, fogC: [150, 115, 90], rays: 0, crows: 0.3, embers: 1, dust: 0.5, snow: 0, rainBias: 0 },
+  [Z.WILD]: { tint: [170, 200, 235], ta: 0.14, fog: 0.14, fogC: [215, 225, 235], rays: 0.2, crows: 0.2, embers: 0, dust: 0, snow: 0, rainBias: 0.1 },
+};
+const ATM = { tint: [255, 214, 150], ta: 0.1, fog: 0, fogC: [230, 220, 200], rays: 0, crows: 0, embers: 0, dust: 0, snow: 0, rain: 0 };
+function updateAtmosphere(px_, py, dt) {
+  const z = zoneAt(px_, py), tgt = ZATM[z] || ZATM[Z.FIELDS];
+  const nearMountain = dist(px_, py, MOUNTAIN.x, MOUNTAIN.y) < MOUNTAIN.r + 10 ? 1 : 0;
+  const w = weatherNow();
+  const k = Math.min(1, dt * 0.0012);
+  for (const key of ['ta', 'fog', 'rays', 'crows', 'embers', 'dust']) ATM[key] += (tgt[key] - ATM[key]) * k;
+  for (let i = 0; i < 3; i++) { ATM.tint[i] += (tgt.tint[i] - ATM.tint[i]) * k; ATM.fogC[i] += (tgt.fogC[i] - ATM.fogC[i]) * k; }
+  ATM.snow += (nearMountain - ATM.snow) * k;
+  ATM.rain += (clamp(w.rain + tgt.rainBias * (w.rain > 0 ? 1 : 0.35), 0, 1) * (nearMountain ? 0.3 : 1) - ATM.rain) * k;
+  ATM.wind = w.wind;
+}
+const FOG_TEX = (() => {
+  const S = 256, c = document.createElement('canvas'); c.width = S; c.height = S;
+  const x = c.getContext('2d'), R = rng(99);
+  for (let i = 0; i < 70; i++) { const px_ = R() * S, py = R() * S, r = 20 + R() * 60; for (const [ox, oy] of [[0, 0], [S, 0], [-S, 0], [0, S], [0, -S]]) softDab(x, px_ + ox, py + oy, r, '#ffffff', 0.18 + R() * 0.2); }
+  return c;
+})();
+let fogPat = null;
+function drawAtmosphere(ctx, W, H, now, day, cam) {
+  const t = now / 1000;
+  // névoa (duas camadas com movimento lento, presa ao mundo)
+  if (ATM.fog > 0.01) {
+    if (!fogPat) fogPat = ctx.createPattern(FOG_TEX, 'repeat');
+    const c = iso(cam.x, cam.y);
+    ctx.save();
+    for (let l = 0; l < 2; l++) {
+      const sp = l ? 9 : 5, sc = l ? 1.6 : 2.4;
+      ctx.setTransform(sc, 0, 0, sc * 0.7, -((c.sx * SCALE * (l ? 0.9 : 0.75) + t * sp * 6) % (256 * sc)), -((c.sy * SCALE * (l ? 0.9 : 0.75) + t * sp) % (256 * sc * 0.7)));
+      ctx.globalAlpha = ATM.fog * (l ? 0.7 : 0.9);
+      ctx.fillStyle = fogPat; ctx.fillRect(0, 0, W / sc + 512, H / (sc * 0.7) + 512);
+    }
+    ctx.restore();
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = `rgba(${ATM.fogC.map(Math.round).join(',')},${ATM.fog * 0.6})`; ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  // raios de sol entre as árvores (de dia)
+  if (ATM.rays > 0.05 && !day.night) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (let k = 0; k < 5; k++) {
+      const x = ((k * 397 + t * 8) % (W + 400)) - 200, w2 = 60 + hash2(k, 1, 2) * 90, a = ATM.rays * (0.05 + Math.sin(t * 0.4 + k) * 0.03) * (1 - day.dark);
+      if (a <= 0) continue;
+      const g = ctx.createLinearGradient(x, 0, x + H * 0.45, H); g.addColorStop(0, `rgba(255,240,190,${a})`); g.addColorStop(1, 'rgba(255,240,190,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + w2, 0); ctx.lineTo(x + w2 + H * 0.45, H); ctx.lineTo(x + H * 0.45, H); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+  // chuva
+  if (ATM.rain > 0.02) {
+    const n = Math.floor(320 * ATM.rain), wx = 2.2 + ATM.wind * 2;
+    ctx.strokeStyle = `rgba(190,205,225,${0.25 + ATM.rain * 0.3})`; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let k = 0; k < n; k++) {
+      const sp = 0.8 + hash2(k, 1, 7) * 0.5, x = (hash2(k, 2, 7) * (W + 200) + t * 120 * wx * sp) % (W + 200) - 100, y = (hash2(k, 3, 7) * (H + 100) + t * 900 * sp) % (H + 100) - 50;
+      ctx.moveTo(x, y); ctx.lineTo(x - wx * 5, y - 18 * sp);
+    }
+    ctx.stroke();
+    ctx.fillStyle = `rgba(210,225,240,${0.3 * ATM.rain})`;
+    for (let k = 0; k < n / 4; k++) { const ph = (t * 3 + hash2(k, 4, 8)) % 1, x = hash2(k, 5, 8 + Math.floor(t * 3 + hash2(k, 4, 8))) * W, y = hash2(k, 6, 8 + Math.floor(t * 3 + hash2(k, 4, 8))) * H; ctx.beginPath(); ctx.ellipse(x, y, 2 + ph * 5, (2 + ph * 5) * 0.4, 0, 0, 7); ctx.fill(); }
+    ctx.fillStyle = `rgba(20,28,40,${0.18 * ATM.rain})`; ctx.fillRect(0, 0, W, H);
+    if (ATM.rain > 0.75 && (Math.floor(t / 7) % 5 === 0) && (t % 7) < 0.15) { ctx.fillStyle = 'rgba(230,235,255,0.35)'; ctx.fillRect(0, 0, W, H); }
+  }
+  // neve perto da montanha
+  if (ATM.snow > 0.02) {
+    ctx.fillStyle = `rgba(245,250,255,${0.8 * ATM.snow})`;
+    for (let k = 0; k < 160 * ATM.snow; k++) { const sp = 0.5 + hash2(k, 1, 9) * 0.7, x = (hash2(k, 2, 9) * W + t * 30 * ATM.wind * sp + Math.sin(t + k) * 12) % W, y = (hash2(k, 3, 9) * H + t * 50 * sp) % H, r = 1 + sp * 1.6; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); }
+  }
+  // poeira (colinas)
+  if (ATM.dust > 0.05) {
+    ctx.fillStyle = `rgba(200,190,160,${0.35 * ATM.dust})`;
+    for (let k = 0; k < 60; k++) { const x = (hash2(k, 2, 11) * W + t * 60 * (0.5 + hash2(k, 1, 11))) % W, y = (hash2(k, 3, 11) * H + Math.sin(t + k) * 20) % H; ctx.fillRect(x, y, 2, 1); }
+  }
+  // brasas (acampamento orc)
+  if (ATM.embers > 0.05) {
+    for (let k = 0; k < 45; k++) { const ph = (t * (0.08 + hash2(k, 1, 12) * 0.08) + hash2(k, 2, 12)) % 1, x = hash2(k, 3, 12) * W + Math.sin(t * 2 + k) * 14, y = H * (1 - ph); ctx.fillStyle = `rgba(255,${140 + (k % 5) * 20},60,${ATM.embers * Math.sin(ph * Math.PI) * 0.8})`; ctx.fillRect(x, y, 2, 2); }
+  }
+  // corvos
+  if (ATM.crows > 0.1) {
+    ctx.strokeStyle = `rgba(20,18,20,${0.8 * ATM.crows})`; ctx.lineWidth = 1.6;
+    for (let k = 0; k < 4; k++) {
+      const ph = (t * 0.035 + hash2(k, 1, 13)) % 1, x = -60 + ph * (W + 120), y = H * (0.15 + hash2(k, 2, 13) * 0.35) + Math.sin(t * 0.8 + k) * 20, f = Math.sin(t * 9 + k * 2) * 5;
+      ctx.beginPath(); ctx.moveTo(x - 9, y - f); ctx.quadraticCurveTo(x - 4, y - 3, x, y); ctx.quadraticCurveTo(x + 4, y - 3, x + 9, y - f); ctx.stroke();
+    }
+  }
 }
 
 // ---------- cena completa ----------
-function renderWorld(now, cam, W, H) {
+function renderWorld(ctx, now, cam, W, H, dpr) {
   const dt = Math.min(50, now - lastFrameT); lastFrameT = now;
-  const lw = Math.ceil(W / SCALE) + 1, lh = Math.ceil(H / SCALE) + 1;
-  if (low.width !== lw || low.height !== lh) { low.width = lw; low.height = lh; lightC.width = lw; lightC.height = lh; waterPat1 = null; }
-  LW = lw; LH = lh;
-  const ctx = lctx;
-  ctx.imageSmoothingEnabled = false;
+  const k = dpr * SCALE, vw = W / SCALE, vh = H / SCALE;
   const c = iso(cam.x, cam.y);
   let shx = 0, shy = 0;
-  if (G.shake > 0.2) { shx = Math.round((Math.random() - 0.5) * G.shake); shy = Math.round((Math.random() - 0.5) * G.shake); G.shake *= 0.86; }
-  const ox = Math.round(lw / 2 - c.sx) + shx, oy = Math.round(lh / 2 - c.sy + 30 + (cam.z || 0) * FLOOR_PX) + shy;
+  if (G.shake > 0.2) { shx = (Math.random() - 0.5) * G.shake; shy = (Math.random() - 0.5) * G.shake; G.shake *= 0.86; }
+  const ox = vw / 2 - c.sx + shx, oy = vh / 2 - c.sy + 30 + (cam.z || 0) * FLOOR_PX + shy;
   G.view = { ox, oy };
   G.lights = [];
-  const day = dayInfo();
+  const day = dayInfo(), sh = sunShadow(day);
+  updateAtmosphere(cam.x, cam.y, dt);
 
-  const corners = [unIso(-ox, -oy - 80), unIso(lw - ox, -oy - 80), unIso(-ox, lh - oy + 170), unIso(lw - ox, lh - oy + 170)];
+  ctx.setTransform(k, 0, 0, k, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  const corners = [unIso(-ox, -oy - 140), unIso(vw - ox, -oy - 140), unIso(-ox, vh - oy + 260), unIso(vw - ox, vh - oy + 260)];
   const minX = Math.max(0, Math.floor(Math.min(...corners.map(q => q.x))) - 2), maxX = Math.min(MAP_W - 1, Math.ceil(Math.max(...corners.map(q => q.x))) + 2);
   const minY = Math.max(0, Math.floor(Math.min(...corners.map(q => q.y))) - 2), maxY = Math.min(MAP_H - 1, Math.ceil(Math.max(...corners.map(q => q.y))) + 2);
 
-  // 1) água animada + chunks do chão
-  drawWater(ctx, ox, oy, lw, lh, now);
-  drawRiverFlow(ctx, ox, oy, minX, maxX, minY, maxY, now);
-  let budget = 2;
-  const cx0 = Math.floor(-ox / CHUNK), cx1 = Math.floor((lw - ox) / CHUNK), cy0 = Math.floor(-oy / CHUNK), cy1 = Math.floor((lh - oy) / CHUNK);
+  // 1) água + detalhes
+  drawWater(ctx, { x0: 0, y0: 0, x1: vw, y1: vh }, now, day);
+  ctx.save(); ctx.translate(ox, oy); drawWaterDetail(ctx, minX, maxX, minY, maxY, now, day); ctx.restore();
+  // 2) chão pintado
+  let budget = G.started ? 2 : 6;
+  const cx0 = Math.floor(-ox / CHUNK), cx1 = Math.floor((vw - ox) / CHUNK), cy0 = Math.floor(-oy / CHUNK), cy1 = Math.floor((vh - oy) / CHUNK);
   for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
-    const k = chunkKey(cx, cy);
-    let ch = chunks.get(k);
-    if (!ch) { if (budget-- <= 0 && G.started) continue; ch = buildChunk(cx, cy); chunks.set(k, ch); }
-    ctx.drawImage(ch, cx * CHUNK + ox, cy * CHUNK + oy);
+    const key = chunkKey(cx, cy);
+    let ch = chunks.get(key);
+    if (!ch) { if (budget-- <= 0) continue; ch = buildChunk(cx, cy); chunks.set(key, ch); }
+    ctx.drawImage(ch, cx * CHUNK + ox - 0.3, cy * CHUNK + oy - 0.3, CHUNK + 0.6, CHUNK + 0.6);
   }
-  if (budget > 0) { // pré-carrega chunks vizinhos aos poucos
-    outer: for (let cy = cy0 - 1; cy <= cy1 + 1; cy++) for (let cx = cx0 - 1; cx <= cx1 + 1; cx++) { const k = chunkKey(cx, cy); if (!chunks.has(k)) { chunks.set(k, buildChunk(cx, cy)); break outer; } }
-  }
+  if (budget > 0) { outer: for (let cy = cy0 - 1; cy <= cy1 + 1; cy++) for (let cx = cx0 - 1; cx <= cx1 + 1; cx++) { const key = chunkKey(cx, cy); if (!chunks.has(key)) { chunks.set(key, buildChunk(cx, cy)); break outer; } } }
 
-  // 2) marcadores no chão
+  // 3) marcadores
   const me = G.me;
   const hideUpper = me && me.z < 0.5 && covered(me.rx, me.ry);
   const myZ = me ? (me.z || 0) * FLOOR_PX : 0;
-  if (G.hover && inBounds(G.hover.x, G.hover.y)) { const p = iso(G.hover.x, G.hover.y); diamondOutline(ctx, p.sx + ox, p.sy + oy - myZ, 'rgba(255,240,200,0.45)'); }
+  if (G.hover && inBounds(G.hover.x, G.hover.y)) { const p = iso(G.hover.x, G.hover.y); diamondOutline(ctx, p.sx + ox, p.sy + oy - myZ, 'rgba(255,240,200,0.35)'); }
   const tgt = G.target && G.monsters[G.target];
   if (tgt) { const p = iso(tgt.rx, tgt.ry); targetRing(ctx, p.sx + ox, p.sy + oy, now); }
-  if (G.pathGoal) { const p = iso(G.pathGoal.x, G.pathGoal.y); diamondOutline(ctx, p.sx + ox, p.sy + oy - myZ, `rgba(240,200,80,${0.5 + Math.sin(now / 200) * 0.3})`); }
+  if (G.pathGoal) { const p = iso(G.pathGoal.x, G.pathGoal.y); diamondOutline(ctx, p.sx + ox, p.sy + oy - myZ, `rgba(240,200,80,${0.45 + Math.sin(now / 200) * 0.3})`); }
   for (const id in G.players) { const e = G.players[id]; if (e.cast && e.cast.end > now && e.visible) { const p = iso(e.rx, e.ry); drawMagicCircle(ctx, p.sx + ox, p.sy + oy - (e.z || 0) * FLOOR_PX, now, e.cast.el, (now - e.cast.start) / (e.cast.end - e.cast.start)); } }
 
-  // 3) objetos + personagens: andar 0 e depois andar 1
+  // 4) coleta dos itens
   const items = [], upper = [], visTrees = [], visFlowers = [], visGrass = [];
   for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
     const i = y * MAP_W + x, o = WORLD.obj[i], g = WORLD.ground[i];
     const wx = (x - y) * HTW, wy = (x + y) * HTH, sx = wx + ox, sy = wy + oy;
-    if (sx < -120 || sx > lw + 120 || sy < -40 || sy > lh + 180) continue;
+    if (sx < -140 || sx > vw + 140 || sy < -60 || sy > vh + 300) continue;
     if (g === T.CLIFF) items.push({ d: x + y, k: 0, cliff: true, x, y, sx, sy, o });
-    else if (o !== O.NONE && !FLAT.has(o) && o !== O.PART) {
-      items.push({ d: x + y, k: 0, x, y, o, sx, sy });
-      if (o === O.TREE || o === O.PINE) visTrees.push({ wx, wy });
-    }
+    else if (o !== O.NONE && !FLAT.has(o) && o !== O.PART) { items.push({ d: x + y, k: 0, x, y, o, sx, sy }); if (o === O.TREE || o === O.PINE) visTrees.push({ wx, wy }); }
     if (o === O.FLOWER || o === O.FLOWERBED) visFlowers.push({ wx, wy });
     if ((g === T.GRASS || g === T.FOREST || g === T.SWAMP) && hash2(x, y, 5) < 0.25) visGrass.push({ wx, wy });
     if (WORLD.fl1[i] === 2 && !hideUpper) upper.push({ d: x + y, k: 5, x, y, sx, sy });
@@ -447,7 +605,7 @@ function renderWorld(now, cam, W, H) {
   const addEnt = (e, kind) => {
     if (!e.visible) return;
     const p = iso(e.rx, e.ry), sx = p.sx + ox, sy = p.sy + oy - (e.z || 0) * FLOOR_PX;
-    if (sx < -80 || sx > lw + 80 || sy < -20 || sy > lh + 140) return;
+    if (sx < -100 || sx > vw + 100 || sy < -40 || sy > vh + 200) return;
     const it = { d: e.rx + e.ry, k: kind, e, sx, sy, tx: e.rx, ty: e.ry };
     if ((e.z || 0) >= 0.5) { if (!hideUpper) upper.push(it); } else items.push(it);
   };
@@ -468,44 +626,56 @@ function renderWorld(now, cam, W, H) {
   items.sort((a, b) => a.d - b.d || a.k - b.k);
   upper.sort((a, b) => a.d - b.d || a.k - b.k);
 
+  // 5) sombras projetadas (todas numa camada, depois aplicadas de uma vez)
+  if (shadowC.width !== Math.round(W * dpr) || shadowC.height !== Math.round(H * dpr)) { shadowC.width = Math.round(W * dpr); shadowC.height = Math.round(H * dpr); }
+  shadowX.setTransform(1, 0, 0, 1, 0, 0); shadowX.clearRect(0, 0, shadowC.width, shadowC.height);
+  const shAlpha = sh.a * (1 - ATM.rain * 0.6) * (1 - ATM.fog * 0.6);
+  if (shAlpha > 0.02) {
+    for (const it of items) {
+      if (it.k === 0 && !it.cliff && CASTS.has(it.o)) { const s = objSprite(it.o, it.x, it.y); if (s) castShadow(s, it.sx, it.sy, sh, k); }
+      else if (it.k === 0 && it.o === O.TOWER) { const p = iso(it.x - 0.5, it.y - 0.5); castShadow(towerSprite(Math.floor(hash2(it.x, it.y, 2) * 3)), p.sx + ox, p.sy + oy, sh, k); }
+      else if (it.k === 4) castShadow(buildingSprite(it.b, day.night), it.sx, it.sy, sh, k);
+      else if (it.k === 1 && !it.e.dieAt) castShadow(monSprite(it.e.type, 0, -1), it.sx, it.sy, sh, k);
+      else if ((it.k === 2 || it.k === 3) && !it.e.downed) castShadow(it.e.isNpc ? npcSprite(it.e.kind, { view: 'S', walk: -1 }) : heroSprite(it.e.cls, it.e.skin, it.e.color, { view: 'S', walk: -1 }), it.sx, it.sy, sh, k);
+    }
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = shAlpha; ctx.drawImage(shadowC, 0, 0); ctx.restore();
+  }
+
+  // 6) desenho em ordem de profundidade
   const labels = [];
-  // objetos na frente do herói ficam semitransparentes (para ele não sumir atrás de árvores/muros)
   let meX = -999, meY = -999, meD = 1e9;
-  if (me && (me.z || 0) < 0.5) { const p = iso(me.rx, me.ry); meX = p.sx + ox; meY = p.sy + oy - 30; meD = me.rx + me.ry; }
-  const fadeBlit = (s, x, y, d) => {
-    const l = Math.round(x) - s.ax, t = Math.round(y) - s.ay;
-    const hide = d > meD && meX > l + 4 && meX < l + s.w - 4 && meY > t && meY < t + s.h - 8 && y > meY + 16;
-    if (hide) ctx.globalAlpha = 0.45;
-    blit(ctx, s, x, y);
-    if (hide) ctx.globalAlpha = 1;
+  if (me && (me.z || 0) < 0.5) { const p = iso(me.rx, me.ry); meX = p.sx + ox; meY = p.sy + oy - 34; meD = me.rx + me.ry; }
+  const fadeA = (s, x, y, d) => {
+    const l = x - s.ax, t = y - s.ay;
+    return d > meD && meX > l + 6 && meX < l + s.w - 6 && meY > t && meY < t + s.h - 10 && y > meY + 18 ? 0.42 : null;
   };
   const drawItem = it => {
     if (it.k === 0) {
       if (it.cliff) {
-        const i = it.y * MAP_W + it.x, h = WORLD.height[i] || 1;
-        fadeBlit(cliffSprite(h, Math.floor(hash2(it.x, it.y, 3) * 4), h >= 4 ? 1 : 0), it.sx, it.sy, it.d);
-        if (it.o === O.WATERFALL) {
-          blit(ctx, waterfallSprite(h, Math.floor(now / 90) % 4), it.sx, it.sy);
-          if (Math.random() < 0.45) spawnPart('mist', it.sx - ox + (Math.random() - 0.5) * 48, it.sy - oy + 16);
-        }
+        const i = it.y * MAP_W + it.x, h = WORLD.height[i] || 1, s = cliffSprite(h, Math.floor(hash2(it.x, it.y, 3) * 4), h >= 4 ? 1 : 0);
+        pblit(ctx, s, it.sx, it.sy, fadeA(s, it.sx, it.sy, it.d));
+        if (it.o === O.WATERFALL) { drawWaterfallLive(ctx, it.sx, it.sy, CLIFF_H[h], now); if (Math.random() < 0.5) spawnPart('mist', it.sx - ox + (Math.random() - 0.5) * 50, it.sy - oy + 18); }
         return;
       }
-      if (it.o === O.TOWER) { const p = iso(it.x - 0.5, it.y - 0.5); fadeBlit(towerSprite(Math.floor(hash2(it.x, it.y, 2) * 3)), p.sx + ox, p.sy + oy, it.d); return; }
-      const s = objSprite(it.o, it.x, it.y, now);
-      if (s) fadeBlit(s, it.sx, it.sy, it.d);
-      objLight(it.o, it.sx, it.sy, it.x, it.y);
+      if (it.o === O.TOWER) { const p = iso(it.x - 0.5, it.y - 0.5), s = towerSprite(Math.floor(hash2(it.x, it.y, 2) * 3)); pblit(ctx, s, p.sx + ox, p.sy + oy, fadeA(s, p.sx + ox, p.sy + oy, it.d)); return; }
+      const s = objSprite(it.o, it.x, it.y);
+      if (s) { const sw = SWAY[it.o] ? wind(it.x, it.y, now) * SWAY[it.o] * (0.7 + ATM.wind * 0.6) : 0; drawSway(ctx, s, it.sx, it.sy, sw, fadeA(s, it.sx, it.sy, it.d)); }
+      liveParts(ctx, it.o, it.sx, it.sy, it.x, it.y, now);
+      if (it.o === O.MUSHROOM) { const z = zoneAt(it.x, it.y); if (z === Z.SWAMP || (z === Z.FOREST && hash2(it.x, it.y, 17) < 0.3)) G.lights.push({ x: it.sx, y: it.sy - 8, r: 16, c: '90,200,240', a: 0.6 }); }
       return;
     }
     if (it.k === 4) {
-      fadeBlit(buildingSprite(it.b, day.night), it.sx, it.sy, it.d);
-      if (it.b.name) { const top = iso(it.b.x + it.b.w / 2 - 0.5, it.b.y + it.b.h / 2 - 0.5); labels.push({ sx: top.sx + ox, sy: top.sy + oy - (it.b.wall + it.b.roof + (it.b.kind === 'temple' ? 38 : 8)) * ART, title: it.b.name }); }
-      if (day.night) for (const [wx, wy, wz] of buildingWindows(it.b)) { const p = iso(wx, wy); G.lights.push({ x: p.sx + ox, y: p.sy + oy - (wz - 4) * ART, r: 26, c: it.b.kind === 'temple' ? '190,210,255' : '255,190,100', a: 0.8 }); }
-      if ((it.b.kind === 'tavern' || it.b.kind === 'house' || it.b.kind === 'smith') && Math.random() < (it.b.kind !== 'house' ? 0.12 : 0.04)) { const p = iso(it.b.x - 0.5 + it.b.w * 0.3, it.b.y - 0.5 + it.b.h * 0.35); spawnPart('smoke', p.sx, p.sy - (it.b.wall + it.b.roof * 0.75 + 12) * ART); }
-      if (it.b.kind === 'smith') { const p = iso(it.b.x - 0.5 + it.b.w * 0.5, it.b.y - 0.5 + it.b.h); G.lights.push({ x: p.sx + ox, y: p.sy + oy - 16, r: 60, c: '255,130,50', a: 1, flick: 1 }); if (Math.random() < 0.1) spawnPart('ember', p.sx, p.sy - 20); }
+      const s = buildingSprite(it.b, day.night);
+      pblit(ctx, s, it.sx, it.sy, fadeA(s, it.sx, it.sy, it.d));
+      if (it.b.name) { const top = iso(it.b.x + it.b.w / 2 - 0.5, it.b.y + it.b.h / 2 - 0.5); labels.push({ sx: top.sx + ox, sy: top.sy + oy - (it.b.wall + it.b.roof + (it.b.kind === 'temple' ? 38 : 8)) * 2, title: it.b.name }); }
+      if (day.night) for (const [wx, wy, wz] of buildingWindows(it.b)) { const p = iso(wx, wy); G.lights.push({ x: p.sx + ox, y: p.sy + oy - wz, r: 28, c: it.b.kind === 'temple' ? '190,210,255' : '255,190,100', a: 0.85 }); }
+      if ((it.b.kind === 'tavern' || it.b.kind === 'house' || it.b.kind === 'smith') && Math.random() < (it.b.kind !== 'house' ? 0.14 : 0.05)) { const p = iso(it.b.x - 0.5 + it.b.w * 0.3, it.b.y - 0.5 + it.b.h * 0.35); spawnPart('smoke', p.sx, p.sy - (it.b.wall * 2 + it.b.roof * 1.5 + 28)); }
+      if (it.b.kind === 'smith') { const p = iso(it.b.x - 0.5 + it.b.w * 0.5, it.b.y - 0.5 + it.b.h); G.lights.push({ x: p.sx + ox, y: p.sy + oy - 16, r: 62, c: '255,130,50', a: 1, flick: 1 }); if (Math.random() < 0.1) spawnPart('ember', p.sx, p.sy - 20); }
       return;
     }
-    if (it.k === 5) { blit(ctx, slabSprite(Math.floor(hash2(it.x, it.y, 4) * 3)), it.sx, it.sy - FLOOR_PX); return; }
+    if (it.k === 5) { pblit(ctx, slabSprite(Math.floor(hash2(it.x, it.y, 4) * 3)), it.sx, it.sy - FLOOR_PX); return; }
     const e = it.e;
+    ctx.imageSmoothingEnabled = false;
     if (it.k === 1) {
       drawMonsterEntity(ctx, e, it.sx, it.sy, now);
       if (!e.dieAt) labels.push({ sx: it.sx, sy: it.sy - monSprite(e.type, 0, -1).ay - 4, name: MON[e.type].name, color: e.id === G.target ? '#f0a8a0' : '#ece4d4', hp: e.hp / e.maxHp, e });
@@ -513,13 +683,14 @@ function renderWorld(now, cam, W, H) {
       drawHeroEntity(ctx, e, it.sx, it.sy, now);
       labels.push({ sx: it.sx, sy: it.sy - 78, name: e.name, color: '#b8e0a8', npc: e, e });
     } else {
-      drawAuras(ctx, e, it.sx, it.sy, now);
+      ctx.imageSmoothingEnabled = true; drawAuras(ctx, e, it.sx, it.sy, now); ctx.imageSmoothingEnabled = false;
       drawHeroEntity(ctx, e, it.sx, it.sy, now);
       heroExtras(e, it.sx, it.sy);
       if (e.carrying && G.players[e.carrying]) drawCarried(ctx, G.players[e.carrying], it.sx, it.sy);
       G.lights.push({ x: it.sx, y: it.sy - 30, r: 34, c: '255,240,220', a: 0.4 });
       labels.push({ sx: it.sx, sy: it.sy - (e.downed && !e.carriedBy ? 24 : 80), name: e.name, color: e.id === G.myId ? '#f4dc8a' : '#b8d0f0', hp: e.hp / e.maxHp, mp: e.id === G.myId ? e.mp / e.maxMp : null, e, player: true });
     }
+    ctx.imageSmoothingEnabled = true;
   };
   for (const it of items) drawItem(it);
   for (const it of upper) drawItem(it);
@@ -528,75 +699,68 @@ function renderWorld(now, cam, W, H) {
   ambient(visTrees, visFlowers, visGrass, day.night);
   drawParticles(ctx, ox, oy, now, dt);
 
-  // sombras de nuvens de dia
-  if (day.dark < 0.4) {
-    ctx.globalAlpha = 0.08 * (1 - day.dark / 0.4);
-    ctx.fillStyle = '#0b1a2a';
-    for (let k = 0; k < 4; k++) {
-      const x = ((k * 822 + now * 0.012) % 2400) - 1200 + c.sx + ox, y = ((k * 466 + now * 0.005) % 1400) - 700 + c.sy + oy;
-      ctx.beginPath(); ctx.ellipse(x, y, 160, 60, 0, 0, 7); ctx.ellipse(x + 90, y + 20, 110, 44, 0, 0, 7); ctx.ellipse(x - 80, y + 16, 90, 40, 0, 0, 7); ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  // 4) iluminação (na resolução baixa — barato)
+  // 7) iluminação noturna (camada em resolução reduzida = luz suave)
   if (day.dark > 0.01) {
+    const lw = Math.ceil(vw / 2), lh = Math.ceil(vh / 2);
+    if (lightC.width !== lw || lightC.height !== lh) { lightC.width = lw; lightC.height = lh; }
+    lightX.setTransform(0.5, 0, 0, 0.5, 0, 0);
     lightX.globalCompositeOperation = 'source-over';
-    lightX.clearRect(0, 0, lw, lh);
-    lightX.fillStyle = `rgba(10,12,34,${day.dark})`; lightX.fillRect(0, 0, lw, lh);
+    lightX.clearRect(0, 0, vw, vh);
+    lightX.fillStyle = `rgba(8,12,34,${day.dark})`; lightX.fillRect(0, 0, vw, vh);
     lightX.globalCompositeOperation = 'destination-out';
     for (const L of G.lights) {
-      const r = L.r * ART * (L.flick ? 0.93 + Math.sin(now / 70 + L.x) * 0.05 : 1);
-      if (L.x < -r || L.y < -r || L.x > lw + r || L.y > lh + r) continue;
+      const r = L.r * 2 * (L.flick ? 0.93 + Math.sin(now / 70 + L.x) * 0.05 : 1);
+      if (L.x < -r || L.y < -r || L.x > vw + r || L.y > vh + r) continue;
       const g = lightX.createRadialGradient(L.x, L.y, 0, L.x, L.y, r);
       g.addColorStop(0, `rgba(0,0,0,${L.a})`); g.addColorStop(1, 'rgba(0,0,0,0)');
       lightX.fillStyle = g; lightX.fillRect(L.x - r, L.y - r, r * 2, r * 2);
     }
-    ctx.drawImage(lightC, 0, 0);
+    ctx.drawImage(lightC, 0, 0, vw, vh);
     ctx.globalCompositeOperation = 'lighter';
     for (const L of G.lights) {
-      const r = L.r * ART * 0.7;
-      if (L.x < -r || L.y < -r || L.x > lw + r || L.y > lh + r) continue;
+      const r = L.r * 2 * 0.7;
+      if (L.x < -r || L.y < -r || L.x > vw + r || L.y > vh + r) continue;
       const g = ctx.createRadialGradient(L.x, L.y, 0, L.x, L.y, r);
-      g.addColorStop(0, `rgba(${L.c},${0.2 * L.a * day.dark * 1.4})`); g.addColorStop(1, `rgba(${L.c},0)`);
+      g.addColorStop(0, `rgba(${L.c},${0.22 * L.a * day.dark * 1.4})`); g.addColorStop(1, `rgba(${L.c},0)`);
       ctx.fillStyle = g; ctx.fillRect(L.x - r, L.y - r, r * 2, r * 2);
     }
     ctx.globalCompositeOperation = 'source-over';
   }
-  if (day.dusk > 0.01) { ctx.fillStyle = `rgba(255,120,40,${day.dusk * 0.1})`; ctx.fillRect(0, 0, lw, lh); }
-  // correção de cor: sombras frias, luzes quentes, leve vinheta (estilo cinema)
+
+  // 8) atmosfera e correção de cor (em pixels de tela)
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawAtmosphere(ctx, W, H, now, day, cam);
+  if (day.dusk > 0.01) { ctx.fillStyle = `rgba(255,120,40,${day.dusk * 0.1})`; ctx.fillRect(0, 0, W, H); }
   ctx.globalCompositeOperation = 'soft-light';
-  ctx.fillStyle = day.night ? 'rgba(60,80,140,0.35)' : 'rgba(150,120,80,0.28)'; ctx.fillRect(0, 0, lw, lh);
+  ctx.fillStyle = day.night ? 'rgba(60,80,150,0.35)' : `rgba(${ATM.tint.map(Math.round).join(',')},${0.25 + ATM.ta})`; ctx.fillRect(0, 0, W, H);
   ctx.globalCompositeOperation = 'source-over';
-  if (!VIGNETTE || VIGNETTE.width !== lw || VIGNETTE.height !== lh) {
-    VIGNETTE = document.createElement('canvas'); VIGNETTE.width = lw; VIGNETTE.height = lh;
-    const v = VIGNETTE.getContext('2d'), g = v.createRadialGradient(lw / 2, lh / 2, Math.min(lw, lh) * 0.35, lw / 2, lh / 2, Math.max(lw, lh) * 0.72);
-    g.addColorStop(0, 'rgba(10,8,6,0)'); g.addColorStop(1, 'rgba(10,8,6,0.5)'); v.fillStyle = g; v.fillRect(0, 0, lw, lh);
+  if (!VIGNETTE || VIGNETTE.width !== W || VIGNETTE.height !== H) {
+    VIGNETTE = document.createElement('canvas'); VIGNETTE.width = W; VIGNETTE.height = H;
+    const v = VIGNETTE.getContext('2d'), g = v.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
+    g.addColorStop(0, 'rgba(8,6,4,0)'); g.addColorStop(1, 'rgba(8,6,4,0.55)'); v.fillStyle = g; v.fillRect(0, 0, W, H);
   }
   ctx.drawImage(VIGNETTE, 0, 0);
   return labels;
 }
-
 let VIGNETTE = null;
 function diamondOutline(ctx, sx, sy, color) {
-  ctx.fillStyle = color;
-  sx = Math.round(sx); sy = Math.round(sy);
-  for (let k = 0; k <= HTW; k++) { const y = k >> 1; ctx.fillRect(sx - HTW + k, sy - y, 1, 1); ctx.fillRect(sx - HTW + k, sy + y, 1, 1); ctx.fillRect(sx + HTW - k, sy - y, 1, 1); ctx.fillRect(sx + HTW - k, sy + y, 1, 1); }
+  ctx.strokeStyle = color; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(sx, sy - HTH); ctx.lineTo(sx + HTW, sy); ctx.lineTo(sx, sy + HTH); ctx.lineTo(sx - HTW, sy); ctx.closePath(); ctx.stroke();
 }
 function targetRing(ctx, sx, sy, now) {
-  const r = 18 + Math.round(Math.sin(now / 150) * 2);
-  ctx.fillStyle = '#d84030';
-  for (let a = 0; a < Math.PI * 2; a += 0.06) { if (Math.floor(a / (Math.PI / 4) + now / 300) % 2) continue; ctx.fillRect(Math.round(sx + Math.cos(a) * r), Math.round(sy + Math.sin(a) * r / 2), 2, 1); }
+  const r = 18 + Math.sin(now / 150) * 1.5;
+  ctx.strokeStyle = 'rgba(220,60,40,0.9)'; ctx.lineWidth = 1.6;
+  for (let q = 0; q < 4; q++) { const a = q * Math.PI / 2 + now / 600; ctx.beginPath(); ctx.ellipse(sx, sy, r, r / 2, 0, a, a + 1.0); ctx.stroke(); }
+  softDab(ctx, sx, sy, r * 0.9, '#d83a28', 0.12);
 }
 function ambient(visTrees, visFlowers, visGrass, night) {
   if (G.parts.length > 280) return;
-  if (visTrees.length && Math.random() < 0.05) { const t = pick(visTrees); spawnPart('leaf', t.wx + (Math.random() - 0.5) * 32, t.wy - 52); }
+  if (visTrees.length && Math.random() < 0.06 * (0.6 + ATM.wind)) { const t = pick(visTrees); spawnPart('leaf', t.wx + (Math.random() - 0.5) * 32, t.wy - 60); }
   let nb = 0, nf = 0;
   for (const p of G.parts) { if (p.kind === 'butterfly') nb++; else if (p.kind === 'firefly') nf++; }
-  if (!night && visFlowers.length && nb < 5 && Math.random() < 0.03) { const t = pick(visFlowers); spawnPart('butterfly', t.wx, t.wy); }
-  if (night && visGrass.length && nf < 26 && Math.random() < 0.25) { const t = pick(visGrass); spawnPart('firefly', t.wx + (Math.random() - 0.5) * 32, t.wy); }
+  if (!night && ATM.rain < 0.3 && visFlowers.length && nb < 5 && Math.random() < 0.03) { const t = pick(visFlowers); spawnPart('butterfly', t.wx, t.wy); }
+  if ((night || ATM.rays > 0.6) && visGrass.length && nf < (night ? 30 : 10) && Math.random() < 0.25) { const t = pick(visGrass); spawnPart('firefly', t.wx + (Math.random() - 0.5) * 32, t.wy); }
 }
-
 // ---------- textos na resolução da tela (nítidos) ----------
 function pxText(ctx, text, x, y, color, size, font = '"Alegreya Sans SC", "Alegreya Sans", serif', weight = '700') {
   ctx.font = `${weight} ${size}px ${font}`;

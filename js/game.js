@@ -318,11 +318,11 @@ const canvas = $('game'), ctx = canvas.getContext('2d');
 const mini = $('minimap'), mctx = mini.getContext('2d');
 let W = 0, H = 0, DPR = 1;
 function resize() {
-  DPR = Math.max(1, Math.round(window.devicePixelRatio || 1));
+  DPR = Math.min(2, window.devicePixelRatio || 1);
   W = window.innerWidth; H = window.innerHeight;
   canvas.width = W * DPR; canvas.height = H * DPR;
   canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
-  if (!G.zoomUser) SCALE = clamp(Math.floor(H / 400), 2, 5);
+  if (!G.zoomUser) SCALE = clamp(H / 425, 1.4, 4);
 }
 window.addEventListener('resize', resize);
 resize();
@@ -521,7 +521,7 @@ canvas.addEventListener('mousedown', e => {
 });
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
-  SCALE = clamp(SCALE + (e.deltaY < 0 ? 1 : -1), 1, 6);
+  SCALE = clamp(SCALE * (e.deltaY < 0 ? 1.1 : 0.9), 1.1, 4.5);
   G.zoomUser = true;
 }, { passive: false });
 
@@ -578,10 +578,8 @@ function frame() {
     lobbyCam.x = CENTER + Math.cos(t) * 7; lobbyCam.y = CENTER + Math.sin(t) * 7;
     for (const id in G.npcs) updateIdle(G.npcs[id], now);
   }
-  const labels = renderWorld(now, cam, W, H);
+  const labels = renderWorld(ctx, now, cam, W, H, DPR);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(low, 0, 0, LW * SCALE, LH * SCALE);
   if (G.started) {
     drawLabels(ctx, labels, now);
     drawNumbers(ctx, now);

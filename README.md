@@ -1,6 +1,6 @@
 # World of Sxan
 
-RPG multiplayer isométrico de fantasia medieval em pixel art realista, direto no navegador.
+RPG multiplayer isométrico de fantasia medieval com cenário pintado à mão, direto no navegador.
 
 **Jogar:** https://djsxan.github.io/eldmar-online/
 
@@ -56,7 +56,8 @@ Cada vocação tem 3 skins (Comum, Rara, Lendária) e cada ataque tem sua própr
 | `js/world.js` | Mapa, cidadela, rio, rampas |
 | `js/net.js` | Rede |
 | `js/server.js` | Regras do jogo (roda no anfitrião) |
-| `js/pixel.js` | Pincel de pixel art e cache |
+| `js/pixel.js` | Pincel de pixel art (personagens) |
+| `js/paint.js` | Pincel de pintura digital (cenário) |
 | `js/sprites.js` | Esqueleto dos heróis, animações, monstros |
 | `js/props.js` | Árvores, castelo, construções, cachoeira |
 | `js/terrain.js` | Chão e água |
