@@ -247,7 +247,7 @@ function buildChunk(cx, cy) {
     } else if (gt === T.DEAD) {
       for (let k = 0; k < 4; k++) { const ox = (R() - 0.5) * 50, oy = (R() - 0.5) * 22; curve(g2, p.sx + ox, p.sy + oy, p.sx + ox - 1, p.sy + oy - 3, p.sx + ox + (R() - 0.5) * 3, p.sy + oy - 6, 'rgba(176,160,100,0.7)', 0.7); }
     } else if (gt === T.BRIDGE) {
-      const alongX = y === CENTER || y === CENTER + 1;
+      const alongX = WORLD.rdir[i] === 1;
       for (let k = -3; k <= 3; k++) {
         const t = k / 7, a = alongX ? [32 * t, 16 * t] : [-32 * t, 16 * t], q = alongX ? [-32 * 0.48, 16 * 0.48] : [32 * 0.48, 16 * 0.48];
         g2.strokeStyle = 'rgba(30,18,8,0.55)'; g2.lineWidth = 0.9; g2.beginPath(); g2.moveTo(p.sx + a[0] - q[0], p.sy + a[1] - q[1]); g2.lineTo(p.sx + a[0] + q[0], p.sy + a[1] + q[1]); g2.stroke();

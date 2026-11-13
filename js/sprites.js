@@ -138,7 +138,7 @@ function buildPose(cls, P) {
     // ciclo de passada: a perna de apoio fica quase reta; o joelho dobra quando a perna avança
     const ph = P.walk / 12 * Math.PI * 2;
     const heavy = cls === 'knight' ? 1 : cls === 'mage' ? 0.6 : 0.4;
-    const amp = 0.42 + (1 - heavy) * 0.06;
+    const run = P.run ? 1 : 0, amp = (0.42 + (1 - heavy) * 0.06) * (1 + run * 0.45);
     const leg = p => {
       const hip = Math.sin(p) * amp;
       const swing = Math.max(0, Math.sin(p + 1.2));            // fase em que a perna vai para a frente
@@ -146,7 +146,8 @@ function buildPose(cls, P) {
       return [hip, knee];
     };
     Q.lA = leg(ph); Q.lB = leg(ph + Math.PI);
-    const armSw = (0.32 - heavy * 0.1);
+    const armSw = (0.32 - heavy * 0.1) * (1 + run * 0.8);
+    if (run) { Q.tl += 0.16; Q.aA[2] += cls === 'knight' ? 0 : 0.5; Q.aB[2] += 0.6; }
     Q.aB[0] += Math.sin(ph) * armSw; Q.aB[2] += 0.15 + Math.max(0, Math.sin(ph)) * 0.25;
     if (cls !== 'knight') { Q.aA[0] += -Math.sin(ph) * armSw * 0.7; Q.aA[2] += 0.1 + Math.max(0, -Math.sin(ph)) * 0.2; }
     Q.tl += 0.06 + heavy * 0.05;

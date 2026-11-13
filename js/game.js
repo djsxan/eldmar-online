@@ -146,7 +146,7 @@ function applySnapshot(m, now) {
       continue;
     }
     e.hp = hpPct; e.maxHp = 100; e.z = z;
-    e.srvDir = dir; e.srvWalk = !!(fl & 1);
+    e.srvDir = dir; e.srvWalk = !!(fl & 1); if (e !== G.me) e.running = !!(fl & 256);
     e.buf.push({ t: now, x, y });
     if (e.buf.length > 6) e.buf.shift();
   }
@@ -219,10 +219,18 @@ function updateLocal(now, dt) {
   }
   if (me.cast && me.cast.end > now) v = null;
   if (G.pendingNpc && !G.path) { const n = G.npcs[G.pendingNpc]; if (dist(me.x, me.y, n.x, n.y) <= 3) openDialog(n.id); G.pendingNpc = null; }
+  // correr com SHIFT gasta estamina; ao esgotar, precisa recuperar um pouco antes de correr de novo
+  if (G.stam == null) { G.stam = STAM_MAX; G.stamT = 0; G.tired = false; }
+  const running = !!v && G.keys.has('shift') && !G.tired && !me.downed && !me.carrying && G.stam > 0;
+  if (running) { G.stam = Math.max(0, G.stam - STAM_DRAIN * dt); G.stamT = now; if (G.stam <= 0) G.tired = true; }
+  else if (now - G.stamT > STAM_DELAY) G.stam = Math.min(STAM_MAX, G.stam + STAM_REGEN * dt * (v ? 0.6 : 1));
+  if (G.tired && G.stam >= STAM_MAX * 0.3) G.tired = false;
+  me.running = running;
   let moved = 0;
   if (v) {
     let sp = PLAYER_SPEED;
     if (me.buffs && me.buffs.agile > now) sp *= 1.6;
+    if (running) sp *= RUN_MUL;
     if (me.carrying) sp *= 0.75;
     if (me.downed) sp *= 0.22;
     if (WORLD.ground[tileAt(me.x, me.y)] === T.SHALLOW) sp *= 0.65;
@@ -246,7 +254,7 @@ function updateLocal(now, dt) {
   me.rx = me.x; me.ry = me.y;
   if (now - me.sendT > 100 && (moved || me.walking !== me.sentWalk)) {
     me.sendT = now; me.sentWalk = me.walking;
-    Net.send({ t: 'mv', x: Math.round(me.x * 100) / 100, y: Math.round(me.y * 100) / 100, z: Math.round(me.z * 100) / 100, d: me.dir, w: me.walking ? 1 : 0 }, true);
+    Net.send({ t: 'mv', x: Math.round(me.x * 100) / 100, y: Math.round(me.y * 100) / 100, z: Math.round(me.z * 100) / 100, d: me.dir, w: me.walking ? 1 : 0, r: running ? 1 : 0 }, true);
   }
 }
 function lineFree(ax, ay, bx, by, z) {
@@ -346,6 +354,7 @@ function updateHud() {
   $('hud-class').textContent = CLASSES[me.cls].name; $('hud-lvl').textContent = me.lvl;
   bar('hp', me.hp, me.maxHp, `${me.hp} / ${me.maxHp}`);
   bar('mp', me.mp, me.maxMp, `${me.mp} / ${me.maxMp}`);
+  bar('st', G.stam ?? STAM_MAX, STAM_MAX, 'Estamina'); $('st-fill').parentNode.classList.toggle('tired', !!G.tired);
   bar('xp', me.xp, need(me.lvl), `${me.xp} / ${need(me.lvl)} xp`);
   $('gold').textContent = me.gold;
   $('pot-hp-n').textContent = me.pots ? me.pots.hp : 0;
@@ -379,7 +388,7 @@ function updateQuests() {
 }
 function updateTargetFrame() {
   const f = $('target-frame'), t = G.target && G.monsters[G.target];
-  if (!t || !G.me) { f.classList.add('hidden'); return; }
+  if (true) { f.classList.add('hidden'); return; }   // tela limpa: sem quadro do alvo
   f.classList.remove('hidden');
   const z = ZONES[zoneAt(t.rx, t.ry)];
   $('tg-name').textContent = MON[t.type].name;
@@ -564,6 +573,7 @@ window.addEventListener('keydown', e => {
     return;
   }
   if (k.startsWith('arrow')) e.preventDefault();
+  if (k === 'shift') e.preventDefault();
   G.keys.add(k);
 });
 window.addEventListener('keyup', e => {

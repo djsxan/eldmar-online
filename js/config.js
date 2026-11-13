@@ -3,10 +3,12 @@
 //  Mexa aqui para balancear o jogo.
 // ============================================================
 const GAME_NAME = 'World of Sxan';
-const VERSION = 'v0.7.0';
-const VERSION_NAME = 'Mundo Esculpido';
+const VERSION = 'v0.8.0';
+const VERSION_NAME = 'A Grande Eldmar';
 
 const PLAYER_SPEED = 3.6;          // tiles por segundo
+const RUN_MUL = 1.65;              // correr (SHIFT) multiplica a velocidade
+const STAM_MAX = 100, STAM_DRAIN = 22, STAM_REGEN = 17, STAM_DELAY = 900; // estamina: gasta correndo, volta parado/andando
 const OUT_OF_COMBAT_MS = 5000;     // sem lutar por 5s = fora de combate (regenera)
 const DOWNED_MS = 30000;           // tempo caÃ­do antes de renascer no templo
 const REVIVE_MS = 3000;            // segurar F por 3s para reanimar

@@ -5,7 +5,7 @@
 //  (VIEW_RADIUS), em pacotes compactos 10x por segundo.
 // ============================================================
 const S = { players: {}, monsters: {}, nextMid: 1, nextSpawn: 0, lastRegen: 0, filled: false, lastTick: 0 };
-const MAX_MON = 150;
+const MAX_MON = 320;
 
 const RUMORS = [
   'Os lenhadores evitam o Bosque Sombrio depois do pôr do sol. Os lobos de lá caçam em bando.',
@@ -63,7 +63,7 @@ function monStand(x, y, m) {
 
 function spawnMonster() {
   const x = rint(2, MAP_W - 3), y = rint(2, MAP_H - 3), z = zoneAt(x, y);
-  if (z === Z.VILLAGE || !REACH[y * MAP_W + x] || !monStand(x, y, null)) return false;
+  if (!ZONES[z].mons.length || !REACH[y * MAP_W + x] || !monStand(x, y, null)) return false;
   for (const id in S.players) if (dist(x, y, S.players[id].x, S.players[id].y) < 11) return false;
   const type = pick(ZONES[z].mons), id = S.nextMid++;
   S.monsters[id] = { id, type, zone: z, x, y, homeX: x, homeY: y, hp: MON[type].hp, nextAtk: 0, stunUntil: 0, slowUntil: 0, taunt: null, aggro: null, returning: false, face: 1, path: null, pathT: 0, wander: null, waitUntil: 0 };
@@ -133,10 +133,10 @@ function handleMove(p, m) {
   if (!isFinite(x) || !isFinite(y)) return;
   const z = heightAt(x, y, p.z);
   const dt = Math.min(1, (now - p.lastMv) / 1000);
-  const maxStep = PLAYER_SPEED * 1.7 * (dt + 0.25) + 0.4;
+  const maxStep = PLAYER_SPEED * (m.r ? RUN_MUL * 1.5 : 1.7) * (dt + 0.25) + 0.4;
   const ok = dist(p.x, p.y, x, y) <= maxStep && canStandZ(x, y, z, 0.18) && Math.abs(z - (+m.z || 0)) < 0.45;
   if (!ok) { Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: p.z }); return; }
-  p.x = x; p.y = y; p.z = z; p.dir = m.d | 0; p.walking = !!m.w; p.lastMv = now;
+  p.x = x; p.y = y; p.z = z; p.dir = m.d | 0; p.walking = !!m.w; p.running = !!m.r; p.lastMv = now;
   if (p.casting && dist(p.x, p.y, p.castX, p.castY) > 0.3) { p.casting = null; near(p.x, p.y, { t: 'castend', id: p.id }); }
   if (p.carrying) { const t = S.players[p.carrying]; if (t) { t.x = p.x; t.y = p.y; t.z = p.z; } }
 }
@@ -551,7 +551,7 @@ function hostTick() {
     const pl = [], ml = [];
     for (const p of players) {
       if (dist(p.x, p.y, r.x, r.y) > VIEW_RADIUS) continue;
-      let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0);
+      let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0) | (p.running && p.walking ? 256 : 0);
       for (const b in BUFF_BITS) if (buffOn(p, b)) fl |= BUFF_BITS[b];
       pl.push([p.id, Math.round(p.x * 100), Math.round(p.y * 100), Math.round(p.z * 100), p.dir | 0, fl, Math.round(p.hp / p.maxHp * 100), p.carrying || 0]);
     }

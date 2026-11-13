@@ -245,7 +245,7 @@ function heroPoseFor(e, now) {
   const view0 = DIR_VIEW[e.dir || 0];
   const P = { view: view0 === 'W' ? 'E' : view0, walk: -1, act: null, idle: null, sit: false, carry: !!e.carrying };
   P.dir = e.dir || 0;
-  if (e.walking) P.walk = Math.floor(e.walkDist * (e.cls === 'knight' ? 8.5 : 9.5)) % 12;
+  if (e.walking) { P.walk = Math.floor(e.walkDist * (e.cls === 'knight' ? 8.5 : 9.5) / (e.running ? 1.45 : 1)) % 12; if (e.running) P.run = 1; }
   if (e.anim) {
     const ms = ACT_MS[e.anim.a] || 400, t = (now - e.anim.t0) / ms;
     if (t >= 0 && t < 1 && ACTS[e.anim.a]) P.act = { k: e.anim.a, f: Math.min(11, Math.floor(t * 12)) };
@@ -430,7 +430,7 @@ function objSprite(o, x, y) {
     case O.WALL: return wallSprite(v, false, h < 0.35);
     case O.LOWWALL: return wallSprite(v, true, false);
     case O.GATE: return gateSprite(WORLD.obj[i - 1] === O.GATE || WORLD.obj[i + 1] === O.GATE || WORLD.obj[i - 1] === O.WALL || WORLD.obj[i + 1] === O.WALL);
-    case O.STAIRS: return stairsSprite(WORLD.stair[i]);
+    case O.STAIRS: return stairsSprite(WORLD.stair[i], WORLD.stairK[i]);
   }
   return null;
 }
@@ -664,7 +664,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     for (const it of items) {
       if (it.k === 4) continue;
       const ix = it.k === 0 ? it.x : it.tx, iy = it.k === 0 ? it.y : it.ty;
-      if (ix < b.x - 5 || iy < b.y - 5 || ix > b.x + b.w + 0.6 || iy > b.y + b.h + 0.6) continue;
+      if (ix < b.x - 5 || iy < b.y - 5 || ix > b.x + b.w + 2.5 || iy > b.y + b.h + 2.5) continue;
       const behind = ix < b.x + b.w - 0.5 && iy < b.y + b.h - 0.5;
       it.d = behind ? Math.min(it.d, D - 0.5) : Math.max(it.d, D + 0.5);
     }
@@ -679,7 +679,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
   if (shAlpha > 0.02) {
     for (const it of items) {
       if (it.k === 0 && !it.cliff && CASTS.has(it.o)) { const s = objSprite(it.o, it.x, it.y); if (s) castShadow(s, it.sx, it.sy, sh, k); }
-      else if (it.k === 0 && it.o === O.TOWER) { const p = iso(it.x - 0.5, it.y - 0.5); castShadow(towerSprite(Math.floor(hash2(it.x, it.y, 2) * 3)), p.sx + ox, p.sy + oy, sh, k); }
+      else if (it.k === 0 && it.o === O.TOWER) { const p = iso(it.x - 0.5, it.y - 0.5); castShadow(towerSprite(WORLD.tvar[it.y * MAP_W + it.x]), p.sx + ox, p.sy + oy, sh, k); }
       else if (it.k === 4) castShadow(buildingSprite(it.b, day.night), it.sx, it.sy, sh, k);
       else if (it.k === 1 && !it.e.dieAt) castShadow(R3.ok ? monSprite3D(it.e.type, -1, -1, 0) : monSprite(it.e.type, 0, -1), it.sx, it.sy, sh, k);
       else if ((it.k === 2 || it.k === 3) && !it.e.downed) castShadow(R3.ok ? (it.e.isNpc ? npcSprite3D(it.e.kind, { dir: 0, walk: -1 }) : heroSprite3D(it.e.cls, it.e.skin, it.e.color, { dir: 0, walk: -1 })) : (it.e.isNpc ? npcSprite(it.e.kind, { view: 'S', walk: -1 }) : heroSprite(it.e.cls, it.e.skin, it.e.color, { view: 'S', walk: -1 })), it.sx, it.sy, sh, k);
@@ -703,7 +703,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
         if (it.o === O.WATERFALL) { drawWaterfallLive(ctx, it.sx, it.sy, CLIFF_H[h], now); if (Math.random() < 0.5) spawnPart('mist', it.sx - ox + (Math.random() - 0.5) * 50, it.sy - oy + 18); }
         return;
       }
-      if (it.o === O.TOWER) { const p = iso(it.x - 0.5, it.y - 0.5), s = towerSprite(Math.floor(hash2(it.x, it.y, 2) * 3)); pblit(ctx, s, p.sx + ox, p.sy + oy, fadeA(s, p.sx + ox, p.sy + oy, it.d)); return; }
+      if (it.o === O.TOWER) { const p = iso(it.x - 0.5, it.y - 0.5), s = towerSprite(WORLD.tvar[it.y * MAP_W + it.x]); pblit(ctx, s, p.sx + ox, p.sy + oy, fadeA(s, p.sx + ox, p.sy + oy, it.d)); return; }
       const s = objSprite(it.o, it.x, it.y);
       if (s) { const sw = SWAY[it.o] ? wind(it.x, it.y, now) * SWAY[it.o] * (0.7 + ATM.wind * 0.6) : 0; drawSway(ctx, s, it.sx, it.sy, sw, fadeA(s, it.sx, it.sy, it.d)); }
       liveParts(ctx, it.o, it.sx, it.sy, it.x, it.y, now);
@@ -724,7 +724,6 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     ctx.imageSmoothingEnabled = false;
     if (it.k === 1) {
       drawMonsterEntity(ctx, e, it.sx, it.sy, now);
-      if (!e.dieAt) labels.push({ sx: it.sx, sy: it.sy - (R3.ok ? MON_H[e.type] + 8 : monSprite(e.type, 0, -1).ay + 4), name: MON[e.type].name, color: e.id === G.target ? '#f0a8a0' : '#ece4d4', hp: e.hp / e.maxHp, e });
     } else if (it.k === 3) {
       drawHeroEntity(ctx, e, it.sx, it.sy, now);
       labels.push({ sx: it.sx, sy: it.sy - (R3.ok ? 96 : 78), name: e.name, color: '#b8e0a8', npc: e, e });
@@ -822,7 +821,7 @@ function drawLabels(ctx, labels, now) {
     if (l.title) { pxText(ctx, l.title, x, y, '#ecd9a0', 17, '"Cinzel", serif', '700'); continue; }
     let yy = y;
     const e = l.e;
-    if (l.hp != null && !(e && e.downed)) {
+    if (false) {
       const w = 46;
       ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(x - w / 2 - 2, yy - 2, w + 4, l.mp != null ? 11 : 8);
       const fr = clamp(l.hp, 0, 1);
@@ -831,16 +830,14 @@ function drawLabels(ctx, labels, now) {
       if (l.mp != null) { ctx.fillStyle = '#4a74d8'; ctx.fillRect(x - w / 2, yy + 5, Math.round(w * clamp(l.mp, 0, 1)), 3); }
       yy -= 6;
     }
-    pxText(ctx, l.name, x, yy, l.color, 14);
     if (l.npc && l.npc.id === 'captain' && G.me && Object.keys(G.me.quests || {}).length < MAX_ACTIVE_QUESTS) pxText(ctx, '!', x, yy - 18 + Math.round(Math.sin(now / 200) * 2), '#f0c840', 26, '"Cinzel", serif', '900');
-    else if (l.npc) pxText(ctx, '…', x, yy - 14, '#e8e0d0', 14);
     if (!e) continue;
     if (e.downed && l.player) {
       const left = Math.max(0, (e.downUntil || 0) - now);
       pxText(ctx, e.revive ? 'Reanimando...' : `Caído · ${Math.ceil(left / 1000)}s`, x, yy - 18, '#f08a7a', 13);
       if (e.revive) { const pr = clamp((now - e.revive.t0) / REVIVE_MS, 0, 1); ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(x - 26, yy - 12, 52, 6); ctx.fillStyle = '#7ad87a'; ctx.fillRect(x - 25, yy - 11, Math.round(50 * pr), 4); }
     }
-    if (e.cast && e.cast.end > now) {
+    if (false) {
       const pr = (now - e.cast.start) / (e.cast.end - e.cast.start), w = 54;
       ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(x - w / 2 - 1, y + 14, w + 2, 6);
       ctx.fillStyle = '#a088e8'; ctx.fillRect(x - w / 2, y + 15, Math.round(w * pr), 4);

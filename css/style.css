@@ -109,6 +109,10 @@ input[type=text]:focus { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(2
 .bar span { position: absolute; inset: 0; font-size: 11px; text-align: center; line-height: 15px; color: #fff; font-family: 'Alegreya Sans SC', sans-serif; font-weight: 700; text-shadow: 0 1px 2px #000, 0 0 3px #000; }
 .bar.hp > div { background: linear-gradient(#d24a3a, #8e1e16 60%, #5e120c); }
 .bar.mp > div { background: linear-gradient(#5a86d8, #23489a 60%, #142c66); }
+.bar.st { height: 9px; }
+.bar.st span { font-size: 8px; line-height: 9px; }
+.bar.st > div { background: linear-gradient(#e8d070, #b8902a 60%, #7a5a14); transition: width .1s; }
+.bar.st.tired > div { background: linear-gradient(#a89a7a, #6a5e44); }
 .bar.xp { height: 8px; }
 .bar.xp span { font-size: 8px; line-height: 8px; }
 .bar.xp > div { background: linear-gradient(#c8b070, #8a6a24); }

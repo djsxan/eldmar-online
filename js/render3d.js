@@ -397,7 +397,7 @@ function cache3(key, make, who) {
   return s;
 }
 function rigFor(key, L, opts) { let r = _rigs.get(key); if (!r) { r = buildHumanoid(L, opts); _rigs.set(key, r); } return r; }
-function pose3Key(P) { return (P.dir | 0) + '|' + (P.walk >= 0 ? 'w' + P.walk : '') + (P.act ? P.act.k + P.act.f : '') + (P.idle ? P.idle.k + P.idle.f : '') + (P.sit ? 's' : '') + (P.carry ? 'c' : '') + (P.down ? 'd' : ''); }
+function pose3Key(P) { return (P.dir | 0) + '|' + (P.walk >= 0 ? (P.run ? 'r' : 'w') + P.walk : '') + (P.act ? P.act.k + P.act.f : '') + (P.idle ? P.idle.k + P.idle.f : '') + (P.sit ? 's' : '') + (P.carry ? 'c' : '') + (P.down ? 'd' : ''); }
 function heroSprite3D(cls, skin, color, P) {
   const lk = cls + ':' + skin + ':' + color;
   return cache3('h3|' + lk + '|' + pose3Key(P) , () => {
