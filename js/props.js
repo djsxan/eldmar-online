@@ -5,7 +5,7 @@
 //  ao vivo no render, para ficarem fluidos.
 // ============================================================
 const FLOOR_H = 24;
-const FLOOR_PX = 96;                       // altura de um andar (muralhas)
+const FLOOR_PX = 176;                      // altura da muralha (≈ 9 m)
 const CLIFF_H = [0, 40, 68, 96, 124];       // alturas dos penhascos
 const TPAL = {                              // folhagem por clima
   0: ['#1f3a1a', '#2d5224', '#3e6a2e', '#55853a', '#79a650'],   // carvalho dos campos

@@ -9,7 +9,7 @@
 const S3 = { ok: false, budget: 4 };
 const A3 = 32 * Math.SQRT2;                 // unidades de arte por unidade 3D (na horizontal da tela)
 const HV = A3 * Math.cos(Math.PI / 6);      // unidades de arte por unidade de altura
-const SRS = 2.4;                            // pixels da foto por unidade de arte
+const SRS = 3.4;                            // pixels da foto por unidade de arte
 const h3 = art => art / HV;                 // altura em arte -> unidades 3D
 
 (function initScene3D() {
@@ -56,7 +56,7 @@ function shootScene(obj) {
   }
   x0 = Math.floor(x0 - 2); y0 = Math.floor(y0 - 2); x1 = Math.ceil(x1 + 2); y1 = Math.ceil(y1 + 2);
   const w = x1 - x0, h = y1 - y0;
-  const k = Math.min(SRS, 2000 / Math.max(w, h)), W = Math.max(2, Math.round(w * k)), H = Math.max(2, Math.round(h * k));
+  const k = Math.min(SRS * (SET.quality === 'low' ? 0.6 : SET.quality === 'med' ? 0.8 : 1), 2800 / Math.max(w, h)), W = Math.max(2, Math.round(w * k)), H = Math.max(2, Math.round(h * k));
   // câmera: olha de (+x, +y) para baixo, 30° de inclinação (igual ao mapa)
   cam.position.set(60, 60 * Math.SQRT2 * Math.tan(Math.PI / 6), 60); cam.lookAt(0, 0, 0);
   cam.left = x0 / A3; cam.right = x1 / A3; cam.top = -y0 / A3; cam.bottom = -y1 / A3; cam.updateProjectionMatrix();
@@ -86,7 +86,7 @@ function scen3(key, make) {
   try { s = shootScene(make()); } catch (e) { console.warn('cena3d', key, e); s = null; }
   SC3.set(key, s);
   if (s) S3.px = (S3.px || 0) + s.c.width * s.c.height;
-  while (S3.px > 70e6 && SC3.size > 40) { const [k0, s0] = SC3.entries().next().value; SC3.delete(k0); if (s0) S3.px -= s0.c.width * s0.c.height; }
+  while (S3.px > 130e6 && SC3.size > 40) { const [k0, s0] = SC3.entries().next().value; SC3.delete(k0); if (s0) S3.px -= s0.c.width * s0.c.height; }
   return s;
 }
 
@@ -104,14 +104,17 @@ function canvasTex(kind) {
   { const S = 256;
   x.fillStyle = '#c8c8c8'; x.fillRect(0, 0, S, S); y.fillStyle = gray(0.5); y.fillRect(0, 0, S, S);
   if (kind === 'brick' || kind === 'stoneblock') {
-    const rows = kind === 'brick' ? 8 : 5, rh = S / rows;
+    const rows = kind === 'brick' ? 14 : 8, rh = S / rows;
     x.fillStyle = '#8a857c'; x.fillRect(0, 0, S, S); y.fillStyle = gray(0.15); y.fillRect(0, 0, S, S);
     for (let r = 0; r < rows; r++) {
-      const cols = kind === 'brick' ? 4 : 3, cw = S / cols, off = r % 2 ? cw / 2 : 0;
+      const cols = kind === 'brick' ? 6 : 4, cw = S / cols, off = r % 2 ? cw / 2 : 0;
       for (let k = -1; k < cols; k++) {
         const bx = k * cw + off + 2 + R() * 2, by = r * rh + 2, bw = cw - 4 - R() * 3, bh = rh - 4;
-        const v = 0.72 + R() * 0.22;
-        x.fillStyle = gray(v); x.beginPath(); x.roundRect ? x.roundRect(bx, by, bw, bh, 4) : x.rect(bx, by, bw, bh); x.fill();
+        const v = 0.66 + R() * 0.28, gs = x.createLinearGradient(bx, by, bx + bw * 0.3, by + bh);
+        gs.addColorStop(0, gray(v + 0.1)); gs.addColorStop(0.55, gray(v)); gs.addColorStop(1, gray(v - 0.14));
+        x.fillStyle = gs; x.beginPath(); x.roundRect ? x.roundRect(bx, by, bw, bh, 3 + R() * 3) : x.rect(bx, by, bw, bh); x.fill();
+        for (let q = 0; q < 6; q++) { x.fillStyle = `rgba(${R() < 0.5 ? '0,0,0' : '255,250,240'},${0.05 + R() * 0.07})`; x.beginPath(); x.arc(bx + R() * bw, by + R() * bh, 1 + R() * 3, 0, 7); x.fill(); }
+        if (R() < 0.18) { x.fillStyle = `rgba(80,100,50,${0.12 + R() * 0.15})`; x.beginPath(); x.ellipse(bx + R() * bw, by + bh * 0.8, 4 + R() * 8, 2 + R() * 3, 0, 0, 7); x.fill(); }
         const g = y.createLinearGradient(0, by, 0, by + bh); g.addColorStop(0, gray(0.85)); g.addColorStop(0.5, gray(0.75)); g.addColorStop(1, gray(0.55));
         y.fillStyle = g; y.beginPath(); y.roundRect ? y.roundRect(bx, by, bw, bh, 5) : y.rect(bx, by, bw, bh); y.fill();
       }
@@ -134,18 +137,19 @@ function canvasTex(kind) {
     const rows = 10, rh = S / rows, cols = kind === 'slate' ? 8 : 10;
     y.fillStyle = gray(0.1); y.fillRect(0, 0, S, S); x.fillStyle = '#555'; x.fillRect(0, 0, S, S);
     for (let r = rows - 1; r >= -1; r--) for (let k = -1; k <= cols; k++) {
-      const cw = S / cols, bx = k * cw + (r % 2 ? cw / 2 : 0), by = r * rh, v = 0.6 + R() * 0.35;
+      const cw = S / cols * (0.85 + R() * 0.3), bx = k * (S / cols) + (r % 2 ? S / cols / 2 : 0) + (R() - 0.5) * 2, by = r * rh + (R() - 0.5) * 1.5, v = 0.55 + R() * 0.4;
       x.fillStyle = gray(v); x.beginPath(); x.moveTo(bx + 1, by); x.lineTo(bx + cw - 1, by); x.lineTo(bx + cw - 1, by + rh * 1.3); x.quadraticCurveTo(bx + cw / 2, by + rh * 1.55, bx + 1, by + rh * 1.3); x.closePath(); x.fill();
       x.fillStyle = 'rgba(0,0,0,0.3)'; x.fillRect(bx + 1, by + rh * 1.2, cw - 2, 2);
       const g = y.createLinearGradient(0, by, 0, by + rh * 1.4); g.addColorStop(0, gray(0.3)); g.addColorStop(1, gray(0.95));
       y.fillStyle = g; y.beginPath(); y.moveTo(bx + 1, by); y.lineTo(bx + cw - 1, by); y.lineTo(bx + cw - 1, by + rh * 1.3); y.quadraticCurveTo(bx + cw / 2, by + rh * 1.55, bx + 1, by + rh * 1.3); y.closePath(); y.fill();
     }
     noiseDots(300, 0.5, 2, 0.15, 0.1);
-    for (let i = 0; i < 30; i++) { x.fillStyle = `rgba(70,90,40,${0.15 + R() * 0.2})`; x.beginPath(); x.arc(R() * S, R() * S, 3 + R() * 8, 0, 7); x.fill(); }
+    for (let i = 0; i < 30; i++) { x.fillStyle = `rgba(70,90,40,${0.1 + R() * 0.16})`; x.beginPath(); x.arc(R() * S, R() * S, 2 + R() * 6, 0, 7); x.fill(); }
+    for (let i = 0; i < 14; i++) { const sx = R() * S; const g2 = x.createLinearGradient(0, 0, 0, S); g2.addColorStop(0, 'rgba(0,0,0,0)'); g2.addColorStop(0.5, `rgba(30,24,18,${0.06 + R() * 0.08})`); g2.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g2; x.fillRect(sx, 0, 6 + R() * 14, S); }
   } else if (kind === 'thatch') {
     x.fillStyle = '#9a9a9a'; x.fillRect(0, 0, S, S); y.fillStyle = gray(0.4); y.fillRect(0, 0, S, S);
     for (let i = 0; i < 2600; i++) { const px_ = R() * S, py = R() * S, l = 10 + R() * 22, v = 0.45 + R() * 0.55; x.strokeStyle = gray(v); x.lineWidth = 1 + R() * 1.5; x.beginPath(); x.moveTo(px_, py); x.lineTo(px_ + (R() - 0.5) * 3, py + l); x.stroke(); y.strokeStyle = gray(v); y.lineWidth = x.lineWidth; y.beginPath(); y.moveTo(px_, py); y.lineTo(px_ + (R() - 0.5) * 3, py + l); y.stroke(); }
-    for (let r = 0; r < 5; r++) { x.fillStyle = 'rgba(0,0,0,0.2)'; x.fillRect(0, r * S / 5, S, 4); y.fillStyle = gray(0.1); y.fillRect(0, r * S / 5, S, 4); }
+    for (let r = 0; r < 9; r++) { const yy = r * S / 9 + (R() - 0.5) * 4; for (let k = 0; k < 14; k++) { const xx = k * S / 14 + (R() - 0.5) * 10; x.fillStyle = 'rgba(0,0,0,' + (0.06 + R() * 0.08) + ')'; x.beginPath(); x.ellipse(xx, yy + 3, 12 + R() * 8, 3, 0, 0, Math.PI); x.fill(); y.fillStyle = gray(0.2 + R() * 0.15); y.beginPath(); y.ellipse(xx, yy + 3, 12, 3, 0, 0, Math.PI); y.fill(); } }
   } else if (kind === 'rock') {
     for (let i = 0; i < 70; i++) { const g = x.createRadialGradient(R() * S, R() * S, 0, R() * S, R() * S, 20 + R() * 50); const v = R(); g.addColorStop(0, `rgba(${v < 0.5 ? '40,38,34' : '230,225,215'},0.2)`); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, S, S); }
     noiseDots(1200, 0.5, 2.5, 0.06, 0.18);
@@ -167,7 +171,7 @@ function canvasTex(kind) {
   }
   }
   const map = new THREE.CanvasTexture(c), bump = new THREE.CanvasTexture(b);
-  for (const t of [map, bump]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; }
+  for (const t of [map, bump]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; }
   map.encoding = THREE.sRGBEncoding;
   return CTX3[kind] = { map, bump };
 }
@@ -657,7 +661,7 @@ function merlonRow(o, side, H, m) {
   const e = side === 1 ? [0.39, 0] : side === 2 ? [-0.39, 0] : side === 3 ? [0, 0.39] : [0, -0.39];
   o.add(mk(wuv(lip.translate(e[0], H + 0.07, e[1]), 1.5), m));
 }
-function mWall(v, low, ivy, od) {
+function mWall(v, low, ivy, od, ends) {
   const R = rng(1001 + v * 3 + (low ? 50 : 0) + (ivy ? 9 : 0) + (od || 0) * 101), o = grp();
   if (low) {
     const H = 0.5;
@@ -666,8 +670,9 @@ function mWall(v, low, ivy, od) {
     return o;
   }
   const H = WALL_H, capM = smat('stoneblock', '#b0a998', { bump: 1 });
-  o.add(gwall(1, H - 0.08, 1, 0, (H - 0.08) / 2, 0, 'brick', '#a29c90', H, v, 1, 1.4));
-  o.add(wbox(1, 0.08, 1, 0, H - 0.04, 0, capM, 1));
+  const alongX = od === 3 || od === 4 || !od, eL = 0, eR = ends & 2 ? 0.35 : 0, len = 1 + eL + eR, off = (eR - eL) / 2;
+  o.add(gwall(alongX ? len : 1, H - 0.08, alongX ? 1 : len, alongX ? off : 0, (H - 0.08) / 2, alongX ? 0 : off, 'brick', '#a29c90', H, v, 1, 1.4));
+  o.add(wbox(alongX ? len : 1, 0.08, alongX ? 1 : len, alongX ? off : 0, H - 0.04, alongX ? 0 : off, capM, 1));
   // base mais larga do lado de fora (sapata) e cordão de pedra no topo
   const out = od || 3, sx = out === 1 ? 1 : out === 2 ? -1 : 0, sz = out === 3 ? 1 : out === 4 ? -1 : 0;
   o.add(wbox(sx ? 0.14 : 1, 0.5, sz ? 0.14 : 1, sx * 0.53, 0.25, sz * 0.53, smat('stoneblock', '#8a857a', { bump: 1.4 }), 1.2));
@@ -696,8 +701,8 @@ function cylUV(g, su, sv) {
   for (let i = 0; i < p.count; i++) { const a = Math.atan2(p.getZ(i), p.getX(i)); uv.setXY(i, (a / (Math.PI * 2) + 0.5) * su, p.getY(i) * sv); }
   return g;
 }
-function mTower(v) {
-  const R = rng(1101 + v), o = grp(), spire = v === 3, r = spire ? 1.02 : 1.0, H = spire ? 5.4 : WALL_H;
+function mTower(v, off) {
+  const R = rng(1101 + v), o = grp(), spire = v === 3, r = 1.12, H = spire ? 9.5 : WALL_H;
   const st = smat('brick', '#a29c90', { bump: 1.4 });
   o.add(mk(cylUV(new THREE.CylinderGeometry(r, r + 0.04, H, 28, 4, true).translate(0, H / 2, 0), 6, 1), st));
   o.add(mk(cylUV(new THREE.CylinderGeometry(r + 0.1, r + 0.14, 0.35, 28).translate(0, 0.175, 0), 6, 1), smat('stoneblock', '#8e897e')));
@@ -760,8 +765,8 @@ function mCliff(h, v, snow) {
 }
 // ---------- portão (arco + duas folhas de madeira) ----------
 function mGateHouse(gt, f) {
-  const n = gt.x1 - gt.x0 + 1, main = gt.kind === 'main', gh = main ? 3.5 : WALL_H, o = grp();
-  const L = -(n - 0.5), Rr = 0.5, cx = -(n - 1) / 2, rx = (n - 0.3) / 2, spring = main ? 1.7 : 1.45, ry = Math.min(rx * 0.75, gh - spring - 0.3);
+  const n = gt.x1 - gt.x0 + 1, main = gt.kind === 'main', gh = main ? 6.4 : WALL_H, o = grp();
+  const L = -(n - 0.5), Rr = 0.5, cx = -(n - 1) / 2, rx = (n - 0.3) / 2, spring = main ? 2.9 : 2.2, ry = Math.min(rx * 0.85, gh - spring - 0.5);
   const st = smat('brick', '#a29c90', { bump: 1.4 }), capM = smat('stoneblock', '#b0a998', { bump: 1 });
   // parte de cima do arco
   const sh = new THREE.Shape(); sh.moveTo(L, spring); sh.lineTo(L, gh); sh.lineTo(Rr, gh); sh.lineTo(Rr, spring); sh.lineTo(cx + rx, spring);
@@ -873,7 +878,7 @@ function mCastle(b, night) {
   for (const f of [[D, C, r2, r1], [B, A, r1, r2], [A, D, r1], [C, B, r2]]) o.add(roofFace(f, roofM));
   // torres nos cantos com telhado cônico
   for (const [tx, tz] of [[0, 0], [w, 0], [0, h], [w, h]]) {
-    const th = H + 2.4, tr = 0.95;
+    const th = H + 5, tr = 1.05;
     o.add(mk(cylUV(new THREE.CylinderGeometry(tr, tr + 0.06, th, 24, 4, true).translate(tx, th / 2, tz), 6, 1), smat('brick', wallC, { bump: 1.4 })));
     o.add(mk(cylUV(new THREE.CylinderGeometry(tr + 0.12, tr, 0.16, 24, 1, true).translate(tx, th + 0.08, tz), 6, 1), capM));
     o.add(mk(cylUV(new THREE.ConeGeometry(tr + 0.25, 2.8, 24, 4, true).translate(tx, th + 0.16 + 1.4, tz), 8, 1.2), roofM));
@@ -881,7 +886,7 @@ function mCastle(b, night) {
     for (const a of [Math.PI / 4, Math.PI / 4 + 0.8]) { const wnd = mk(new THREE.BoxGeometry(0.2, 0.5, 0.1), glassM); wnd.position.set(tx + Math.cos(a) * tr, th * 0.7, tz + Math.sin(a) * tr); wnd.rotation.y = -a + Math.PI / 2; o.add(wnd); }
   }
   // torre de menagem central (alta, estilo Hogwarts)
-  { const cx = w / 2, cz = 2.2, s2 = 3.0, th = H + 6.2;
+  { const cx = w / 2, cz = 2.3, s2 = 3.2, th = H + 11;
     o.add(gwall(s2, th, s2, cx, th / 2, cz, 'brick', wallC, th, seed + 1, 0.8, 1.4));
     o.add(wbox(s2 + 0.2, 0.16, s2 + 0.2, cx, th - 0.08, cz, capM, 1));
     for (const [x, z, ry] of [[cx, cz + s2 / 2 + 0.03, 0], [cx + s2 / 2 + 0.03, cz, Math.PI / 2]]) { gwin(x, th - 1.4, z, ry, true); gwin(x, th - 3.6, z, ry, false); }
@@ -905,7 +910,7 @@ function mBuilding(b, night) {
   const w = b.w, h = b.h, { H, RH } = bldDims(b), o = grp(), R = rng(b.x * 31 + b.y * 7), seed = b.x * 0.37 + b.y;
   const st = styleOf(b);
   const trimM = smat('wood', st.trim, { bump: 1 }), stoneM = '#8e887c';
-  const floors = Math.max(1, Math.round(H / 1.7)), fh = H / floors;
+  const floors = Math.max(1, Math.round(H / 1.5)), fh = H / floors;
   const timber = st.tex === 'plaster';
   // térreo de pedra nas casas de 2+ andares; andares de cima em enxaimel avançando sobre a rua
   const jet = timber && floors >= 2 ? 0.22 : 0;
@@ -940,7 +945,7 @@ function mBuilding(b, night) {
   const glassM = night ? smat(null, '#ffd890', { emissive: '#ffb850', ei: 1.6, rough: 0.3 }) : smat(null, '#24323e', { rough: 0.08, metal: 0.4 });
   const shutM = smat('wood', ['#3e5a3a', '#6a2a22', '#3a4a6a', '#5a4026'][(b.v || 0) % 4], { bump: 1 });
   const winAt = (face, u, y, small) => {
-    const ww = small ? 0.38 : 0.46, wh = Math.min(small ? 0.55 : 0.8, fh * 0.42), gO = grp();
+    const ww = small ? 0.32 : 0.38, wh = Math.min(small ? 0.5 : 0.62, fh * 0.42), gO = grp();
     gO.add(mk(new THREE.BoxGeometry(ww + 0.1, wh + 0.08, 0.06), trimM));
     gO.add(mk(new THREE.CylinderGeometry(ww / 2 + 0.05, ww / 2 + 0.05, 0.06, 14, 1, false, 0, Math.PI).rotateX(Math.PI / 2).rotateZ(Math.PI / 2).translate(0, wh / 2, 0), trimM));
     gO.add(mk(new THREE.BoxGeometry(ww, wh, 0.02).translate(0, 0, 0.025), glassM));
@@ -972,7 +977,7 @@ function mBuilding(b, night) {
     for (const y of [0.35, dh - 0.3]) gD.add(mk(new THREE.BoxGeometry(dw * 0.9, 0.05, 0.02).translate(0, y, 0.06), IRON()));
     gD.add(mk(new THREE.SphereGeometry(0.035, 8, 6).translate(dw * 0.32, dh * 0.5, 0.07), smat(null, '#c9a24a', { metal: 1, rough: 0.3 })));
     gD.add(mk(new THREE.BoxGeometry(dw + 0.5, 0.12, 0.5).translate(0, 0.06, 0.25), smat('stoneblock', '#8a857a')));   // degrau
-    gD.position.set(doorX, 0, h + 0.02);
+    gD.position.set(doorX, 0, h + 0.02); gD.scale.setScalar(0.62);
     o.add(gD);
   }
   // telhado: duas águas (oitões) ou quatro águas, com beiral
@@ -1007,7 +1012,7 @@ function mBuilding(b, night) {
   }
   // catedral: torre do sino com flecha e sol dourado + vitrais
   if (b.kind === 'temple') {
-    const mx = W2 * 0.5, mz = H2 * 0.5, base = H + RH * 0.3, th = RH * 0.7 + 2.6;
+    const mx = W2 * 0.5, mz = H2 * 0.5, base = H + RH * 0.3, th = RH * 0.7 + 7;
     o.add(gwall(1.5, th, 1.5, mx, base + th / 2, mz, 'brick', st.wall, th + base, seed, 0.8, 1.2));
     for (const [dx, dz, ry] of [[0, 0.76, 0], [0.76, 0, Math.PI / 2]]) { const a = mk(new THREE.BoxGeometry(0.5, 0.9, 0.04), smat(null, '#141210')); a.position.set(mx + dx, base + th - 0.7, mz + dz); a.rotation.y = ry; o.add(a); }
     o.add(mk(new THREE.BoxGeometry(1.65, 0.14, 1.65).translate(mx, base + th, mz), smat('stoneblock', '#b4ae9f')));
@@ -1020,7 +1025,7 @@ function mBuilding(b, night) {
   // letreiros grandes com emblema 3D + vitrine com mercadorias (o prédio se explica sozinho)
   if (b.kind === 'shop' || b.kind === 'tavern' || b.kind === 'smith') {
     const kind = b.kind === 'shop' ? 'shop' + (b.v || 0) : b.kind;
-    const x = Math.min(w - 0.35, doorX + 1.0), y = Math.min(H * 0.62, 2.4), gS = grp();
+    const x = Math.min(w - 0.35, doorX + 0.75), y = Math.min(fh * 0.85, 1.35), gS = grp();
     gS.add(mk(new THREE.BoxGeometry(0.05, 0.05, 0.75).translate(0, 0.05, 0.37), IRON()));
     gS.add(mk(new THREE.TorusGeometry(0.12, 0.012, 4, 10, Math.PI).rotateY(Math.PI / 2).translate(0, -0.05, 0.6), IRON()));
     gS.add(mk(wuv(new THREE.BoxGeometry(0.05, 0.62, 0.7).translate(0, -0.38, 0.6), 2), smat('wood', '#6a4a2c')));
@@ -1035,7 +1040,7 @@ function mBuilding(b, night) {
     else if (kind === 'tavern') { em.add(mk(new THREE.CylinderGeometry(0.12, 0.1, 0.28, 12).translate(0.06, -0.02, 0), smat('wood', '#a8783a'))); em.add(mk(new THREE.CylinderGeometry(0.12, 0.12, 0.06, 12).translate(0.06, 0.13, 0), smat(null, '#f4ead4', { rough: 0.9 }))); em.add(mk(new THREE.TorusGeometry(0.07, 0.02, 5, 10, Math.PI).rotateY(Math.PI / 2).rotateX(Math.PI / 2).translate(0.06, 0, 0.15), smat('wood', '#7a5428'))); }
     else if (kind === 'smith') { em.add(mk(new THREE.BoxGeometry(0.1, 0.1, 0.36).translate(0.04, 0.02, 0), smat(null, '#3a3a40', { metal: 0.9, rough: 0.4 }))); em.add(mk(new THREE.BoxGeometry(0.1, 0.12, 0.14).translate(0.04, -0.09, 0), smat(null, '#3a3a40', { metal: 0.9, rough: 0.4 }))); const hm = grp(mk(new THREE.BoxGeometry(0.03, 0.34, 0.03), smat('wood', '#6a4a2c')), mk(new THREE.BoxGeometry(0.07, 0.07, 0.15).translate(0, 0.16, 0), smat(null, '#9a9ca4', { metal: 0.9 }))); hm.position.set(0.07, 0.12, 0.12); hm.rotation.x = -0.8; em.add(hm); }
     gS.add(em);
-    gS.position.set(x, y, h + (y > baseH && baseH ? jet : 0));
+    gS.position.set(x, y, h + (y > baseH && baseH ? jet : 0)); gS.scale.setScalar(0.72);
     o.add(gS);
     // vitrine saliente com mercadorias ao lado da porta (térreo)
     if (b.kind === 'shop') {
@@ -1050,11 +1055,11 @@ function mBuilding(b, night) {
         const m = (b.v === 1) ? new THREE.CylinderGeometry(0.04, 0.05, 0.16, 8) : (b.v === 2) ? new THREE.BoxGeometry(0.08, 0.2, 0.14) : (b.v === 3) ? new THREE.CylinderGeometry(0.06, 0.06, 0.26, 10).rotateZ(Math.PI / 2) : (b.v === 4) ? new THREE.CylinderGeometry(0.035, 0.035, 0.26, 8).rotateZ(Math.PI / 2) : (it ? new THREE.SphereGeometry(0.07, 8, 6) : new THREE.BoxGeometry(0.14, 0.14, 0.14));
         gV.add(mk(m.translate(px, py + 0.08, 0.16), smat(null, c, { rough: b.v === 1 ? 0.1 : 0.6, emissive: b.v === 2 && it === 2 ? '#8a6a20' : undefined, ei: 0.5 }))); }
       gV.add(mk(new THREE.PlaneGeometry(wd + 0.5, 0.6).rotateX(-Math.PI / 2 + 0.55).translate(0, y0 + ht + 0.32, 0.42), smat('stripes', '#ffffff', { side: THREE.DoubleSide, bump: 0.3 })));
-      gV.position.set(vx, 0, h + 0.02); o.add(gV);
+      gV.position.set(vx, 0, h + 0.02); gV.scale.setScalar(0.66); o.add(gV);
     }
     // lampião ao lado da porta
     const lp = grp(mk(new THREE.BoxGeometry(0.04, 0.04, 0.25).translate(0, 0, 0.12), IRON()), mk(new THREE.BoxGeometry(0.14, 0.2, 0.14).translate(0, -0.12, 0.25), smat(null, '#ffd890', { emissive: '#ffbb60', ei: night ? 1.6 : 0.6 })));
-    lp.position.set(doorX - 0.75, 2.0, h + 0.02); o.add(lp);
+    lp.position.set(doorX - 0.55, 1.15, h + 0.02); lp.scale.setScalar(0.7); o.add(lp);
   }
   if (b.kind === 'tavern' || b.kind === 'shop') { const br = mBarrel(); br.scale.setScalar(0.8); br.position.set(w + 0.32, 0, h * 0.25); o.add(br); }
   if (b.kind === 'stable') { const hy = mHay(); hy.position.set(w + 0.5, 0, h * 0.5); hy.rotation.y = Math.PI / 2; o.add(hy); }
@@ -1070,7 +1075,7 @@ function mInterior(b) {
   const stoneK = b.kind === 'temple' || b.kind === 'castle' || b.kind === 'smith' || b.kind === 'barracks';
   const floorM = stoneK ? smat('stoneblock', b.kind === 'castle' ? '#a8a092' : '#8e887c', { bump: 1 }) : smat('wood', b.kind === 'stable' ? '#8a6a3e' : '#7a5232', { bump: 1.2 });
   const wallM = stoneK ? smat('brick', b.kind === 'castle' ? '#b4ad9c' : '#a29c90', { bump: 1.2 }) : smat('plaster', '#e2d6bc', { bump: 0.7 });
-  const trimM = smat('wood', '#4a2f17'), hw = Math.min(H, b.kind === 'castle' || b.kind === 'temple' ? 3.4 : 2.5), t = 0.16;
+  const trimM = smat('wood', '#4a2f17'), hw = Math.min(H, b.kind === 'castle' || b.kind === 'temple' ? 5 : 2.3), t = 0.16;
   o.add(mk(wuv(new THREE.BoxGeometry(w, 0.06, h).translate(w / 2, 0.03, h / 2), 1), floorM));
   // paredes do fundo (inteiras) e da frente (só a base, com a porta)
   o.add(mk(wuv(new THREE.BoxGeometry(t, hw, h).translate(t / 2, hw / 2, h / 2), 0.7), wallM));
@@ -1118,6 +1123,7 @@ function mInterior(b) {
       case 'rug': g.add(mk(new THREE.BoxGeometry(Math.min(3, w - 1.4), 0.015, Math.min(h - 1.4, b.kind === 'castle' ? h - 3 : 2)).translate(0, 0.07, b.kind === 'castle' ? (h - 3) / 2 - 0.5 : 0.5), cloth(b.kind === 'castle' ? '#8a1a1c' : ['#7a3a2a', '#3a4a6a', '#5a6a3a'][f.i % 3]))); break;
     }
     g.position.set(cx, 0, cz);
+    { const sx = f.w > 1 || f.h > 1 || f.t === 'rug' ? 1 : 0.62; g.scale.set(sx, 0.55, sx); if (sx < 1) g.position.set(cx + (backX ? -0.15 : 0), 0, cz + (backZ ? -0.15 : 0)); }
     o.add(g);
   }
   return o;
@@ -1133,22 +1139,25 @@ function interiorSprite(b) { const bi = BUILDINGS.indexOf(b); return scen3('in|'
     const orig = window[name];
     window[name] = function (...a) { return scen3(key(...a), () => make(...a)) || orig.apply(null, a); };
   };
-  wrap('treeSprite', (v, w, t) => `tr|${v}|${t}`, (v, w, t) => mTree(v, t || 0));
-  wrap('pineSprite', v => `pi|${v}`, v => mPine(v));
-  wrap('deadTreeSprite', v => `dt|${v}`, v => mDeadTree(v));
-  wrap('bushSprite', v => `bu|${v}`, v => mBush(v));
+  wrap('treeSprite', (v, w, t) => `tr|${v}|${t}`, (v, w, t) => sc(mTree(v, t || 0), 1.35));
+  wrap('pineSprite', v => `pi|${v}`, v => sc(mPine(v), 1.35));
+  wrap('deadTreeSprite', v => `dt|${v}`, v => sc(mDeadTree(v), 1.25));
+  wrap('bushSprite', v => `bu|${v}`, v => sc(mBush(v), 0.8));
   wrap('rockSprite', (v, m) => `ro|${v}|${m}`, (v, m) => mRock(v, m));
-  wrap('grassSprite', (v, w, d) => `gr|${v}|${d}`, (v, w, d) => mGrass(v, d));
+  wrap('grassSprite', (v, w, d) => `gr|${v}|${d}`, (v, w, d) => sc(mGrass(v, d), 0.7));
   const SMALL = { mushroom: mMushroom, reeds: mReeds, stump: mStump, log: mLog, deadtree: mDeadTree, grave: mGrave, tent: mTent, barrel: mBarrel, crate: mCrate, hay: mHay, bench: mBench, well: mWell, stall: mStall, spikes: mSpikes, rubblebig: mRubble, dummy: mDummy, statue: mStatue, anvil: mAnvil, weaponrack: mWeaponRack, cart: mCart, table: mTable };
+  const PS = { barrel: 0.5, crate: 0.5, hay: 0.55, bench: 0.5, well: 0.72, stall: 0.6, tent: 0.75, spikes: 0.7, rubblebig: 0.8, dummy: 0.55, statue: 1.0, anvil: 0.5, weaponrack: 0.55, cart: 0.6, table: 0.5, grave: 0.6, stump: 0.75, log: 0.8, mushroom: 0.8, reeds: 0.8, deadtree: 1.25 };
+  const sc = (g, k) => { g.scale.setScalar(k); return g; };
   const origSmall = window.smallSprite;
-  window.smallSprite = function (kind, v = 0, w) { const f = SMALL[kind]; return (f && scen3(`sm|${kind}|${v}`, () => f(v))) || origSmall(kind, v, w); };
+  window.smallSprite = function (kind, v = 0, w) { const f = SMALL[kind]; return (f && scen3(`sm|${kind}|${v}`, () => sc(f(v), PS[kind] || 1))) || origSmall(kind, v, w); };
   const ANIM = { torch: mTorch, campfire: mCampfire, brazier: mBrazier, lamp: mLamp, banner: mBannerPole, fountain: mFountain };
   const origAnim = window.animSprite;
-  window.animSprite = function (kind) { const f = ANIM[kind]; return (f && scen3(`an|${kind}`, f)) || origAnim(kind); };
-  wrap('fenceSprite', a => `fe|${a ? 1 : 0}`, a => mFence(a));
-  wrap('wallSprite', (v, low, ivy, od) => `wa|${v}|${low ? 1 : 0}|${ivy ? 1 : 0}|${od | 0}`, (v, low, ivy, od) => mWall(v, low, ivy, od));
+  const PA = { torch: 0.8, campfire: 0.7, brazier: 0.6, lamp: 1, banner: 1, fountain: 1.15 };
+  window.animSprite = function (kind) { const f = ANIM[kind]; return (f && scen3(`an|${kind}`, () => sc(f(), PA[kind] || 1))) || origAnim(kind); };
+  wrap('fenceSprite', a => `fe|${a ? 1 : 0}`, a => { const g = mFence(a); g.scale.set(1, 0.6, 1); return g; });
+  wrap('wallSprite', (v, low, ivy, od, e) => `wa|${v}|${low ? 1 : 0}|${ivy ? 1 : 0}|${od | 0}|${e | 0}`, (v, low, ivy, od, e) => mWall(v, low, ivy, od, e | 0));
   wrap('gateSprite', a => `ga|${a ? 1 : 0}`, a => mGate(a));
-  wrap('towerSprite', v => `to|${v}`, v => mTower(v));
+  wrap('towerSprite', (v, off) => `to|${v}|${off ?? 4}`, (v, off) => { const g = mTower(v), o = off ?? 4; g.position.set((Math.floor(o / 3) - 1) * 0.5, 0, (o % 3 - 1) * 0.5); return grp(g); });
   wrap('stairsSprite', (d, k) => `st|${d}|${k | 0}`, (d, k) => mStairs(d, k | 0));
   wrap('slabSprite', v => `sl|${v}`, v => mSlab(v));
   wrap('cliffSprite', (h, v, s) => `cl|${h}|${v}|${s}`, (h, v, s) => mCliff(h, v, s));

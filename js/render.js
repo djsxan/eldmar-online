@@ -6,6 +6,7 @@
 let SCALE = 2;                                  // pixels de tela por unidade de arte (zoom contínuo)
 const lightC = document.createElement('canvas'), lightX = lightC.getContext('2d');
 const shadowC = document.createElement('canvas'), shadowX = shadowC.getContext('2d');
+const holeC = document.createElement('canvas'), holeX = holeC.getContext('2d');
 let lastFrameT = performance.now(), SPAWN_MUL = 1;
 
 function wind(x, y, now) { return Math.sin(now / 1400 + x * 0.37 + y * 0.21) + Math.sin(now / 530 + x * 1.1) * 0.35; }
@@ -269,8 +270,8 @@ function drawHeroEntity(ctx, e, sx, sy, now) {
     if (!P.act && e.hitAt && now - e.hitAt < 300) P.act = { k: 'hurt', f: Math.min(11, Math.floor((now - e.hitAt) / 300 * 12)) };
     const s = e.isNpc ? npcSprite3D(e.kind, P) : heroSprite3D(e.cls, e.skin, e.color, P);
     ctx.imageSmoothingEnabled = true;
-    softDab(ctx, sx, sy, 16, '#000000', 0.35);
-    const kb = knockOf(e, now); sx += kb.x; sy += kb.y;
+    softDab(ctx, sx, sy, 10, '#000000', 0.35);
+    const kb = knockOf(e, now); sx += kb.x * 0.6; sy += kb.y * 0.6;
     pblit(ctx, s, sx, sy);
     if (e.hitAt && now - e.hitAt < 110) pblit(ctx, whiteOf(s, 'w3|' + e.id + (e.cls || e.kind)), sx, sy, 0.65);
     return;
@@ -333,7 +334,7 @@ function drawMonsterEntity(ctx, e, sx, sy, now) {
     else pblit(ctx, s, sx, sy + sink, alpha);
     if (e.hitAt && now - e.hitAt < 110 && !fall) pblit(ctx, whiteOf(s, `wm|${e.type}|${f}|${atk}|${e.dir || 0}|${hurtF}`), sx, sy + sink, 0.7 * alpha);
     if (e.flags & 1 && Math.random() < 0.2) spawnPart('snow', sx - G.view.ox + (Math.random() - 0.5) * 24, sy - G.view.oy - Math.random() * 40);
-    if (e.flags & 2) for (let k = 0; k < 3; k++) { const a = now / 180 + k * 2.1; dab(ctx, sx + Math.cos(a) * 12, sy - MON_H[e.type] - 6 + Math.sin(a) * 4, 2, 2, '#f0d040'); }
+    if (e.flags & 2) for (let k = 0; k < 3; k++) { const a = now / 180 + k * 2.1; dab(ctx, sx + Math.cos(a) * 12, sy - MON_H[e.type] * 0.55 - 4 + Math.sin(a) * 4, 2, 2, '#f0d040'); }
     return;
   }
   const def = MON[e.type];
@@ -428,7 +429,7 @@ function objSprite(o, x, y) {
     case O.BANNER: return animSprite('banner');
     case O.FOUNTAIN: return animSprite('fountain');
     case O.FENCE: { const isF = j => WORLD.obj[j] === O.FENCE || WORLD.obj[j] === O.TORCH; return fenceSprite(isF(i - 1) || isF(i + 1)); }
-    case O.WALL: return wallSprite(v, false, h < 0.35, WORLD.wdir[i]);
+    case O.WALL: { const wd = WORLD.wdir[i], ax = wd === 3 || wd === 4, isT = j => WORLD.obj[j] === O.PART || WORLD.obj[j] === O.TOWER, e = (isT(ax ? i - 1 : i - MAP_W) ? 1 : 0) | (isT(ax ? i + 1 : i + MAP_W) ? 2 : 0); return wallSprite(v, false, h < 0.35, wd, e); }
     case O.LOWWALL: return wallSprite(v, true, false);
     case O.GATE: { const gi = WORLD.gateId[i]; if (gi < 0) return gateSprite(true); return x === WORLD.gates[gi].x1 ? gateHouseSprite(gi) : null; }
     case O.STAIRS: return stairsSprite(WORLD.stair[i], WORLD.stairK[i]);
@@ -442,9 +443,9 @@ function drawSway(ctx, s, x, y, k, alpha) {
 // partes animadas ao vivo (fogo, bandeira, água)
 function liveParts(ctx, o, sx, sy, x, y, now) {
   switch (o) {
-    case O.TORCH: liveFlame(ctx, sx, sy - 46, 0.62, now, x * 3 + y); G.lights.push({ x: sx, y: sy - 52, r: 42, c: '255,170,80', a: 0.95, flick: 1 }); if (Math.random() < 0.04) spawnPart('ember', sx - G.view.ox, sy - G.view.oy - 60); break;
-    case O.BRAZIER: liveFlame(ctx, sx, sy - 34, 0.9, now, x + y * 5); G.lights.push({ x: sx, y: sy - 44, r: 50, c: '255,160,70', a: 1, flick: 1 }); if (Math.random() < 0.08) spawnPart('ember', sx - G.view.ox, sy - G.view.oy - 50); break;
-    case O.CAMPFIRE: liveFlame(ctx, sx, sy - 6, 1.35, now, x * 7 + y); G.lights.push({ x: sx, y: sy - 16, r: 56, c: '255,150,60', a: 1, flick: 1 }); if (Math.random() < 0.08) spawnPart('smoke', sx - G.view.ox, sy - G.view.oy - 30); if (Math.random() < 0.1) spawnPart('ember', sx - G.view.ox, sy - G.view.oy - 16); break;
+    case O.TORCH: liveFlame(ctx, sx, sy - 36, 0.5, now, x * 3 + y); G.lights.push({ x: sx, y: sy - 40, r: 42, c: '255,170,80', a: 0.95, flick: 1 }); if (Math.random() < 0.04) spawnPart('ember', sx - G.view.ox, sy - G.view.oy - 60); break;
+    case O.BRAZIER: liveFlame(ctx, sx, sy - 21, 0.6, now, x + y * 5); G.lights.push({ x: sx, y: sy - 28, r: 50, c: '255,160,70', a: 1, flick: 1 }); if (Math.random() < 0.08) spawnPart('ember', sx - G.view.ox, sy - G.view.oy - 50); break;
+    case O.CAMPFIRE: liveFlame(ctx, sx, sy - 4, 0.9, now, x * 7 + y); G.lights.push({ x: sx, y: sy - 16, r: 56, c: '255,150,60', a: 1, flick: 1 }); if (Math.random() < 0.08) spawnPart('smoke', sx - G.view.ox, sy - G.view.oy - 30); if (Math.random() < 0.1) spawnPart('ember', sx - G.view.ox, sy - G.view.oy - 16); break;
     case O.LAMP: { const f = 0.85 + Math.sin(now / 90 + x) * 0.08; softDab(ctx, sx + 14, sy - 66, 10 * f, '#ffd890', 0.55); G.lights.push({ x: sx + 14, y: sy - 66, r: 50, c: '255,215,140', a: 1, flick: 1 }); break; }
     case O.BANNER: {
       const top = sy - 94, left = sx + 2, wv = now / 420 + x * 0.7;
@@ -599,6 +600,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
   const c = iso(cam.x, cam.y);
   let shx = 0, shy = 0;
   if (G.shake > 0.2) { shx = (Math.random() - 0.5) * G.shake; shy = (Math.random() - 0.5) * G.shake; G.shake *= 0.86; }
+  if (holeC.width !== Math.round(W * dpr) || holeC.height !== Math.round(H * dpr)) { holeC.width = Math.round(W * dpr); holeC.height = Math.round(H * dpr); }
   const ox = vw / 2 - c.sx + shx, oy = vh / 2 - c.sy + 30 + (cam.z || 0) * FLOOR_PX + shy;
   G.view = { ox, oy };
   G.lights = [];
@@ -665,16 +667,16 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     const D = b.x + b.w - 1 + b.y + b.h - 1, p = iso(b.x - 0.5, b.y - 0.5);
     if (p.sx + ox < -900 || p.sx + ox > vw + 900 || p.sy + oy < -900 || p.sy + oy > vh + 600) return;
     let a = G.bA[bi] ?? 1; const tg = bi === inB ? 0 : 1; a += (tg - a) * Math.min(1, dt / 110); if (Math.abs(a - tg) < 0.03) a = tg; G.bA[bi] = a;
-    if (a < 1) items.push({ d: b.x + b.y - 3, k: 6, b, sx: p.sx + ox, sy: p.sy + oy });
-    if (a <= 0) return;
-    items.push({ d: D, k: 4, b, bi, a, sx: p.sx + ox, sy: p.sy + oy });
-    if (a < 0.5) return;
+    if (a < 1) items.push({ d: D - 0.02, k: 6, b, sx: p.sx + ox, sy: p.sy + oy });
+    if (a > 0) items.push({ d: D, k: 4, b, bi, a, sx: p.sx + ox, sy: p.sy + oy });
     for (const it of items) {
       if (it.k === 4 || it.k === 6) continue;
       const ix = it.k === 0 ? it.x : it.tx, iy = it.k === 0 ? it.y : it.ty;
       if (ix < b.x - 5 || iy < b.y - 5 || ix > b.x + b.w + 2.5 || iy > b.y + b.h + 2.5) continue;
       const behind = ix < b.x + b.w - 0.5 && iy < b.y + b.h - 0.5;
-      it.d = behind ? Math.min(it.d, D - 0.5) : Math.max(it.d, D + 0.5);
+      const inside = ix > b.x - 0.5 && ix < b.x + b.w - 0.5 && iy > b.y - 0.5 && iy < b.y + b.h - 0.5;
+      if (a < 1 && inside) it.d = D + 0.01 + (ix + iy - b.x - b.y) * 0.001;   // dentro da construção aberta: depois do piso
+      else it.d = behind ? Math.min(it.d, D - 0.5) : Math.max(it.d, D + 0.5);
     }
   });
   items.sort((a, b) => a.d - b.d || a.k - b.k);
@@ -687,7 +689,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
   if (shAlpha > 0.02) {
     for (const it of items) {
       if (it.k === 0 && !it.cliff && CASTS.has(it.o)) { const s = objSprite(it.o, it.x, it.y); if (s) castShadow(s, it.sx, it.sy, sh, k); }
-      else if (it.k === 0 && it.o === O.TOWER) { const p = iso(it.x - 0.5, it.y - 0.5); castShadow(towerSprite(WORLD.tvar[it.y * MAP_W + it.x]), p.sx + ox, p.sy + oy, sh, k); }
+      else if (it.k === 0 && it.o === O.TOWER) { const p = iso(it.x - 0.5, it.y - 0.5); castShadow(towerSprite(WORLD.tvar[it.y * MAP_W + it.x], WORLD.toff[it.y * MAP_W + it.x]), p.sx + ox, p.sy + oy, sh, k); }
       else if (it.k === 4) castShadow(buildingSprite(it.b, day.night), it.sx, it.sy, sh, k);
       else if (it.k === 1 && !it.e.dieAt) castShadow(R3.ok ? monSprite3D(it.e.type, -1, -1, 0) : monSprite(it.e.type, 0, -1), it.sx, it.sy, sh, k);
       else if ((it.k === 2 || it.k === 3) && !it.e.downed) castShadow(R3.ok ? (it.e.isNpc ? npcSprite3D(it.e.kind, { dir: 0, walk: -1 }) : heroSprite3D(it.e.cls, it.e.skin, it.e.color, { dir: 0, walk: -1 })) : (it.e.isNpc ? npcSprite(it.e.kind, { view: 'S', walk: -1 }) : heroSprite(it.e.cls, it.e.skin, it.e.color, { view: 'S', walk: -1 })), it.sx, it.sy, sh, k);
@@ -698,7 +700,27 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
   // 6) desenho em ordem de profundidade
   const labels = [];
   let meX = -999, meY = -999, meD = 1e9;
-  if (me && (me.z || 0) < 0.5) { const p = iso(me.rx, me.ry); meX = p.sx + ox; meY = p.sy + oy - 34; meD = me.rx + me.ry; }
+  if (me && (me.z || 0) < 0.5) { const p = iso(me.rx, me.ry); meX = p.sx + ox; meY = p.sy + oy - 22; meD = me.rx + me.ry; }
+  // em vez de deixar o objeto todo transparente, abre um círculo suave em volta do personagem
+  const holeOf = (s, x, y, d, yf) => {
+    if (meD >= 1e9) return false;
+    const l = x - s.ax, t = y - s.ay;
+    return d > meD && meX > l - 20 && meX < l + s.w + 20 && meY > t - 20 && meY < t + s.h && (yf ?? y) > meY + 14;
+  };
+  const drawHole = (s, x, y, alpha) => {
+    const l = x - s.ax, t = y - s.ay, kk = k;
+    const px0 = Math.max(0, Math.floor(l * kk)), py0 = Math.max(0, Math.floor(t * kk)), px1 = Math.min(holeC.width, Math.ceil((l + s.w) * kk)), py1 = Math.min(holeC.height, Math.ceil((t + s.h) * kk));
+    if (px1 <= px0 || py1 <= py0) return;
+    holeX.setTransform(1, 0, 0, 1, 0, 0); holeX.globalCompositeOperation = 'source-over'; holeX.clearRect(px0, py0, px1 - px0, py1 - py0);
+    holeX.setTransform(kk, 0, 0, kk, 0, 0); holeX.imageSmoothingEnabled = true; pblit(holeX, s, x, y, alpha);
+    holeX.globalCompositeOperation = 'destination-out';
+    const R0 = 26, R1 = 58, g = holeX.createRadialGradient(meX, meY + 6, R0, meX, meY + 6, R1);
+    g.addColorStop(0, 'rgba(0,0,0,0.92)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    holeX.fillStyle = g; holeX.save(); holeX.translate(meX, meY + 6); holeX.scale(1, 1.25); holeX.translate(-meX, -meY - 6); holeX.fillRect(meX - R1, meY + 6 - R1, R1 * 2, R1 * 2); holeX.restore();
+    holeX.globalCompositeOperation = 'source-over';
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(holeC, px0, py0, px1 - px0, py1 - py0, px0, py0, px1 - px0, py1 - py0); ctx.restore();
+  };
+  const blitV = (s, x, y, d, yf, alpha) => { if (holeOf(s, x, y, d, yf)) drawHole(s, x, y, alpha); else pblit(ctx, s, x, y, alpha); };
   const fadeA = (s, x, y, d, yf) => {
     const l = x - s.ax, t = y - s.ay;
     return d > meD && meX > l + 6 && meX < l + s.w - 6 && meY > t && meY < t + s.h - 10 && (yf ?? y) > meY + 18 ? (yf != null && inB >= 0 ? 0.22 : 0.42) : null;
@@ -707,21 +729,21 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     if (it.k === 0) {
       if (it.cliff) {
         const i = it.y * MAP_W + it.x, h = WORLD.height[i] || 1, s = cliffSprite(h, Math.floor(hash2(it.x, it.y, 3) * 4), h >= 4 ? 1 : 0);
-        pblit(ctx, s, it.sx, it.sy, fadeA(s, it.sx, it.sy, it.d));
+        blitV(s, it.sx, it.sy, it.d);
         if (it.o === O.WATERFALL) { drawWaterfallLive(ctx, it.sx, it.sy, CLIFF_H[h], now); if (Math.random() < 0.5) spawnPart('mist', it.sx - ox + (Math.random() - 0.5) * 50, it.sy - oy + 18); }
         return;
       }
-      if (it.o === O.TOWER) { const p = iso(it.x - 0.5, it.y - 0.5), s = towerSprite(WORLD.tvar[it.y * MAP_W + it.x]); pblit(ctx, s, p.sx + ox, p.sy + oy, fadeA(s, p.sx + ox, p.sy + oy, it.d)); return; }
+      if (it.o === O.TOWER) { const p = iso(it.x - 0.5, it.y - 0.5), s = towerSprite(WORLD.tvar[it.y * MAP_W + it.x], WORLD.toff[it.y * MAP_W + it.x]); blitV(s, p.sx + ox, p.sy + oy, it.d); return; }
       const s = objSprite(it.o, it.x, it.y);
-      if (s) { const sw = SWAY[it.o] ? wind(it.x, it.y, now) * SWAY[it.o] * (0.7 + ATM.wind * 0.6) : 0; drawSway(ctx, s, it.sx, it.sy, sw, fadeA(s, it.sx, it.sy, it.d)); }
+      if (s) { const sw = SWAY[it.o] ? wind(it.x, it.y, now) * SWAY[it.o] * (0.7 + ATM.wind * 0.6) : 0; if (s.h > 60 && holeOf(s, it.sx, it.sy, it.d)) drawHole(s, it.sx, it.sy); else drawSway(ctx, s, it.sx, it.sy, sw); }
       liveParts(ctx, it.o, it.sx, it.sy, it.x, it.y, now);
       if (it.o === O.MUSHROOM) { const z = zoneAt(it.x, it.y); if (z === Z.SWAMP || (z === Z.FOREST && hash2(it.x, it.y, 17) < 0.3)) G.lights.push({ x: it.sx, y: it.sy - 8, r: 16, c: '90,200,240', a: 0.6 }); }
       return;
     }
     if (it.k === 6) { const s = interiorSprite(it.b); if (s) pblit(ctx, s, it.sx, it.sy); return; }
     if (it.k === 4) {
-      const s = buildingSprite(it.b, day.night), fa = fadeA(s, it.sx, it.sy, it.d, it.sy + (it.b.w + it.b.h) * HTH);
-      pblit(ctx, s, it.sx, it.sy, it.a < 1 ? it.a * (fa ?? 1) : fa);
+      const s = buildingSprite(it.b, day.night);
+      blitV(s, it.sx, it.sy, it.d, it.sy + (it.b.w + it.b.h) * HTH, it.a < 1 ? it.a : null);
       if (day.night) for (const [wx, wy, wz] of buildingWindows(it.b)) { const p = iso(wx, wy); G.lights.push({ x: p.sx + ox, y: p.sy + oy - wz, r: 28, c: it.b.kind === 'temple' ? '190,210,255' : '255,190,100', a: 0.85 }); }
       if ((it.b.kind === 'tavern' || it.b.kind === 'house' || it.b.kind === 'smith') && Math.random() < (it.b.kind !== 'house' ? 0.14 : 0.05)) { const p = iso(it.b.x - 0.5 + it.b.w * 0.3, it.b.y - 0.5 + it.b.h * 0.35); spawnPart('smoke', p.sx, p.sy - (bldTopArt(it.b) * 0.9 + 30)); }
       if (it.b.kind === 'smith') { const p = iso(it.b.x - 0.5 + it.b.w * 0.5, it.b.y - 0.5 + it.b.h); G.lights.push({ x: p.sx + ox, y: p.sy + oy - 16, r: 62, c: '255,130,50', a: 1, flick: 1 }); if (Math.random() < 0.1) spawnPart('ember', p.sx, p.sy - 20); }
@@ -734,14 +756,14 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
       drawMonsterEntity(ctx, e, it.sx, it.sy, now);
     } else if (it.k === 3) {
       drawHeroEntity(ctx, e, it.sx, it.sy, now);
-      labels.push({ sx: it.sx, sy: it.sy - (R3.ok ? 96 : 78), name: e.name, color: '#b8e0a8', npc: e, e });
+      labels.push({ sx: it.sx, sy: it.sy - (R3.ok ? 56 : 78), name: e.name, color: '#b8e0a8', npc: e, e });
     } else {
       ctx.imageSmoothingEnabled = true; drawAuras(ctx, e, it.sx, it.sy, now); ctx.imageSmoothingEnabled = false;
       drawHeroEntity(ctx, e, it.sx, it.sy, now);
       heroExtras(e, it.sx, it.sy);
       if (e.carrying && G.players[e.carrying]) drawCarried(ctx, G.players[e.carrying], it.sx, it.sy);
       G.lights.push({ x: it.sx, y: it.sy - 30, r: 34, c: '255,240,220', a: 0.4 });
-      labels.push({ sx: it.sx, sy: it.sy - (e.downed && !e.carriedBy ? 28 : (R3.ok ? 98 : 80)), name: e.name, color: e.id === G.myId ? '#f4dc8a' : '#b8d0f0', hp: e.hp / e.maxHp, mp: e.id === G.myId ? e.mp / e.maxMp : null, e, player: true });
+      labels.push({ sx: it.sx, sy: it.sy - (e.downed && !e.carriedBy ? 20 : (R3.ok ? 58 : 80)), name: e.name, color: e.id === G.myId ? '#f4dc8a' : '#b8d0f0', hp: e.hp / e.maxHp, mp: e.id === G.myId ? e.mp / e.maxMp : null, e, player: true });
     }
     ctx.imageSmoothingEnabled = true;
   };

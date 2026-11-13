@@ -110,6 +110,28 @@
   </div>
 
   <button id="btn-help">?</button>
+  <button id="btn-menu" title="Menu">☰</button>
+  <div id="pause" class="hidden">
+    <div class="pz-box">
+      <div class="pz-title">Pausa</div>
+      <button class="pz-btn" id="pz-resume">Voltar ao jogo</button>
+      <div class="pz-sec">Qualidade gráfica</div>
+      <div class="pz-row" id="pz-quality"><button data-q="low">Baixa</button><button data-q="med">Média</button><button data-q="high">Alta</button></div>
+      <div class="pz-sec">Brilho <span id="pz-bright-v"></span></div>
+      <input type="range" id="pz-bright" min="0.7" max="1.4" step="0.05">
+      <div class="pz-sec">Zoom da câmera <span id="pz-zoom-v"></span></div>
+      <input type="range" id="pz-zoom" min="0.6" max="1.6" step="0.05">
+      <button class="pz-btn" id="pz-full">Tela cheia</button>
+      <details class="pz-keys"><summary>Controles</summary>
+        <div><b>Mover</b> WASD / setas / clique no chão · <b>Correr</b> Shift</div>
+        <div><b>Atacar</b> X · <b>Habilidades</b> 1 2 3 4 · <b>Alvo</b> Espaço / Tab</div>
+        <div><b>Poções</b> Q (vida) · E (mana) · <b>Sentar</b> C · <b>Mapa</b> M</div>
+        <div><b>Reanimar</b> segurar F · <b>Carregar</b> G · <b>Desistir</b> R (caído)</div>
+        <div><b>Chat</b> Enter · <b>Zoom</b> roda do mouse · <b>Menu</b> Esc</div>
+      </details>
+      <button class="pz-btn pz-quit" id="pz-quit">Sair para o menu</button>
+    </div>
+  </div>
   <div id="help" class="panel parch hidden">
     <h4>Controles</h4>
     <div><kbd>W A S D</kbd> / setas / clique — andar · joystick no celular</div>

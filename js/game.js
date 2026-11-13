@@ -85,18 +85,18 @@ function clientOnServer(m) {
         }
         if (m.by === G.myId) G.shake = Math.max(G.shake, m.crit || m.hv ? 4 : 1.6);
         const mine = m.k === 'p' && m.id === G.myId;
-        G.nums.push({ wx: pos.x, wy: pos.y, text: String(m.dmg), color: m.k === 'm' ? (m.crit ? '#f8d850' : '#ffffff') : (mine ? '#f05040' : '#f0a090'), crit: m.crit, big: m.crit, t0: t, vx: (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.6) });
+        if (false) G.nums.push({ wx: pos.x, wy: pos.y, text: String(m.dmg), color: m.k === 'm' ? (m.crit ? '#f8d850' : '#ffffff') : (mine ? '#f05040' : '#f0a090'), crit: m.crit, big: m.crit, t0: t, vx: (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.6) });
         for (let k = 0; k < 6; k++) spawnPart(m.k === 'p' ? 'blood' : 'spark', pos.x, pos.y - 26, { color: 'rgba(255,240,180,A)' });
         if (mine) { G.shake = Math.max(G.shake, 2.5); flashDamage(); }
       });
       break;
-    case 'fx': later(m.d, () => { const p = tileW(m.x, m.y); G.nums.push({ wx: p.x, wy: p.y - 24, text: m.text, color: m.color, small: !m.big, big: m.big, t0: performance.now(), vx: 0 }); }); break;
+    case 'fx': if (false) later(m.d, () => { const p = tileW(m.x, m.y); G.nums.push({ wx: p.x, wy: p.y - 24, text: m.text, color: m.color, small: !m.big, big: m.big, t0: performance.now(), vx: 0 }); }); break;
     case 'anim': {
       const e = (m.w === 'p' ? G.players : G.monsters)[m.id];
       if (!e) break;
       e.anim = { a: m.a, t0: now, tx: m.tx, ty: m.ty };
       if (m.tx != null && m.w === 'p' && m.a !== 'spin') e.dir = dirFromVec(m.tx - e.rx, m.ty - e.ry, e.dir);
-      if (m.s) { e.shout = m.s; e.shoutUntil = now + 1600; }
+
       if (m.proj) {
         const rel = m.a === 'shoot' ? 230 : 130;
         for (let k = 0; k < (m.n || 1); k++) {
@@ -108,7 +108,7 @@ function clientOnServer(m) {
     }
     case 'aoe':
       G.effects.push({ a: m.a, x: m.x, y: m.y, x2: m.x2, y2: m.y2, k: m.k, id: m.id, t0: now + (m.d || 0), dur: { whirl: 520, warcry: 800, wall: 600, agile: 600, potion: 500, pierce: 500, rain: 900, boom: 500, nova: 700, heal: 1000, lvlup: 1600, meteor: 1600 }[m.a] || 600, seed: Math.floor(Math.random() * 1000) });
-      if (m.a === 'lvlup') later(m.d, () => { const p = tileW(m.x, m.y); G.nums.push({ wx: p.x, wy: p.y - 44, text: 'LEVEL UP!', color: '#f0d050', big: true, t0: performance.now(), vx: 0 }); });
+
       break;
     case 'cast': { const e = G.players[m.id]; if (e) { e.cast = { start: now, end: now + m.ms, el: m.el }; } break; }
     case 'castend': { const e = G.players[m.id]; if (e) e.cast = null; break; }
@@ -342,11 +342,11 @@ const canvas = $('game'), ctx = canvas.getContext('2d');
 const mini = $('minimap'), mctx = mini.getContext('2d');
 let W = 0, H = 0, DPR = 1;
 function resize() {
-  DPR = Math.min(2, window.devicePixelRatio || 1);
+  DPR = Math.min(SET.quality === 'low' ? 1 : SET.quality === 'med' ? 1.5 : 2, window.devicePixelRatio || 1);
   W = window.innerWidth; H = window.innerHeight;
   canvas.width = W * DPR; canvas.height = H * DPR;
   canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
-  if (!G.zoomUser) SCALE = clamp(H / 425, 1.4, 4);
+  if (!G.zoomUser) SCALE = clamp(H / 425 * 1.45 * (SET.zoom || 1), 1.8, 6.5);
 }
 window.addEventListener('resize', resize);
 resize();
@@ -584,7 +584,7 @@ canvas.addEventListener('mousedown', e => {
 });
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
-  SCALE = clamp(SCALE * (e.deltaY < 0 ? 1.1 : 0.9), 1.1, 4.5);
+  SCALE = clamp(SCALE * (e.deltaY < 0 ? 1.1 : 0.9), 1.4, 7);
   G.zoomUser = true;
 }, { passive: false });
 
@@ -597,8 +597,9 @@ window.addEventListener('keydown', e => {
     return;
   }
   const k = e.key.toLowerCase();
+  if (G.paused && k !== 'escape') return;
   if (k === 'enter') { input.focus(); e.preventDefault(); return; }
-  if (k === 'escape') { if (G.mapOpen) { toggleWorldMap(); return; } if (G.dialog) closeDialog(); else { setTarget(null); G.path = null; G.pathGoal = null; } return; }
+  if (k === 'escape') { if (G.mapOpen) { toggleWorldMap(); return; } if (G.dialog) { closeDialog(); return; } togglePause(); return; }
   if (k >= '1' && k <= '4') { castSkill(+k - 1); return; }
   if (k === 'q') { drinkPot('hp'); return; }
   if (k === 'e') { drinkPot('mp'); return; }
@@ -727,6 +728,7 @@ function startGame() {
 // tooltips
 const tip = $('tooltip');
 document.addEventListener('mouseover', e => {
+  if (document.body.classList.contains('touch') || (e.pointerType && e.pointerType !== 'mouse') || matchMedia('(hover: none)').matches) { tip.classList.add('hidden'); return; }
   const el = e.target.closest('[data-tip]');
   if (!el) { tip.classList.add('hidden'); return; }
   const [title, ...rest] = el.dataset.tip.split('\n');
@@ -981,3 +983,32 @@ function updateGates(dt) {
     G.gateF[k] = clamp(G.gateF[k] + Math.sign(tgt - G.gateF[k]) * dt / 0.9, 0, 1);
   });
 }
+
+// ============================================================
+//  MENU DE PAUSA E CONFIGURAÇÕES
+// ============================================================
+function applySettings() {
+  canvas.style.filter = SET.bright !== 1 ? 'brightness(' + SET.bright + ')' : '';
+  if (typeof S3 !== 'undefined' && S3.ok) S3.renderer.shadowMap.enabled = SET.quality !== 'low';
+  for (const b of document.querySelectorAll('#pz-quality button')) b.classList.toggle('on', b.dataset.q === SET.quality);
+  $('pz-bright').value = SET.bright; $('pz-bright-v').textContent = Math.round(SET.bright * 100) + '%';
+  $('pz-zoom').value = SET.zoom; $('pz-zoom-v').textContent = Math.round(SET.zoom * 100) + '%';
+}
+function togglePause(force) {
+  G.paused = force != null ? force : !G.paused;
+  $('pause').classList.toggle('hidden', !G.paused);
+  if (G.paused) { applySettings(); G.keys.clear(); }
+}
+$('btn-menu').addEventListener('click', () => togglePause());
+$('pz-resume').addEventListener('click', () => togglePause(false));
+for (const b of document.querySelectorAll('#pz-quality button')) b.addEventListener('click', () => {
+  if (SET.quality === b.dataset.q) return;
+  SET.quality = b.dataset.q; saveSettings(); resize();
+  if (typeof SC3 !== 'undefined') { SC3.clear(); S3.px = 0; }   // refaz o cenário na qualidade nova
+  applySettings();
+});
+$('pz-bright').addEventListener('input', e => { SET.bright = +e.target.value; saveSettings(); applySettings(); });
+$('pz-zoom').addEventListener('input', e => { SET.zoom = +e.target.value; saveSettings(); G.zoomUser = false; resize(); applySettings(); });
+$('pz-full').addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen(); else (document.documentElement.requestFullscreen || (() => { })).call(document.documentElement); });
+$('pz-quit').addEventListener('click', () => { try { saveChar(); saveFog && G.fog && saveFog(); } catch (e) { } location.reload(); });
+applySettings();

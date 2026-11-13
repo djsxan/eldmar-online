@@ -3,10 +3,14 @@
 //  Mexa aqui para balancear o jogo.
 // ============================================================
 const GAME_NAME = 'World of Sxan';
-const VERSION = 'v0.9.0';
-const VERSION_NAME = 'Portas Abertas';
+const VERSION = 'v1.0.0';
+const VERSION_NAME = 'Grandeza de Eldmar';
 
-const PLAYER_SPEED = 3.6;          // tiles por segundo
+const PLAYER_SPEED = 2.7;          // tiles por segundo (1 tile ≈ 2 m)
+// configurações do jogador (menu de pausa)
+const SET = (() => { const d = { quality: 'high', bright: 1, zoom: 1 }; try { return Object.assign(d, JSON.parse(localStorage.getItem('wos-settings') || '{}')); } catch (e) { return d; } })();
+function saveSettings() { try { localStorage.setItem('wos-settings', JSON.stringify(SET)); } catch (e) { } }
+const STAIR_N = 5;                 // escadas: 5 tiles de rampa até o alto da muralha
 const RUN_MUL = 1.65;              // correr (SHIFT) multiplica a velocidade
 const STAM_MAX = 100, STAM_DRAIN = 22, STAM_REGEN = 17, STAM_DELAY = 900; // estamina: gasta correndo, volta parado/andando
 const OUT_OF_COMBAT_MS = 5000;     // sem lutar por 5s = fora de combate (regenera)
@@ -104,6 +108,7 @@ const MON = {
   orc:      { name: 'Orc Guerreiro',     hp: 180, dmg: [10, 22], xp: 95,  gold: [12, 25], speed: 2.0, atk: 1300, aggro: 7 },
   troll:    { name: 'Troll da Montanha', hp: 420, dmg: [18, 36], xp: 260, gold: [30, 60], speed: 1.5, atk: 1700, aggro: 6, big: true },
 };
+for (const k in MON) MON[k].speed *= 0.75; // escala nova do mundo
 const MON_TYPES = Object.keys(MON);
 
 // MissÃµes secundÃ¡rias (repetÃ­veis) dadas pela CapitÃ£ no pÃ¡tio do castelo

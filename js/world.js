@@ -13,8 +13,8 @@ const O = {
   FLOWERBED: 28, SPIKES: 29, WALL: 30, TOWER: 31, PART: 32, GATE: 33, STAIRS: 34, RUBBLE: 35, RUBBLEBIG: 36,
   STATUE: 37, BRAZIER: 38, DUMMY: 39, WATERFALL: 40, LOWWALL: 41, IVY: 42, ANVIL: 43, WEAPONRACK: 44, CART: 45, TABLE: 46,
 };
-const BLOCKING = new Set([O.TREE, O.PINE, O.ROCK, O.FOUNTAIN, O.LAMP, O.STUMP, O.DEADTREE, O.GRAVE, O.TENT,
-  O.CAMPFIRE, O.FENCE, O.TORCH, O.BARREL, O.CRATE, O.HAY, O.WELL, O.STALL, O.BANNER, O.LOG, O.SPIKES,
+const BLOCKING = new Set([O.TREE, O.PINE, O.ROCK, O.FOUNTAIN, O.STUMP, O.DEADTREE, O.GRAVE, O.TENT,
+  O.CAMPFIRE, O.FENCE, O.BARREL, O.CRATE, O.HAY, O.WELL, O.STALL, O.LOG, O.SPIKES,
   O.WALL, O.TOWER, O.PART, O.RUBBLEBIG, O.STATUE, O.BRAZIER, O.DUMMY, O.WATERFALL, O.LOWWALL, O.ANVIL, O.WEAPONRACK, O.CART, O.TABLE]);
 // objetos rasteiros (vão direto para o chão pré-desenhado)
 const FLAT = new Set([O.FLOWER, O.LILY, O.FLOWERBED, O.BONES, O.RUBBLE, O.IVY]);
@@ -73,17 +73,17 @@ const CASTLE = { x0: C - 32, y0: C - 32, x1: C + 33, y1: C + 33 };   // muralha 
 const KEEP = { x0: C - 9, y0: C - 22, x1: C + 10, y1: C - 3 };       // castelo central
 const BH = (kind, w, h, H, RH, name, extra) => ({ kind, w, h, H, RH, name: name || '', wall: Math.round(H * 19.6), roof: Math.round(RH * 19.6), ...extra });
 const BUILDINGS = [
-  { x: C - 28, y: C - 29, ...BH('temple', 9, 8, 5.6, 4.2, 'Catedral da Aurora') },
-  { x: C + 13, y: C - 7, ...BH('shop', 5, 5, 4.4, 2.8, 'Empório do Borin') },
-  { x: C + 21, y: C + 8, ...BH('smith', 6, 5, 3.4, 2.4, 'Forja de Hrodgar') },
-  { x: C - 16, y: C + 22, ...BH('tavern', 7, 6, 4.6, 3.2, 'Taverna do Javali') },
-  { x: C + 5, y: C + 22, ...BH('barracks', 8, 5, 3.8, 2.6, 'Quartel da Guarda') },
-  { x: C - 28, y: C + 24, ...BH('stable', 5, 4, 2.8, 2.0, 'Estábulo') },
-  { x: C + 13, y: C + 0, ...BH('shop', 5, 4, 5.0, 2.6, 'Boticário de Elva', { v: 1 }) },
-  { x: C + 21, y: C - 8, ...BH('shop', 6, 5, 5.4, 3.0, 'Arcanos & Varinhas', { v: 2 }) },
-  { x: C + 13, y: C + 9, ...BH('shop', 5, 5, 4.8, 2.8, 'Alfaiataria Real', { v: 3 }) },
-  { x: C + 21, y: C + 15, ...BH('shop', 6, 4, 4.2, 2.6, 'Pergaminhos & Mapas', { v: 4 }) },
-  { x: C - 5, y: C - 19, ...BH('castle', 12, 10, 6.6, 4.4, 'Castelo de Eldmar') },
+  { x: C - 28, y: C - 29, ...BH('temple', 9, 8, 9.0, 6.5, 'Catedral da Aurora') },
+  { x: C + 13, y: C - 7, ...BH('shop', 5, 5, 6.2, 3.6, 'Empório do Borin') },
+  { x: C + 21, y: C + 8, ...BH('smith', 6, 5, 4.6, 3.2, 'Forja de Hrodgar') },
+  { x: C - 16, y: C + 22, ...BH('tavern', 7, 6, 6.4, 4.2, 'Taverna do Javali') },
+  { x: C + 5, y: C + 22, ...BH('barracks', 8, 5, 5.2, 3.4, 'Quartel da Guarda') },
+  { x: C - 28, y: C + 24, ...BH('stable', 5, 4, 3.8, 2.8, 'Estábulo') },
+  { x: C + 13, y: C + 0, ...BH('shop', 5, 4, 6.8, 3.4, 'Boticário de Elva', { v: 1 }) },
+  { x: C + 21, y: C - 8, ...BH('shop', 6, 5, 8.2, 4.0, 'Arcanos & Varinhas', { v: 2 }) },
+  { x: C + 13, y: C + 9, ...BH('shop', 5, 5, 6.4, 3.6, 'Alfaiataria Real', { v: 3 }) },
+  { x: C + 21, y: C + 15, ...BH('shop', 6, 4, 5.8, 3.4, 'Pergaminhos & Mapas', { v: 4 }) },
+  { x: C - 5, y: C - 19, ...BH('castle', 12, 10, 10, 6.5, 'Castelo de Eldmar') },
 ];
 // porta: sempre centrada num tile da face de baixo (+y)
 const doorCol = b => Math.floor((b.w - 1) / 2);
@@ -169,6 +169,7 @@ function generateWorld() {
   const stair = new Uint8Array(N);     // escadas: direção para onde sobem (1..4)
   const stairK = new Uint8Array(N);    // degrau da escada (0 = de baixo, 1 = de cima)
   const tvar = new Uint8Array(N);      // variação das torres (3 = torre alta com cone)
+  const toff = new Uint8Array(N).fill(4); // torre centrada na linha da muralha: (ox+1)*3+(oz+1)
   const wdir = new Uint8Array(N);      // muralhas: lado de fora (1:+x 2:-x 3:+y 4:-y)
   const gateId = new Int8Array(N).fill(-1);
   const gates = [];
@@ -272,13 +273,13 @@ function generateWorld() {
     else if (g === T.SAND) { if (r < 0.025) o = O.ROCK; else if (r < 0.07) o = O.REEDS; }
     else if (z === Z.OUTSKIRTS) {
       if (g === T.DEAD) o = r < 0.55 ? O.TALLGRASS : r < 0.565 ? O.HAY : O.NONE;            // trigais
-      else if (g === T.FOREST) o = r < 0.2 ? O.TREE : r < 0.3 ? O.BUSH : r < 0.4 ? O.TALLGRASS : O.NONE;
+      else if (g === T.FOREST) o = r < 0.07 ? O.TREE : r < 0.13 ? O.BUSH : r < 0.25 ? O.TALLGRASS : O.NONE;
       else o = r < 0.02 ? O.TREE : r < 0.04 ? O.BUSH : r < 0.14 ? O.FLOWER : r < 0.22 ? O.TALLGRASS : r < 0.224 ? O.ROCK : O.NONE;
     } else if (z === Z.FIELDS) {
-      if (g === T.FOREST) o = r < 0.2 ? O.TREE : r < 0.26 ? O.PINE : r < 0.32 ? O.BUSH : r < 0.35 ? O.MUSHROOM : r < 0.42 ? O.TALLGRASS : O.NONE;
+      if (g === T.FOREST) o = r < 0.07 ? O.TREE : r < 0.1 ? O.PINE : r < 0.15 ? O.BUSH : r < 0.18 ? O.MUSHROOM : r < 0.28 ? O.TALLGRASS : O.NONE;
       else o = r < 0.025 ? O.TREE : r < 0.06 ? O.BUSH : r < 0.075 ? O.ROCK : r < 0.17 ? O.FLOWER : r < 0.27 ? O.TALLGRASS : r < 0.275 ? O.LOG : O.NONE;
     } else if (z === Z.FOREST) {
-      if (g === T.FOREST) o = r < 0.2 ? O.TREE : r < 0.34 ? O.PINE : r < 0.4 ? O.BUSH : r < 0.45 ? O.MUSHROOM : r < 0.47 ? O.STUMP : r < 0.55 ? O.TALLGRASS : r < 0.56 ? O.LOG : O.NONE;
+      if (g === T.FOREST) o = r < 0.08 ? O.TREE : r < 0.13 ? O.PINE : r < 0.18 ? O.BUSH : r < 0.22 ? O.MUSHROOM : r < 0.235 ? O.STUMP : r < 0.32 ? O.TALLGRASS : r < 0.33 ? O.LOG : O.NONE;
       else o = r < 0.06 ? O.TREE : r < 0.1 ? O.BUSH : r < 0.25 ? O.TALLGRASS : r < 0.29 ? O.FLOWER : r < 0.3 ? O.STUMP : O.NONE;
     } else if (z === Z.SWAMP) {
       if (g === T.SWAMP) o = r < 0.05 ? O.DEADTREE : r < 0.17 ? O.REEDS : r < 0.21 ? O.MUSHROOM : r < 0.29 ? O.TALLGRASS : r < 0.3 ? O.LOG : O.NONE;
@@ -291,17 +292,23 @@ function generateWorld() {
       else o = r < 0.04 ? O.TREE : r < 0.08 ? O.BUSH : r < 0.18 ? O.TALLGRASS : r < 0.2 ? O.DEADTREE : O.NONE;
     } else if (z === Z.WILD) {
       if (g === T.STONE) o = r < 0.18 ? O.ROCK : r < 0.2 ? O.PINE : O.NONE;
-      else if (g === T.FOREST) o = r < 0.28 ? O.PINE : r < 0.38 ? O.TREE : r < 0.42 ? O.BUSH : r < 0.45 ? O.MUSHROOM : O.NONE;
+      else if (g === T.FOREST) o = r < 0.09 ? O.PINE : r < 0.13 ? O.TREE : r < 0.17 ? O.BUSH : r < 0.2 ? O.MUSHROOM : O.NONE;
       else o = r < 0.06 ? O.TREE : r < 0.1 ? O.PINE : r < 0.14 ? O.ROCK : r < 0.18 ? O.BUSH : r < 0.3 ? O.TALLGRASS : r < 0.33 ? O.FLOWER : O.NONE;
     }
     obj[i] = o;
+  }
+  // espaça as árvores: nunca duas árvores/pinheiros vizinhos (sempre há caminho)
+  for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) {
+    const i = idx(x, y), o = obj[i];
+    if (o !== O.TREE && o !== O.PINE && o !== O.DEADTREE && o !== O.ROCK) continue;
+    for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [-1, 1]]) { const j = idx(x + dx, y + dy), q = obj[j]; if (q === O.TREE || q === O.PINE || q === O.DEADTREE || q === O.ROCK || q === O.BUSH) obj[j] = O.TALLGRASS; }
   }
   // árvores ao pé da montanha
   for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
     const i = idx(x, y);
     if (ground[i] === T.CLIFF || ground[i] === T.WATER || zone[i] === Z.VILLAGE) continue;
     const d = Math.hypot(x - MOUNTAIN.x, y - MOUNTAIN.y);
-    if (d < MOUNTAIN.r + 4 && obj[i] === O.NONE && R(x, y, 50) < 0.3) obj[i] = R(x, y, 51) < 0.6 ? O.PINE : O.ROCK;
+    if (d < MOUNTAIN.r + 4 && obj[i] === O.NONE && R(x, y, 50) < 0.12) obj[i] = R(x, y, 51) < 0.6 ? O.PINE : O.ROCK;
   }
 
   const set = (x, y, g, o) => { const i = idx(x, y); if (g != null) ground[i] = g; if (o != null) obj[i] = o; };
@@ -366,6 +373,7 @@ function generateWorld() {
     for (let y = ty; y <= ty + 1; y++) for (let x = tx; x <= tx + 1; x++) { set(x, y, T.FLOORSTONE, O.PART); fl1[idx(x, y)] = 1; }
     obj[idx(tx + 1, ty + 1)] = O.TOWER;
     tvar[idx(tx + 1, ty + 1)] = Math.floor(R(tx, ty, 2) * 3);
+    toff[idx(tx + 1, ty + 1)] = ((tx === x0 ? -1 : tx === x1 - 1 ? 1 : 0) + 1) * 3 + ((ty === y0 ? -1 : ty === y1 - 1 ? 1 : 0) + 1);
   }
   for (const [tx, ty] of gateTowers) { tvar[idx(tx + 1, ty + 1)] = 3; for (let y = ty; y <= ty + 1; y++) for (let x = tx; x <= tx + 1; x++) fl1[idx(x, y)] = 0; }
   reserve(x0, y0, x1, y0 + 1); reserve(x0, y1 - 1, x1, y1); reserve(x0, y0, x0 + 1, y1); reserve(x1 - 1, y0, x1, y1);
@@ -387,15 +395,16 @@ function generateWorld() {
   for (const [tx, ty] of kt) {
     for (let y = ty; y <= ty + 1; y++) for (let x = tx; x <= tx + 1; x++) set(x, y, T.FLOORSTONE, O.PART);
     obj[idx(tx + 1, ty + 1)] = O.TOWER; tvar[idx(tx + 1, ty + 1)] = 3;
+    toff[idx(tx + 1, ty + 1)] = ((tx === KEEP.x0 ? -1 : tx === KEEP.x1 - 1 ? 1 : 0) + 1) * 3 + ((ty === KEEP.y0 ? -1 : ty === KEEP.y1 - 1 ? 1 : 0) + 1);
   }
   reserve(KEEP.x0 - 2, KEEP.y0 - 2, KEEP.x1 + 2, KEEP.y1 + 2);
 
   // ---- escadas de 2 degraus (rampas) até a muralha ----
-  const stairs = [[C - 8, y1 - 2, 3], [C + 9, y1 - 2, 3], [C + 6, y0 + 2, 4], [x0 + 2, C + 10, 2], [x1 - 2, C - 6, 1]];
+  const stairs = [[C - 8, y1 - STAIR_N, 3], [C + 9, y1 - STAIR_N, 3], [C + 6, y0 + STAIR_N, 4], [x0 + STAIR_N, C + 10, 2], [x1 - STAIR_N, C - 6, 1]];
   for (const [sx, sy, d] of stairs) {
     const dx = d === 1 ? 1 : d === 2 ? -1 : 0, dy = d === 3 ? 1 : d === 4 ? -1 : 0;
-    for (let k = 0; k < 2; k++) { const x = sx + dx * k, y = sy + dy * k, i = idx(x, y); set(x, y, T.FLOORSTONE, O.STAIRS); stair[i] = d; stairK[i] = k; fl1[i] = 3; }
-    reserve(sx - 1, sy - 1, sx + 1, sy + 1); reserve(sx - dx * 2 - 1, sy - dy * 2 - 1, sx - dx * 2 + 1, sy - dy * 2 + 1);
+    for (let k = 0; k < STAIR_N; k++) { const x = sx + dx * k, y = sy + dy * k, i = idx(x, y); set(x, y, T.FLOORSTONE, O.STAIRS); stair[i] = d; stairK[i] = k; fl1[i] = 3; reserve(x - 1, y - 1, x + 1, y + 1); }
+    reserve(sx - dx * 2 - 1, sy - dy * 2 - 1, sx - dx * 2 + 1, sy - dy * 2 + 1);
   }
 
   // ---- ruas e praças da cidade ----
@@ -421,7 +430,7 @@ function generateWorld() {
     const x = x0 + 3 + Math.floor(R(k, 3, 700) * (x1 - x0 - 6 - w)), y = y0 + 3 + Math.floor(R(k, 4, 700) * (y1 - y0 - 6 - h));
     if (!free(x, y, w, h)) continue;
     const floors = R(k, 5, 700);
-    const H = floors < 0.35 ? 3.2 : floors < 0.8 ? 4.4 : 5.6, RH = 2.2 + R(k, 6, 700) * 1.2;
+    const H = floors < 0.3 ? 4.4 : floors < 0.75 ? 5.9 : 7.4, RH = 3.0 + R(k, 6, 700) * 1.6;
     const hb = { x, y, ...BH('house', w, h, H, RH, '', { v: Math.floor(R(k, 7, 700) * 6) }) };
     houses.push(hb);
     for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) bld[idx(xx, yy)] = -2; // marcador temporário
@@ -473,7 +482,7 @@ function generateWorld() {
   for (let x = x0 + 5; x < x1 - 4; x += 7) { if (Math.abs(x - C) > 4) { decoAny(x, C + 4, O.LAMP); } }
   // bandeiras do castelo e pátio interno
   for (const x of [KEEP.x0 + 4, KEEP.x1 - 4]) decoAny(x, KEEP.y1 + 2, O.BANNER);
-  for (const [x, y, o] of [[C - 4, KEEP.y1 - 3, O.FLOWERBED], [C + 5, KEEP.y1 - 3, O.FLOWERBED], [C - 6, KEEP.y1 - 4, O.TREE], [C + 7, KEEP.y1 - 4, O.TREE], [C - 1, KEEP.y1 - 2, O.BRAZIER], [C + 2, KEEP.y1 - 2, O.BRAZIER], [C - 6, KEEP.y1 - 2, O.BENCH], [C + 7, KEEP.y1 - 2, O.BENCH], [KEEP.x0 + 2, KEEP.y0 + 2, O.TREE], [KEEP.x1 - 2, KEEP.y0 + 2, O.TREE], [C - 4, KEEP.y1 - 6, O.STATUE], [C + 5, KEEP.y1 - 6, O.STATUE]]) decoAny(x, y, o);
+  for (const [x, y, o] of [[C - 4, KEEP.y1 - 3, O.FLOWERBED], [C + 5, KEEP.y1 - 3, O.FLOWERBED], [C - 1, KEEP.y1 - 2, O.BRAZIER], [C + 2, KEEP.y1 - 2, O.BRAZIER], [C - 6, KEEP.y1 - 2, O.BENCH], [C + 7, KEEP.y1 - 2, O.BENCH], [C - 4, KEEP.y1 - 6, O.STATUE], [C + 5, KEEP.y1 - 6, O.STATUE]]) decoAny(x, y, o);
   // catedral: cemitério e jardim
   const T0 = BUILDINGS[0];
   for (let k = 0; k < 12; k++) { const gx = T0.x + [0, 1, 2, 6, 7, 8][k % 6], gy = T0.y + T0.h + 2 + Math.floor(k / 6) * 2; deco(gx, gy, O.GRAVE); }
@@ -502,13 +511,13 @@ function generateWorld() {
     const i = idx(x, y);
     if (inBox(x, y, x0 - 4, y0 - 4, x1 + 4, y1 + 4) || ground[i] !== T.GRASS || obj[i] !== O.NONE) continue;
     const r = R(x, y, 77);
-    obj[i] = r < 0.06 ? O.TREE : r < 0.09 ? O.BUSH : r < 0.2 ? O.TALLGRASS : r < 0.26 ? O.FLOWER : O.NONE;
+    obj[i] = r < 0.025 ? O.TREE : r < 0.05 ? O.BUSH : r < 0.15 ? O.TALLGRASS : r < 0.22 ? O.FLOWER : O.NONE;
   }
   for (const n of NPCS) obj[idx(Math.round(n.x), Math.round(n.y))] = O.NONE;
   for (let k = seats.length - 1; k >= 0; k--) if (seats[k].bi < 0) seats.splice(k, 1);
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (obj[idx(x, y)] === O.BENCH) seats.push({ x, y, dir: 7, h: 0.45, bi: -1 });
 
-  return { ground, obj, zone, bld, fl1, stair, stairK, tvar, rdir, wdir, gateId, gates, seats, height, flow, river };
+  return { ground, obj, zone, bld, fl1, stair, stairK, tvar, toff, rdir, wdir, gateId, gates, seats, height, flow, river };
 }
 
 const WORLD = generateWorld();
@@ -582,7 +591,7 @@ function stairH(x, y) {
   const d = WORLD.stair[ty * MAP_W + tx];
   if (!d) return -1;
   const along = d === 1 ? x - tx : d === 2 ? tx - x : d === 3 ? y - ty : ty - y;
-  return clamp((WORLD.stairK[ty * MAP_W + tx] + 0.5 + along) / 2, 0, 1);
+  return clamp((WORLD.stairK[ty * MAP_W + tx] + 0.5 + along) / STAIR_N, 0, 1);
 }
 // posição livre para quem está na altura z (contínua, 0..1)
 function canStandZ(x, y, z, r = 0.24) {

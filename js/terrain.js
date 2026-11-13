@@ -267,11 +267,38 @@ function buildChunk(cx, cy) {
 }
 
 // ---------- água ----------
+// ---------- água realista ----------
+// textura de ondas repetível (reflexos alongados), desenhada em duas camadas que se movem
+const WAVE = (() => {
+  const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
+  const x = c.getContext('2d'), R = rng(4242);
+  for (let i = 0; i < 520; i++) {
+    const px_ = R() * S, py = R() * S, w = 6 + R() * 26, h = 1 + R() * 2.2, a = 0.05 + R() * 0.16;
+    for (const [dx, dy] of [[0, 0], [S, 0], [-S, 0], [0, S], [0, -S]]) {
+      const g = x.createRadialGradient(px_ + dx, py + dy, 0, px_ + dx, py + dy, w);
+      g.addColorStop(0, 'rgba(255,255,255,' + a + ')'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      x.save(); x.translate(px_ + dx, py + dy); x.scale(1, h / w); x.translate(-px_ - dx, -py - dy); x.fillStyle = g; x.fillRect(px_ + dx - w, py + dy - w, w * 2, w * 2); x.restore();
+    }
+  }
+  for (let i = 0; i < 260; i++) { x.fillStyle = 'rgba(0,20,40,' + (0.04 + R() * 0.08) + ')'; x.beginPath(); x.ellipse(R() * S, R() * S, 4 + R() * 14, 1 + R() * 2, 0, 0, 7); x.fill(); }
+  return c;
+})();
+let wavePat = null;
 function drawWater(ctx, view, now, day) {
-  const { x0, y0, x1, y1 } = view;
-  const top = day.night ? '#0e1e30' : day.dusk > 0.3 ? '#3a4a60' : '#2a5272', bot = day.night ? '#08121e' : '#173248';
-  ctx.fillStyle = lgrad(ctx, 0, y0, 0, y1, [[0, top], [1, bot]]);
+  const { x0, y0, x1, y1 } = view, t = now / 1000;
+  // céu refletido: dourado no alto, azul profundo embaixo
+  const top = day.night ? '#0e1e30' : day.dusk > 0.3 ? '#5a5a62' : '#4a6a74', mid = day.night ? '#0b1828' : '#24485a', bot = day.night ? '#060e18' : '#14303e';
+  ctx.fillStyle = lgrad(ctx, 0, y0, 0, y1, [[0, top], [0.55, mid], [1, bot]]);
   ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+  if (!wavePat) wavePat = ctx.createPattern(WAVE, 'repeat');
+  const ox = (G.view && G.view.ox) || 0, oy = (G.view && G.view.oy) || 0;
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for (const [sp, sc, al, dx] of [[9, 0.55, day.night ? 0.25 : 0.55, 1], [-6, 0.85, day.night ? 0.18 : 0.4, -0.6]]) {
+    wavePat.setTransform(new DOMMatrix([sc, 0, 0, sc * 0.5, ox + t * sp * dx, oy + t * sp * 0.35]));
+    ctx.globalAlpha = al; ctx.fillStyle = wavePat; ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+  }
+  ctx.restore();
 }
 function drawWaterDetail(ctx, minX, maxX, minY, maxY, now, day) {
   const t = now / 1000;
@@ -279,18 +306,28 @@ function drawWaterDetail(ctx, minX, maxX, minY, maxY, now, day) {
   for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
     const i = y * MAP_W + x;
     if (WORLD.ground[i] !== T.WATER) continue;
-    const p = iso(x, y), river = WORLD.river[i];
+    const p = iso(x, y), river = WORLD.river[i], dep = DEPTH[i];
+    // perto da margem a água é rasa: mais clara e esverdeada
+    if (dep === 0) softDab(ctx, p.sx, p.sy, 40, day.night ? '#2a4a5a' : '#6a9a8a', 0.32);
+    else if (dep === 1) softDab(ctx, p.sx, p.sy, 36, day.night ? '#1a3444' : '#3a6a72', 0.16);
+    // espuma batendo na margem
+    if (dep === 0) {
+      const ph = (t * 0.5 + hash2(x, y, 90)) % 1;
+      softDab(ctx, p.sx + (hash2(x, y, 91) - 0.5) * 30, p.sy + (hash2(x, y, 92) - 0.5) * 12, 8 + ph * 10, '#f4f8f0', Math.sin(ph * Math.PI) * (day.night ? 0.1 : 0.22));
+    }
+    // correnteza (rio) e ondulações
     const fx = river ? WORLD.flow[i * 2] : 0.35, fy = river ? WORLD.flow[i * 2 + 1] : 0.15;
     const dx = (fx - fy) * HTW, dy = (fx + fy) * HTH, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
-    for (let k = 0; k < 3; k++) {
-      const ph = ((t * (river ? 0.6 : 0.15)) + hash2(x, y, 40 + k)) % 1;
+    for (let k = 0; k < (river ? 3 : 1); k++) {
+      const ph = ((t * (river ? 0.6 : 0.12)) + hash2(x, y, 40 + k)) % 1;
       const ox = (hash2(x, y, 50 + k) - 0.5) * 44, oy = (hash2(x, y, 60 + k) - 0.5) * 20;
       const sx = p.sx + ox + ux * (ph - 0.5) * 30, sy = p.sy + oy + uy * (ph - 0.5) * 30;
-      const a = Math.sin(ph * Math.PI) * (day.night ? 0.25 : 0.5);
-      ctx.strokeStyle = `rgba(200,225,240,${a})`; ctx.lineWidth = 1.1;
-      ctx.beginPath(); ctx.moveTo(sx - ux * 6, sy - uy * 6); ctx.quadraticCurveTo(sx - uy * 1.5, sy + ux * 1.5, sx + ux * 6, sy + uy * 6); ctx.stroke();
+      const a = Math.sin(ph * Math.PI) * (day.night ? 0.18 : 0.32);
+      ctx.strokeStyle = `rgba(220,236,240,${a})`; ctx.lineWidth = 0.9;
+      ctx.beginPath(); ctx.moveTo(sx - ux * 7, sy - uy * 7); ctx.quadraticCurveTo(sx - uy * 1.5, sy + ux * 1.5, sx + ux * 7, sy + uy * 7); ctx.stroke();
     }
-    if (hash2(x, y, 77) < 0.25) { const s = Math.max(0, Math.sin(t * 1.3 + hash2(x, y, 78) * 9)); if (s > 0.85) softDab(ctx, p.sx + (hash2(x, y, 79) - 0.5) * 40, p.sy + (hash2(x, y, 80) - 0.5) * 16, 4, day.night ? '#c8d8f0' : '#fff6d8', (s - 0.85) * 4); }
+    // brilhos do sol de fim de tarde
+    if (hash2(x, y, 77) < 0.35) { const s2 = Math.max(0, Math.sin(t * 1.7 + hash2(x, y, 78) * 9)); if (s2 > 0.8) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; softDab(ctx, p.sx + (hash2(x, y, 79) - 0.5) * 44, p.sy + (hash2(x, y, 80) - 0.5) * 18, 3.5, day.night ? '#c8d8f0' : '#ffe2a0', (s2 - 0.8) * 4); ctx.restore(); } }
   }
 }
 

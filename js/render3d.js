@@ -6,9 +6,9 @@
 //  sprites 2D guardados em cache. Usa Three.js só para isso.
 // ============================================================
 const R3 = { ok: false };
-const U = 46;          // unidades de arte do mundo por metro do modelo
-const PXU = 1.35;       // pixels da imagem por unidade de arte
-const FRAME_W = 120, FRAME_H = 150, FOOT_Y = 128; // quadro em unidades de arte (pés em FOOT_Y)
+const U = 25;          // unidades de arte do mundo por metro do modelo (1 tile ≈ 2 m)
+const PXU = 2.6;        // pixels da imagem por unidade de arte
+const FRAME_W = 66, FRAME_H = 84, FOOT_Y = 71;  // quadro em unidades de arte (pés em FOOT_Y)
 
 (function init3D() {
   if (typeof THREE === 'undefined') return;
@@ -363,7 +363,7 @@ function applyPose(R, Q, P, walkPh) {
 // ---------- foto do modelo ----------
 const _rigs = new Map();
 const tmpV = typeof THREE !== 'undefined' ? new THREE.Vector3() : null;
-function shoot3D(R, dir, extraRotX) {
+function shoot3D(R, dir, extraRotX, groundSit) {
   const { renderer, scene, cam, W, H } = R3;
   // direção na tela -> giro do modelo
   const a = dir * Math.PI / 4, yaw = Math.atan2(0.5 * Math.sin(a), Math.cos(a));
@@ -375,6 +375,7 @@ function shoot3D(R, dir, extraRotX) {
   if (!extraRotX) {
     let minY = Infinity;
     for (const f of [R.LA.ft, R.LB.ft]) { f.getWorldPosition(tmpV); minY = Math.min(minY, tmpV.y); }
+    if (groundSit) { R.hips.getWorldPosition(tmpV); minY = Math.min(minY, tmpV.y - 0.13); }
     R.root.position.y = -minY + 0.035;
   } else R.root.position.y = 0.12;
   scene.add(R.root);
@@ -405,7 +406,7 @@ function heroSprite3D(cls, skin, color, P) {
     let R = _rigs.get(lk); if (!R) { R = buildHumanoid(L); epicHero(R, L, 1, skin); _rigs.set(lk, R); }
     const Q = buildPose(cls, P);
     applyPose(R, Q, P, P.walk >= 0 ? P.walk / 12 * Math.PI * 2 : 0);
-    return shoot3D(R, P.dir | 0, P.down ? -Math.PI / 2 : 0);
+    return shoot3D(R, P.dir | 0, P.down ? -Math.PI / 2 : 0, P.sit === 'g');
   }, 'h|' + lk + (P.down ? 'd' : '') + (P.dir | 0));
 }
 function npcSprite3D(kind, P) {

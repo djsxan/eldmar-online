@@ -2,7 +2,7 @@
 
 RPG multiplayer isométrico de fantasia medieval com visual pré-renderizado (modelos 3D transformados em imagens, como no Diablo II), direto no navegador.
 
-**Jogar:** https://djsxan.github.io/eldmar-online/
+**Jogar:** https://djsxan.github.io/world-of-sxan/
 
 ## Como jogar com os amigos
 
