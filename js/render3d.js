@@ -165,8 +165,8 @@ function buildHumanoid(L, opts = {}) {
   }
   // arma e escudo
   R.weapon = buildWeapon(L, S, trimM);
-  if (R.weapon) R.A.hand.add(R.weapon.obj);
-  if (L.shield) { const sh = buildShield(L, S, accM, trimM); sh.position.set(0.02 * S, 0, 0.09 * S); R.B.hand.add(sh); R.shield = sh; }
+  if (R.weapon) { if (R.weapon.bow) chest.add(R.weapon.obj); else R.A.hand.add(R.weapon.obj); }
+  if (L.shield) { const sh = buildShield(L, S, accM, trimM); chest.add(sh); R.shield = sh; }
   Object.assign(R, { root, hips, spine, chest, head, neckJ });
   return R;
 }
@@ -248,15 +248,16 @@ function buildWeapon(L, S, trimM) {
     W.flip = false;
   } else if (k === 'bow' || k === 'frostbow' || k === 'elfbow') {
     const bm = k === 'frostbow' ? mat('#c4d8e8', 'gem', { emissive: '#3a6a8a' }) : k === 'elfbow' ? mat('#d8b450', 'gold') : mat('#6e4320', 'wood');
-    const arc = mesh(torG(0.55 * S, 0.018 * S, Math.PI * 0.62), bm, 0, 0, 0);
-    arc.rotation.z = Math.PI / 2 - Math.PI * 0.31; arc.position.set(0, 0, -0.42 * S);
-    const bowG = new THREE.Group(); bowG.add(arc); bowG.rotation.y = Math.PI / 2;
-    obj.add(bowG);
+    const half = 0.62 * S, pts = [];
+    for (let i = 0; i <= 16; i++) { const t = i / 8 - 1; pts.push(new THREE.Vector3(0, t * half, -Math.pow(Math.abs(t), 1.6) * 0.2 * S + (1 - Math.abs(t)) * 0.03 * S)); }
+    const arc = new THREE.Mesh(geo('bowtube' + k + S, () => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.018 * S, 6, false)), bm); obj.add(arc);
+    obj.add(mesh(cylG(0.026 * S, 0.026 * S, 0.12 * S, 8), mat('#3a2414', 'leather'), 0, 0, 0.02 * S));
+    if (k === 'elfbow') for (const sgn of [-1, 1]) obj.add(mesh(sphG(0.02 * S), mat('#6fe0a8', 'gem', { emissive: '#2a8a5a' }), 0, sgn * half, -0.2 * S));
     const strM = new THREE.LineBasicMaterial({ color: 0xe6e0cc });
     const sg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]);
     const str = new THREE.Line(sg, strM); obj.add(str);
     const arrow = mesh(cylG(0.008 * S, 0.008 * S, 0.7 * S, 5), mat('#d4c8a6', 'wood'), 0, 0, 0); obj.add(arrow); arrow.visible = false;
-    W.bow = { arc, str, arrow, r: 0.55 * S };
+    W.bow = { arc, str, arrow, half, tipZ: -0.2 * S };
   } else if (k === 'axe') {
     obj.add(mesh(cylG(0.02 * S, 0.022 * S, 0.8 * S, 8), mat('#4a3020', 'wood'), 0, -0.25 * S, 0));
     const shp = new THREE.Shape(); shp.moveTo(0, 0.12); shp.quadraticCurveTo(0.2, 0.1, 0.24, -0.02); shp.quadraticCurveTo(0.2, -0.16, 0, -0.14); shp.closePath();
@@ -320,14 +321,32 @@ function applyPose(R, Q, P, walkPh) {
   // arma: ângulo absoluto no plano do corpo
   if (R.weapon) {
     const rel = Q.wp - (Q.aA[0] + Q.aA[2]);
-    if (R.weapon.bow) {
-      R.weapon.obj.rotation.set(-rel + Math.PI, 0, 0);
-      const b = R.weapon.bow, r = b.r, pull = Q.pull || 0;
-      const top = new THREE.Vector3(0, r * 0.82, -r * 0.42 + r * 0.42), bot = new THREE.Vector3(0, -r * 0.82, 0);
-      const mid = new THREE.Vector3(0, 0, -0.02 - pull * 0.5);
-      b.str.geometry.setFromPoints([new THREE.Vector3(0, r * 0.81, -0.03), mid, new THREE.Vector3(0, -r * 0.81, -0.03)]);
-      b.arrow.visible = pull > 0.05; b.arrow.rotation.x = Math.PI / 2; b.arrow.position.set(0, 0, 0.32 - pull * 0.5);
-    } else R.weapon.obj.rotation.x = (R.weapon.flip ? Math.PI : 0) - rel;
+    if (!R.weapon.bow) R.weapon.obj.rotation.x = (R.weapon.flip ? Math.PI : 0) - rel;
+  }
+  // quadril balança
+  R.hips.rotation.z = Q.sway || 0;
+  // arco e escudo seguem a mão, mas ficam "de pé" (orientados pelo tronco)
+  if ((R.weapon && R.weapon.bow) || R.shield) {
+    R.root.updateMatrixWorld(true);
+    const wp = new THREE.Vector3();
+    if (R.weapon && R.weapon.bow) {
+      const b = R.weapon.bow, o = R.weapon.obj;
+      R.A.hand.getWorldPosition(wp); R.chest.worldToLocal(wp); o.position.copy(wp);
+      { const d = Q.aA[0] - Math.PI / 2; o.rotation.set(d > 0 ? -d * 0.6 : 0.12 + d * 0.04, 0, 0.12); }
+      const pull = Q.pull || 0, mid = new THREE.Vector3();
+      if (pull > 0.05) { R.B.hand.getWorldPosition(mid); o.updateMatrixWorld(true); o.worldToLocal(mid); mid.x = 0; mid.z = Math.min(mid.z, b.tipZ); }
+      else mid.set(0, 0, b.tipZ);
+      b.str.geometry.setFromPoints([new THREE.Vector3(0, b.half, b.tipZ), mid, new THREE.Vector3(0, -b.half, b.tipZ)]);
+      b.arrow.visible = pull > 0.05; b.arrow.rotation.set(Math.PI / 2, 0, 0); b.arrow.position.set(0, 0, mid.z + 0.33);
+    }
+    if (R.shield) {
+      const el = new THREE.Vector3(), hd = new THREE.Vector3();
+      R.B.el.getWorldPosition(el); R.B.hand.getWorldPosition(hd);
+      wp.copy(el).lerp(hd, 0.55); R.chest.worldToLocal(wp);
+      R.shield.position.set(wp.x + 0.06, wp.y, wp.z + 0.07);
+      const raise = clamp((Q.aB[0] - 0.6) / 1.2, 0, 1);
+      R.shield.rotation.set(-0.15 - raise * 0.25, 0.35 - raise * 0.3, 0);
+    }
   }
   // capa: dobra para trás conforme o movimento
   if (R.cape) {

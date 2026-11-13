@@ -245,7 +245,7 @@ function heroPoseFor(e, now) {
   const view0 = DIR_VIEW[e.dir || 0];
   const P = { view: view0 === 'W' ? 'E' : view0, walk: -1, act: null, idle: null, sit: false, carry: !!e.carrying };
   P.dir = e.dir || 0;
-  if (e.walking) P.walk = Math.floor(e.walkDist * 3.6) % 12;
+  if (e.walking) P.walk = Math.floor(e.walkDist * (e.cls === 'knight' ? 8.5 : 9.5)) % 12;
   if (e.anim) {
     const ms = ACT_MS[e.anim.a] || 400, t = (now - e.anim.t0) / ms;
     if (t >= 0 && t < 1 && ACTS[e.anim.a]) P.act = { k: e.anim.a, f: Math.min(11, Math.floor(t * 12)) };

@@ -3,7 +3,7 @@
 //  Mexa aqui para balancear o jogo.
 // ============================================================
 const GAME_NAME = 'World of Sxan';
-const VERSION = 'v0.6.1';
+const VERSION = 'v0.6.2';
 const VERSION_NAME = 'HerÃ³is Forjados';
 
 const PLAYER_SPEED = 3.6;          // tiles por segundo

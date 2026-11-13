@@ -135,14 +135,24 @@ function buildPose(cls, P) {
   const base = BASE[cls] || BASE.knight;
   const Q = { aA: base.aA.slice(), aB: base.aB.slice(), wp: base.wp, tl: base.tl, tw: 0, lA: [0.04, -0.06], lB: [-0.04, -0.06], kn: 0, drop: 0, ht: 0, hw: 0, mouth: 0, pull: 0, glow: 0 };
   if (P.walk >= 0) {
-    const ph = P.walk / 12 * Math.PI * 2, s = Math.sin(ph), c = Math.cos(ph);
+    // ciclo de passada: a perna de apoio fica quase reta; o joelho dobra quando a perna avança
+    const ph = P.walk / 12 * Math.PI * 2;
     const heavy = cls === 'knight' ? 1 : cls === 'mage' ? 0.6 : 0.4;
-    const amp = 0.5 + (1 - heavy) * 0.12, knee = 0.85 + heavy * 0.3;
-    Q.lA = [s * amp, -Math.max(0, -c) * knee - 0.1 - heavy * 0.08]; Q.lB = [-s * amp, -Math.max(0, c) * knee - 0.1 - heavy * 0.08];
-    Q.aB[0] += -s * (0.5 - heavy * 0.25); Q.aA[0] += s * (cls === 'archer' ? 0.35 : 0.12);
-    Q.tl += 0.05 + heavy * 0.07;
-    Q.tw += s * 0.12 * heavy;       // ombros balançam com o peso da armadura
-    Q.ht += Math.abs(c) * 0.06 * heavy;
+    const amp = 0.42 + (1 - heavy) * 0.06;
+    const leg = p => {
+      const hip = Math.sin(p) * amp;
+      const swing = Math.max(0, Math.sin(p + 1.2));            // fase em que a perna vai para a frente
+      const knee = -(Math.pow(swing, 1.4) * (0.95 + heavy * 0.2)) - 0.06 - (Math.cos(p) > 0.85 ? 0.12 : 0);
+      return [hip, knee];
+    };
+    Q.lA = leg(ph); Q.lB = leg(ph + Math.PI);
+    const armSw = (0.32 - heavy * 0.1);
+    Q.aB[0] += Math.sin(ph) * armSw; Q.aB[2] += 0.15 + Math.max(0, Math.sin(ph)) * 0.25;
+    if (cls !== 'knight') { Q.aA[0] += -Math.sin(ph) * armSw * 0.7; Q.aA[2] += 0.1 + Math.max(0, -Math.sin(ph)) * 0.2; }
+    Q.tl += 0.06 + heavy * 0.05;
+    Q.tw += -Math.sin(ph) * (0.06 + heavy * 0.06);          // ombros giram ao contrário do quadril
+    Q.sway = Math.sin(ph) * (0.035 + heavy * 0.02);            // quadril balança para os lados
+    Q.ht += Math.abs(Math.cos(ph)) * 0.03;
   }
   const apply = (keys, p) => {
     const { a, b, t } = sampleKeys(keys, p);
