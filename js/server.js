@@ -178,7 +178,7 @@ function hitMonster(p, m, mult, delay = 0) {
   const { dmg, crit } = roll(p, mult);
   m.hp -= dmg; m.aggro = p.id; m.returning = false;
   p.lastCombat = now_();
-  near(m.x, m.y, { t: 'hit', k: 'm', id: m.id, x: m.x, y: m.y, dmg, crit, d: delay });
+  near(m.x, m.y, { t: 'hit', k: 'm', id: m.id, x: m.x, y: m.y, dmg, crit, d: delay, by: p.id, ax: p.x, ay: p.y, hv: mult >= 2 ? 1 : 0 });
   if (m.hp <= 0) killMonster(m, p, delay);
 }
 
@@ -236,7 +236,7 @@ function damagePlayer(p, raw, m, delay = 0) {
   const dmg = Math.max(1, Math.round(raw * mult));
   p.hp -= dmg;
   p.lastCombat = now_();
-  near(p.x, p.y, { t: 'hit', k: 'p', id: p.id, x: p.x, y: p.y, dmg, d: delay });
+  near(p.x, p.y, { t: 'hit', k: 'p', id: p.id, x: p.x, y: p.y, dmg, d: delay, ax: m ? m.x : p.x, ay: m ? m.y : p.y - 1 });
   if (p.hp > 0) { sendStat(p); return; }
   goDown(p, m);
 }

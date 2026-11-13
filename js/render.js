@@ -265,9 +265,11 @@ function drawHeroEntity(ctx, e, sx, sy, now) {
   if (R3.ok) {
     if (e.downed && !e.carriedBy) { const s = heroSprite3D(e.cls, e.skin, e.color, { dir: e.dir || 0, walk: -1, down: true }); ctx.imageSmoothingEnabled = true; pblit(ctx, s, sx, sy); return; }
     const P = heroPoseFor(e, now);
+    if (!P.act && e.hitAt && now - e.hitAt < 300) P.act = { k: 'hurt', f: Math.min(11, Math.floor((now - e.hitAt) / 300 * 12)) };
     const s = e.isNpc ? npcSprite3D(e.kind, P) : heroSprite3D(e.cls, e.skin, e.color, P);
     ctx.imageSmoothingEnabled = true;
     softDab(ctx, sx, sy, 16, '#000000', 0.35);
+    const kb = knockOf(e, now); sx += kb.x; sy += kb.y;
     pblit(ctx, s, sx, sy);
     if (e.hitAt && now - e.hitAt < 110) pblit(ctx, whiteOf(s, 'w3|' + e.id + (e.cls || e.kind)), sx, sy, 0.65);
     return;
@@ -300,19 +302,35 @@ function drawCarried(ctx, e, sx, sy) {
   ctx.drawImage(spr.c, -spr.ax, -76);
   ctx.restore();
 }
+// empurrão do golpe: sai e volta em ~250 ms
+function knockOf(e, now) {
+  const k = e.knock; if (!k) return { x: 0, y: 0, dx: 0 };
+  const t = (now - k.t0) / 260; if (t >= 1) return { x: 0, y: 0, dx: k.dx };
+  const p = Math.sin(Math.min(1, t * 1.6) * Math.PI) * (1 - t * 0.3) * 9 * k.s;
+  return { x: k.dx * p, y: k.dy * p, dx: k.dx };
+}
+// queda nos golpes fortes: tomba, fica um instante e levanta
+function fallAngle(ms) {
+  const t = ms / 1100; if (t >= 1) return 0;
+  return (t < 0.25 ? t / 0.25 : t < 0.65 ? 1 : 1 - (t - 0.65) / 0.35) * 1.15;
+}
 const MON_H = { rat: 30, slime: 40, wolf: 58, spider: 52, toad: 44, goblin: 68, skeleton: 92, orc: 104, troll: 150 };
 function drawMonsterEntity(ctx, e, sx, sy, now) {
   if (R3.ok) {
     let atk = -1;
     if (e.anim) { const t = (now - e.anim.t0) / ACT_MS.bite; if (t >= 0 && t < 1) atk = Math.min(7, Math.floor(t * 8)); }
     const f = e.walking ? Math.floor(e.walkDist * 4) % 8 : -1;
-    const s = monSprite3D(e.type, f, atk, e.dir || 0);
+    const hurtF = e.hitAt && now - e.hitAt < 300 && atk < 0 && MON_LOOK[e.type] ? Math.min(11, Math.floor((now - e.hitAt) / 300 * 12)) : -1;
+    const s = monSprite3D(e.type, hurtF >= 0 ? -1 : f, atk, e.dir || 0, hurtF);
     let alpha = 1, sink = 0;
+    const kb = knockOf(e, now); sx += kb.x; sy += kb.y;
     if (e.dieAt && now > e.dieAt) { const t = Math.min(1, (now - e.dieAt) / 600); alpha = 1 - t; sink = t * 8; }
     ctx.imageSmoothingEnabled = true;
     softDab(ctx, sx, sy, MON[e.type].big ? 34 : 18, '#000000', 0.35 * alpha);
-    pblit(ctx, s, sx, sy + sink, alpha);
-    if (e.hitAt && now - e.hitAt < 110) pblit(ctx, whiteOf(s, `wm|${e.type}|${f}|${atk}|${e.dir || 0}`), sx, sy + sink, 0.7 * alpha);
+    const fall = e.fallAt ? fallAngle(now - e.fallAt) * (kb.dx >= 0 ? 1 : -1) : 0;
+    if (fall) { ctx.save(); ctx.translate(sx, sy + sink); ctx.rotate(fall); pblit(ctx, s, 0, 0, alpha); ctx.restore(); }
+    else pblit(ctx, s, sx, sy + sink, alpha);
+    if (e.hitAt && now - e.hitAt < 110 && !fall) pblit(ctx, whiteOf(s, `wm|${e.type}|${f}|${atk}|${e.dir || 0}|${hurtF}`), sx, sy + sink, 0.7 * alpha);
     if (e.flags & 1 && Math.random() < 0.2) spawnPart('snow', sx - G.view.ox + (Math.random() - 0.5) * 24, sy - G.view.oy - Math.random() * 40);
     if (e.flags & 2) for (let k = 0; k < 3; k++) { const a = now / 180 + k * 2.1; dab(ctx, sx + Math.cos(a) * 12, sy - MON_H[e.type] - 6 + Math.sin(a) * 4, 2, 2, '#f0d040'); }
     return;

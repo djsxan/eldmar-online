@@ -257,6 +257,20 @@ function buildWeapon(L, S, trimM) {
     const str = new THREE.Line(sg, strM); obj.add(str);
     const arrow = mesh(cylG(0.008 * S, 0.008 * S, 0.7 * S, 5), mat('#d4c8a6', 'wood'), 0, 0, 0); obj.add(arrow); arrow.visible = false;
     W.bow = { arc, str, arrow, r: 0.55 * S };
+  } else if (k === 'axe') {
+    obj.add(mesh(cylG(0.02 * S, 0.022 * S, 0.8 * S, 8), mat('#4a3020', 'wood'), 0, -0.25 * S, 0));
+    const shp = new THREE.Shape(); shp.moveTo(0, 0.12); shp.quadraticCurveTo(0.2, 0.1, 0.24, -0.02); shp.quadraticCurveTo(0.2, -0.16, 0, -0.14); shp.closePath();
+    const ag = geo('axe' + S, () => { const g2 = new THREE.ExtrudeGeometry(shp, { depth: 0.02, bevelEnabled: true, bevelThickness: 0.008, bevelSize: 0.01, bevelSegments: 1 }); g2.scale(S, S, S); return g2; });
+    const blade = mesh(ag, mat('#6a5a4a', 'darkmetal'), 0.02 * S, -0.6 * S, -0.01 * S); blade.rotation.y = Math.PI / 2; obj.add(blade);
+  } else if (k === 'club') {
+    const cl = mesh(cylG(0.09 * S, 0.035 * S, 0.9 * S, 10), mat('#5a3e26', 'wood'), 0, -0.4 * S, 0); obj.add(cl);
+    for (let i = 0; i < 8; i++) { const sp = mesh(coneG(0.018 * S, 0.07 * S, 5), mat('#a8a29e', 'bone'), Math.cos(i) * 0.08 * S, (-0.62 - (i % 3) * 0.08) * S, Math.sin(i) * 0.08 * S); sp.rotation.z = -Math.cos(i) * 1.4; sp.rotation.x = Math.sin(i) * 1.4; obj.add(sp); }
+  } else if (k === 'rustsword' || k === 'dagger') {
+    const len = (k === 'dagger' ? 0.32 : 0.8) * S, bm = mat('#7a5a44', 'darkmetal');
+    obj.add(mesh(cylG(0.016 * S, 0.018 * S, 0.14 * S, 8), mat('#3a2414', 'leather'), 0, 0.05 * S, 0));
+    obj.add(mesh(boxG(0.16 * S, 0.025 * S, 0.035 * S), bm, 0, -0.03 * S, 0));
+    obj.add(mesh(boxG(0.05 * S, len, 0.012 * S), bm, 0, -0.04 * S - len / 2, 0));
+    for (let i = 0; i < 3; i++) obj.add(mesh(boxG(0.02 * S, 0.03 * S, 0.014 * S), mat('#4a2a1a', 'darkmetal'), 0.02 * S, -0.1 * S - i * len * 0.3, 0));
   } else if (k === 'spear') {
     obj.add(mesh(cylG(0.018 * S, 0.018 * S, 1.8 * S, 8), mat('#6b4a2b', 'wood'), 0, 0.2 * S, 0));
     const tip = mesh(coneG(0.04 * S, 0.18 * S, 6), mat('#cfd4dc', 'metal'), 0, 1.18 * S, 0); obj.add(tip);
@@ -369,7 +383,7 @@ function heroSprite3D(cls, skin, color, P) {
   const lk = cls + ':' + skin + ':' + color;
   return cache3('h3|' + lk + '|' + pose3Key(P) , () => {
     const L = lookFor(lk, () => heroLook(cls, skin, color));
-    const R = rigFor(lk, L);
+    let R = _rigs.get(lk); if (!R) { R = buildHumanoid(L); epicHero(R, L, 1, skin); _rigs.set(lk, R); }
     const Q = buildPose(cls, P);
     applyPose(R, Q, P, P.walk >= 0 ? P.walk / 12 * Math.PI * 2 : 0);
     return shoot3D(R, P.dir | 0, P.down ? -Math.PI / 2 : 0);
@@ -387,12 +401,12 @@ function npcSprite3D(kind, P) {
 
 // ---------- monstros ----------
 const MON_LOOK = {
-  goblin: () => ({ skin: tone('#6f8e3a'), hair: null, armor: 'leather', body: tone('#5a4028'), body2: tone('#3a2814'), accent: tone('#4a3020'), legs: tone('#4a3a2a'), boots: tone('#2a1d12'), trim: tone('#8a7a4a'), head: 'none', weapon: 'hammer', eyes: '#e8d040', capeTone: tone('#3a2a1e') }),
-  skeleton: () => ({ skin: tone('#ddd6c2'), hair: null, armor: 'cloth', body: tone('#cfc8b2'), body2: tone('#6a5a40'), accent: tone('#4a3a2a'), legs: tone('#d6cfba'), boots: tone('#a8a08a'), trim: tone('#8a7a50'), head: 'none', weapon: 'sword', shield: null, capeTone: tone('#3a3028') }),
-  orc: () => ({ skin: tone('#5e7f42'), hair: tone('#1c1c1c'), armor: 'plate', body: tone('#5a5e66'), body2: tone('#3a2614'), accent: tone('#6a1a14'), legs: tone('#3d2b1a'), boots: tone('#27180d'), trim: tone('#8a6a34'), head: 'horned', headTone: tone('#4b4f57'), weapon: 'hammer', pauldron: 'spike', capeTone: tone('#3a1a14') }),
-  troll: () => ({ skin: tone('#7b8794'), hair: null, armor: 'cloth', body: tone('#57534e'), body2: tone('#292524'), accent: tone('#44403c'), legs: tone('#44403c'), boots: tone('#7b8794'), trim: tone('#5a5248'), head: 'none', weapon: 'hammer', capeTone: tone('#3a3630') }),
+  goblin: () => ({ skin: tone('#6f8e3a'), hair: null, armor: 'leather', body: tone('#5a4028'), body2: tone('#3a2814'), accent: tone('#4a3020'), legs: tone('#4a3a2a'), boots: tone('#2a1d12'), trim: tone('#8a7a4a'), head: 'none', weapon: 'dagger', eyes: '#e8d040', capeTone: tone('#3a2a1e') }),
+  skeleton: () => ({ skin: tone('#ddd6c2'), hair: null, armor: 'cloth', body: tone('#cfc8b2'), body2: tone('#6a5a40'), accent: tone('#4a3a2a'), legs: tone('#d6cfba'), boots: tone('#a8a08a'), trim: tone('#8a7a50'), head: 'none', weapon: 'rustsword', shield: null, capeTone: tone('#3a3028') }),
+  orc: () => ({ skin: tone('#5e7f42'), hair: tone('#1c1c1c'), armor: 'plate', body: tone('#5a5e66'), body2: tone('#3a2614'), accent: tone('#6a1a14'), legs: tone('#3d2b1a'), boots: tone('#27180d'), trim: tone('#8a6a34'), head: 'horned', headTone: tone('#4b4f57'), weapon: 'axe', pauldron: 'spike', capeTone: tone('#3a1a14') }),
+  troll: () => ({ skin: tone('#7b8794'), hair: null, armor: 'cloth', body: tone('#57534e'), body2: tone('#292524'), accent: tone('#44403c'), legs: tone('#44403c'), boots: tone('#7b8794'), trim: tone('#5a5248'), head: 'none', weapon: 'club', capeTone: tone('#3a3630') }),
 };
-const MON_SCALE = { goblin: 0.72, skeleton: 0.98, orc: 1.12, troll: 1.6 };
+const MON_SCALE = { goblin: 0.72, skeleton: 0.98, orc: 1.18, troll: 1.7 };
 function buildCreature(type) {
   const root = new THREE.Group(), R = { root, legs: [], type };
   const body = new THREE.Group(); root.add(body); R.body = body;
@@ -459,11 +473,11 @@ function buildCreature(type) {
   }
   return R;
 }
-function monSprite3D(type, f, atk, dir) {
-  return cache3(`m3|${type}|${f}|${atk}|${dir}`, () => {
+function monSprite3D(type, f, atk, dir, hurt = -1) {
+  return cache3(`m3|${type}|${f}|${atk}|${dir}|${hurt}`, () => {
     if (MON_LOOK[type]) {
-      const R = rigFor('mon:' + type, lookFor('mon:' + type, MON_LOOK[type]), { scale: MON_SCALE[type] });
-      const P = { dir, walk: atk >= 0 ? -1 : (f >= 0 ? Math.round(f * 1.5) : -1), act: atk >= 0 ? { k: type === 'troll' || type === 'orc' ? 'bash' : 'swing', f: Math.min(11, Math.round(atk * 1.5)) } : null };
+      let R = _rigs.get('mon:' + type); if (!R) { R = buildHumanoid(lookFor('mon:' + type, MON_LOOK[type]), { scale: MON_SCALE[type] }); scaryMonster(type, R, MON_SCALE[type]); _rigs.set('mon:' + type, R); }
+      const P = { dir, walk: atk >= 0 || hurt >= 0 ? -1 : (f >= 0 ? Math.round(f * 1.5) : -1), act: hurt >= 0 ? { k: 'hurt', f: hurt } : atk >= 0 ? { k: type === 'troll' || type === 'orc' ? 'bash' : 'swing', f: Math.min(11, Math.round(atk * 1.5)) } : null };
       const Q = buildPose('knight', P);
       if (type === 'troll') Q.tl += 0.25;
       if (type === 'goblin') Q.tl += 0.15;
@@ -471,7 +485,7 @@ function monSprite3D(type, f, atk, dir) {
       return shoot3D(R, dir, 0);
     }
     let C = _rigs.get('crt:' + type);
-    if (!C) { C = buildCreature(type); _rigs.set('crt:' + type, C); }
+    if (!C) { C = buildCreature(type); scaryCreature(type, C); _rigs.set('crt:' + type, C); }
     const ph = f / 8 * Math.PI * 2, lunge = atk >= 0 ? Math.sin(atk / 7 * Math.PI) : 0;
     C.legs.forEach((j, i) => { j.rotation.x = Math.sin(ph + (i % 2 ? Math.PI : 0) + (i >= 2 ? Math.PI : 0)) * (f >= 0 && atk < 0 ? 0.5 : 0.05); });
     C.body.position.z = lunge * 0.18;
@@ -487,4 +501,100 @@ function monSprite3D(type, f, atk, dir) {
     const c = document.createElement('canvas'); c.width = W; c.height = H; c.getContext('2d').drawImage(renderer.domElement, 0, 0);
     return { c, w: FRAME_W, h: FRAME_H, ax: FRAME_W / 2, ay: FOOT_Y, painted: true, hd: true };
   }, 'm|' + type + dir);
+}
+
+// ---------- armaduras épicas (enfeites por cima do modelo base) ----------
+function epicHero(R, L, S, skin) {
+  const hx = h => (h && h.hex) || h || '#888888';
+  const gold = mat(hx(L.trim), 'gold'), body = mat(hx(L.body), L.armor === 'plate' ? (skin === 'dragon' ? 'darkmetal' : skin === 'sun' ? 'gold' : 'metal') : L.armor === 'leather' ? 'leather' : 'cloth');
+  const glow = c => mat(c, 'gem', { emissive: c, emissiveIntensity: 1.6 });
+  const runeC = { dragon: '#ff4a1a', sun: '#ffd860', iron: '#7ab0ff', scout: '#9ad87a', winter: '#9ad8ff', sylvan: '#6fe0a8', adept: '#8ab8ff', astral: '#c8e0ff', druid: '#8ee07a' }[skin] || '#ffd860';
+  const ch = R.chest, sp = R.spine;
+  if (L.armor === 'plate') {
+    // ombreiras em camadas, gorjal, faixas douradas, saiote de placas, joia no peito
+    for (const [arm, side] of [[R.A, -1], [R.B, 1]]) {
+      for (let k = 0; k < 3; k++) { const p = mesh(sphG((0.13 - k * 0.018) * S), k === 0 ? body : gold, side * 0.03 * S, (-0.03 - k * 0.055) * S, 0); p.scale.set(1.3, 0.55, 1.15); arm.sh.add(p); }
+      const fl = mesh(coneG(0.07 * S, 0.1 * S, 10), body, 0, -0.21 * S, 0); fl.rotation.x = Math.PI; arm.el.add(fl);
+      { const r = mesh(torG(0.065 * S, 0.012 * S), gold, 0, -0.17 * S, 0); r.rotation.x = Math.PI / 2; arm.el.add(r); }
+    }
+    const gorget = mesh(torG(0.09 * S, 0.035 * S), body, 0, 0.24 * S, 0); gorget.rotation.x = Math.PI / 2; ch.add(gorget);
+    for (const y of [0.16, -0.12]) { const band = mesh(torG(0.19 * S, 0.012 * S), gold, 0, y * S, 0); band.rotation.x = Math.PI / 2; band.scale.set(1.08, 0.72, 1); ch.add(band); }
+    for (let k = 0; k < 6; k++) { const a = -Math.PI / 2 + (k - 2.5) * 0.5; const t = mesh(boxG(0.11 * S, 0.17 * S, 0.02 * S), k % 2 ? body : gold, Math.cos(a) * 0.17 * S, -0.17 * S, -Math.sin(a) * 0.13 * S); t.rotation.y = -a - Math.PI / 2; t.rotation.x = 0.15; sp.add(t); }
+    ch.add(mesh(sphG(0.035 * S), glow(runeC), 0, 0.04 * S, 0.16 * S));
+    for (const leg of [R.LA, R.LB]) { const kp = mesh(coneG(0.04 * S, 0.12 * S, 8), body, 0, 0.0, 0.1 * S); kp.rotation.x = Math.PI / 2; leg.kn.add(kp); }
+    if (skin === 'dragon') {
+      for (let k = 0; k < 5; k++) { const sp2 = mesh(coneG(0.03 * S, 0.12 * S, 6), mat('#2a1416', 'darkmetal'), 0, (0.22 - k * 0.1) * S, -0.15 * S); sp2.rotation.x = -1.1; ch.add(sp2); }
+      for (let k = 0; k < 3; k++) ch.add(mesh(boxG(0.005 * S, 0.12 * S, 0.004 * S), glow(runeC), (k - 1) * 0.05 * S, -0.02 * S, 0.165 * S));
+    }
+    if (skin === 'sun') {
+      const halo = mesh(torG(0.13 * S, 0.012 * S), glow('#ffe08a'), 0, 0.3 * S, -0.04 * S); halo.rotation.x = Math.PI / 2 - 0.3; R.head.add(halo);
+      for (const s of [-1, 1]) for (let k = 0; k < 4; k++) { const f = mesh(boxG(0.012 * S, 0.34 * S - k * 0.05 * S, 0.09 * S), mat('#f6f1e4', 'cloth'), s * (0.1 + k * 0.05) * S, (0.2 + k * 0.04) * S, -0.18 * S); f.rotation.z = -s * (0.5 + k * 0.15); f.rotation.x = -0.3; ch.add(f); }
+    }
+    if (skin === 'iron') { const crest = mesh(boxG(0.015 * S, 0.12 * S, 0.24 * S), mat(hx(L.plume), 'cloth'), 0, 0.26 * S, -0.02 * S); R.head.add(crest); }
+  } else if (L.armor === 'leather') {
+    for (let k = 0; k < 10; k++) ch.add(mesh(sphG(0.012 * S), mat('#b8b0a0', 'metal'), Math.sin(k * 1.7) * 0.12 * S, (0.15 - (k % 5) * 0.06) * S, 0.135 * S));
+    const collar = mesh(torG(0.13 * S, 0.05 * S), mat(skin === 'winter' ? '#f2f2ee' : '#6a4a2a', 'fur'), 0, 0.22 * S, -0.01 * S); collar.rotation.x = Math.PI / 2; ch.add(collar);
+    for (const arm of [R.A, R.B]) { arm.el.add(mesh(cylG(0.06 * S, 0.06 * S, 0.12 * S, 12), mat('#4a3020', 'leather'), 0, -0.14 * S, 0)); { const r = mesh(torG(0.061 * S, 0.008 * S), gold, 0, -0.09 * S, 0); r.rotation.x = Math.PI / 2; arm.el.add(r); } }
+    for (const s of [-1, 1]) sp.add(mesh(boxG(0.07 * S, 0.08 * S, 0.05 * S), mat('#5a3a22', 'leather'), s * 0.13 * S, -0.1 * S, 0.08 * S));
+    if (skin === 'winter') for (const arm of [R.A, R.B]) { const m = mesh(sphG(0.13 * S), mat('#ecebe6', 'fur'), 0, 0, 0); m.scale.set(1.2, 0.7, 1.1); arm.sh.add(m); arm.sh.add(mesh(geo('ice' + S, () => new THREE.OctahedronGeometry(0.035 * S)), glow(runeC), 0, 0.08 * S, 0)); }
+    if (skin === 'sylvan') for (const [arm, side] of [[R.A, -1], [R.B, 1]]) { for (let k = 0; k < 3; k++) { const lf = mesh(coneG(0.05 * S, 0.18 * S, 6), gold, side * (0.04 + k * 0.03) * S, (0.04 - k * 0.04) * S, (k - 1) * 0.05 * S); lf.rotation.z = -side * (1.2 + k * 0.2); lf.scale.set(1, 1, 0.3); arm.sh.add(lf); } arm.sh.add(mesh(sphG(0.025 * S), glow(runeC), side * 0.05 * S, 0.06 * S, 0.04 * S)); }
+    if (skin === 'scout') { const cl = mesh(coneG(0.24 * S, 0.3 * S, 16), mat(hx(L.accent), 'cloth'), 0, 0.12 * S, -0.02 * S); cl.scale.set(1, 1, 0.8); ch.add(cl); }
+  } else if (L.armor === 'robe') {
+    const collar = mesh(cylG(0.16 * S, 0.12 * S, 0.14 * S, 16, 1, true), mat(hx(L.body2), 'cloth', { side: THREE.DoubleSide }), 0, 0.3 * S, -0.03 * S); ch.add(collar);
+    const mantle = mesh(coneG(0.3 * S, 0.26 * S, 18), mat(hx(L.body2), 'cloth'), 0, 0.12 * S, 0); mantle.scale.set(1, 1, 0.85); ch.add(mantle);
+    const mt = mesh(torG(0.28 * S, 0.012 * S), gold, 0, 0.0, 0); mt.rotation.x = Math.PI / 2; mt.scale.set(1, 0.85, 1); ch.add(mt);
+    ch.add(mesh(sphG(0.04 * S), glow(runeC), 0, 0.05 * S, 0.16 * S));
+    for (let k = 0; k < 4; k++) sp.add(mesh(boxG(0.005 * S, 0.12 * S, 0.004 * S), glow(runeC), 0, (-0.25 - k * 0.15) * S, (0.21 + k * 0.035) * S));
+    if (skin === 'astral') for (let k = 0; k < 16; k++) sp.add(mesh(sphG(0.008 * S), glow('#e8f0ff'), Math.sin(k * 2.3) * 0.25 * S, (-0.1 - (k % 8) * 0.08) * S, Math.cos(k * 2.3) * 0.22 * S));
+    if (skin === 'druid') for (const arm of [R.A, R.B]) for (let k = 0; k < 6; k++) arm.sh.add(mesh(sphG(0.04 * S), mat(k % 2 ? '#4a6a2a' : '#5e8236', 'cloth'), Math.sin(k) * 0.07 * S, 0.04 * S, Math.cos(k) * 0.07 * S));
+    if (skin === 'adept') { const gem = mesh(sphG(0.025 * S), glow(runeC), 0, 0.1 * S, 0.12 * S); R.head.add(gem); }
+  }
+}
+
+// ---------- monstros sombrios ----------
+function scaryMonster(type, R, S) {
+  const glowEye = c => mat(c, 'gem', { emissive: c, emissiveIntensity: 2 });
+  const rust = mat('#6a4a32', 'darkmetal'), bone = mat('#d6cfba', 'bone');
+  const head = R.head, ch = R.chest, sp = R.spine;
+  if (type === 'skeleton') {
+    for (let k = 0; k < 4; k++) { const rib = mesh(torG(0.13 * S, 0.012 * S, Math.PI * 1.4), bone, 0, (0.14 - k * 0.07) * S, 0.0); rib.rotation.set(Math.PI / 2, 0, Math.PI * 0.8); rib.scale.set(1.05, 0.75, 1); ch.add(rib); }
+    for (const s of [-1, 1]) head.add(mesh(sphG(0.022 * S), glowEye('#ff6a1a'), s * 0.035 * S, 0.015 * S, 0.095 * S));
+    const pd = mesh(sphG(0.12 * S), rust, -0.02 * S, 0, 0); pd.scale.set(1.2, 0.6, 1.1); R.A.sh.add(pd);
+    const rag = mesh(boxG(0.3 * S, 0.3 * S, 0.01 * S), mat('#3a3028', 'cloth', { side: THREE.DoubleSide }), 0, -0.25 * S, 0.12 * S); sp.add(rag);
+  }
+  if (type === 'orc') {
+    for (const s of [-1, 1]) { const tk = mesh(coneG(0.018 * S, 0.08 * S, 6), bone, s * 0.04 * S, -0.06 * S, 0.09 * S); head.add(tk); head.add(mesh(sphG(0.016 * S), glowEye('#ff3a2a'), s * 0.035 * S, 0.015 * S, 0.1 * S)); }
+    head.add(mesh(boxG(0.008 * S, 0.07 * S, 0.008 * S), mat('#8a4a3a', 'skin'), 0.05 * S, 0.02 * S, 0.1 * S));
+    for (let k = 0; k < 4; k++) { const pl = mesh(boxG(0.12 * S, 0.1 * S, 0.02 * S), k % 2 ? rust : mat('#4a4e56', 'darkmetal'), (k % 2 ? 0.07 : -0.06) * S, (0.12 - k * 0.08) * S, 0.14 * S); pl.rotation.z = (k - 1.5) * 0.25; ch.add(pl); }
+    for (let k = 0; k < 5; k++) ch.add(mesh(sphG(0.02 * S), bone, Math.cos(k) * 0.12 * S, 0.24 * S, 0.06 * S + Math.sin(k) * 0.05 * S));
+  }
+  if (type === 'troll') {
+    for (let k = 0; k < 9; k++) { const m = mesh(sphG(0.06 * S), mat(k % 2 ? '#3f5a22' : '#4d6a2a', 'fur'), Math.sin(k * 2) * 0.16 * S, (0.2 - k * 0.04) * S, -0.08 * S + Math.cos(k * 2) * 0.08 * S); m.scale.set(1.3, 0.5, 1); ch.add(m); }
+    for (let k = 0; k < 7; k++) { const bn = mesh(cylG(0.012 * S, 0.012 * S, 0.08 * S, 5), bone, Math.cos(k * 0.6 - 1.8) * 0.15 * S, 0.18 * S - Math.abs(k - 3) * 0.015 * S, Math.sin(k * 0.6 - 1.8) * 0.1 * S + 0.12 * S); bn.rotation.z = 0.3; ch.add(bn); }
+    for (const s of [-1, 1]) head.add(mesh(sphG(0.018 * S), glowEye('#e0c040'), s * 0.04 * S, 0.01 * S, 0.1 * S));
+    for (const s of [-1, 1]) head.add(mesh(coneG(0.022 * S, 0.1 * S, 6), bone, s * 0.05 * S, -0.07 * S, 0.08 * S));
+  }
+  if (type === 'goblin') {
+    for (const s of [-1, 1]) { const ear = mesh(coneG(0.035 * S, 0.18 * S, 6), mat('#6f8e3a', 'skin'), s * 0.13 * S, 0.03 * S, -0.01 * S); ear.rotation.z = -s * 1.35; head.add(ear); head.add(mesh(sphG(0.016 * S), glowEye('#e8d040'), s * 0.035 * S, 0.015 * S, 0.1 * S)); }
+    const nose = mesh(coneG(0.022 * S, 0.12 * S, 6), mat('#5f7e32', 'skin'), 0, -0.01 * S, 0.14 * S); nose.rotation.x = Math.PI / 2; head.add(nose);
+    for (let k = 0; k < 4; k++) { const t = mesh(boxG(0.1 * S, 0.14 * S, 0.01 * S), mat('#4a3a26', 'cloth', { side: THREE.DoubleSide }), (k - 1.5) * 0.07 * S, -0.3 * S, 0.12 * S); t.rotation.z = (k - 1.5) * 0.2; sp.add(t); }
+  }
+}
+function scaryCreature(type, C) {
+  const glowEye = c => mat(c, 'gem', { emissive: c, emissiveIntensity: 2.2 });
+  const tooth = mat('#ece6d4', 'bone');
+  const b = C.body;
+  if (type === 'wolf' && C.head) {
+    for (let k = 0; k < 6; k++) { const t = mesh(coneG(0.012, 0.05, 5), tooth, (k - 2.5) * 0.018, -0.07, 0.2 + (k % 2) * 0.02); t.rotation.x = Math.PI; C.head.add(t); }
+    for (const s of [-1, 1]) C.head.add(mesh(sphG(0.02), glowEye('#ff5a2a'), s * 0.05, 0.03, 0.1));
+    for (let k = 0; k < 8; k++) { const m = mesh(coneG(0.03, 0.12, 5), mat('#3a3c42', 'fur'), (k % 2 - 0.5) * 0.06, 0.18 - k * 0.01, 0.25 - k * 0.07); m.rotation.x = -0.6; b.add(m); }
+  }
+  if (type === 'rat') { for (const s of [-1, 1]) b.add(mesh(sphG(0.016), glowEye('#ff3a2a'), s * 0.05, 0.07, 0.355)); b.add(mesh(boxG(0.03, 0.04, 0.01), tooth, 0, -0.01, 0.39)); }
+  if (type === 'spider') {
+    for (let k = 0; k < 40; k++) { const h = mesh(coneG(0.008, 0.06, 4), mat('#1e1a18', 'fur'), Math.sin(k * 2.4) * 0.24, 0.05 + Math.cos(k * 1.3) * 0.2, -0.25 + Math.cos(k * 2.4) * 0.28); h.lookAt(0, 0.05, -0.25); h.rotateX(-Math.PI / 2); b.add(h); }
+    for (const s of [-1, 1]) { const f = mesh(coneG(0.02, 0.1, 6), tooth, s * 0.05, -0.06, 0.24); f.rotation.x = Math.PI * 0.85; b.add(f); }
+    for (let i = 0; i < 4; i++) b.add(mesh(sphG(0.026), glowEye('#ff2a1a'), (i % 2 ? 1 : -1) * 0.045, 0.06 + Math.floor(i / 2) * 0.045, 0.255));
+  }
+  if (type === 'slime') { const sk = mesh(sphG(0.07), mat('#e2dcc6', 'bone'), -0.05, 0.02, 0.02); sk.scale.set(1, 0.9, 1); b.add(sk); { const bn = mesh(cylG(0.01, 0.01, 0.2, 5), mat('#e2dcc6', 'bone'), 0.08, -0.05, -0.05); bn.rotation.z = 1.1; b.add(bn); } }
+  if (type === 'toad') { const mouth = mesh(boxG(0.4, 0.02, 0.05), mat('#3a1a14', 'skin'), 0, -0.02, 0.3); b.add(mouth); for (const s of [-1, 1]) b.add(mesh(sphG(0.02), glowEye('#e8c040'), s * 0.14, 0.27, 0.24)); }
 }

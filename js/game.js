@@ -76,7 +76,14 @@ function clientOnServer(m) {
         const t = performance.now();
         const e = m.k === 'm' ? G.monsters[m.id] : G.players[m.id];
         const pos = e ? tileW(e.rx, e.ry, (e.z || 0) * FLOOR_PX) : tileW(m.x, m.y);
-        if (e) e.hitAt = t;
+        if (e) {
+          e.hitAt = t;
+          // empurrão na direção oposta a quem bateu (em coordenadas de tela)
+          const vx = (m.x - (m.ax ?? m.x)) - (m.y - (m.ay ?? m.y)), vy = ((m.x - (m.ax ?? m.x)) + (m.y - (m.ay ?? m.y))) * 0.5, vl = Math.hypot(vx, vy) || 1;
+          e.knock = { t0: t, dx: vx / vl, dy: vy / vl, s: m.crit || m.hv ? 1.8 : 1 };
+          if (m.k === 'm' && (m.crit || m.hv)) e.fallAt = t;
+        }
+        if (m.by === G.myId) G.shake = Math.max(G.shake, m.crit || m.hv ? 4 : 1.6);
         const mine = m.k === 'p' && m.id === G.myId;
         G.nums.push({ wx: pos.x, wy: pos.y, text: String(m.dmg), color: m.k === 'm' ? (m.crit ? '#f8d850' : '#ffffff') : (mine ? '#f05040' : '#f0a090'), crit: m.crit, big: m.crit, t0: t, vx: (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.6) });
         for (let k = 0; k < 6; k++) spawnPart(m.k === 'p' ? 'blood' : 'spark', pos.x, pos.y - 26, { color: 'rgba(255,240,180,A)' });
