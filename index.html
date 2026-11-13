@@ -6,118 +6,123 @@
 <title>Eldmar Online</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Cinzel+Decorative:wght@700;900&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Jacquard+24&family=Pixelify+Sans:wght@400;500;600;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 <canvas id="game"></canvas>
 <div id="vignette"></div>
 
-<!-- ================= LOBBY ================= -->
+<!-- ================= TELA INICIAL ================= -->
 <div id="lobby">
-  <div class="scroll">
-    <div class="crest">⚜</div>
+  <div class="scroll px">
     <h1>Eldmar Online</h1>
-    <p class="sub">Um reino de aventuras para você e seus companheiros</p>
-
+    <p class="sub">As muralhas caíram. O reino ainda precisa de quem as defenda.</p>
     <div class="lobby-grid">
       <section>
         <h2>I · Seu herói</h2>
         <label for="name">Nome</label>
-        <input type="text" id="name" maxlength="16" placeholder="Ex.: Sir Galvão" autocomplete="off">
+        <input type="text" id="name" maxlength="16" placeholder="Ex.: Aldren" autocomplete="off">
         <label>Cor do brasão</label>
         <div id="swatches"></div>
         <div id="saved"></div>
         <div id="saved-info"></div>
       </section>
-
       <section class="wide">
-        <h2>II · Escolha sua vocação</h2>
+        <h2>II · Vocação e aparência</h2>
         <div id="classes"></div>
       </section>
     </div>
-
     <section class="start">
       <h2>III · Parta em jornada</h2>
       <div class="start-row">
-        <button class="btn gold" id="btn-create">⚔ Criar um novo reino</button>
+        <button class="btn gold" id="btn-create">Criar um novo reino</button>
         <span class="or">ou</span>
         <input type="text" id="code" maxlength="8" placeholder="Código da sala" autocomplete="off">
         <button class="btn" id="btn-join">Entrar no reino</button>
       </div>
       <div id="status"></div>
-      <p class="hint">Quem cria o reino é o <b>anfitrião</b>: o mundo roda no navegador dele, então ele precisa manter o jogo aberto. Depois é só mandar o código ou o link aos amigos.</p>
+      <p class="hint">Quem cria o reino é o <b>anfitrião</b>: o mundo roda no navegador dele, que precisa ficar aberto. Depois é só mandar o código ou o convite aos amigos.</p>
     </section>
     <div id="version"></div>
   </div>
 </div>
 
-<!-- ================= HUD ================= -->
+<!-- ================= INTERFACE DO JOGO ================= -->
 <div id="hud" class="hidden">
-  <div id="char" class="frame">
-    <canvas id="portrait" width="76" height="76"></canvas>
+  <div id="char" class="px panel">
+    <canvas id="portrait" width="72" height="77"></canvas>
     <div class="char-info">
       <div id="hud-name"></div>
       <div id="hud-class"></div>
       <div class="bar hp"><div id="hp-fill"></div><span id="hp-text"></span></div>
       <div class="bar mp"><div id="mp-fill"></div><span id="mp-text"></span></div>
       <div class="bar xp"><div id="xp-fill"></div><span id="xp-text"></span></div>
-      <div class="char-foot"><span class="coin">●</span> <span id="gold">0</span> <span id="combat-state"></span></div>
+      <div class="char-foot"><span class="coin"></span><span id="gold">0</span><span id="combat-state"></span></div>
       <div id="buffs"></div>
     </div>
   </div>
 
-  <div id="target-frame" class="frame hidden">
+  <div id="quests" class="px panel parch hidden">
+    <h4>Contratos</h4>
+    <div id="quest-list"></div>
+  </div>
+
+  <div id="target-frame" class="px panel hidden">
     <div class="tg-top"><span id="tg-name"></span><span id="tg-stars"></span></div>
     <div class="bar hp"><div id="tg-fill"></div><span id="tg-text"></span></div>
     <div id="tg-range"></div>
   </div>
 
-  <div id="map-panel" class="frame">
-    <div class="map-ring"><canvas id="minimap" width="168" height="168"></canvas></div>
+  <div id="map-panel" class="px panel">
+    <div class="map-ring"><canvas id="minimap" width="160" height="160"></canvas></div>
     <div id="zone-name"></div>
     <div id="zone-stars"></div>
     <div class="map-foot"><span id="daytime"></span><span>Sala <b id="room-code"></b></span></div>
     <button class="btn small" id="btn-copy">Copiar convite</button>
   </div>
 
-  <div id="chat" class="frame parchment">
+  <div id="chat" class="px panel parch">
     <div id="chat-log"></div>
     <input type="text" id="chat-input" maxlength="140" placeholder="Enter para falar...">
   </div>
 
-  <div id="hotbar" class="frame">
-    <div class="slot skill" id="slot0"><canvas width="48" height="48"></canvas><span class="key">1</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot0-t"></span></div>
-    <div class="slot skill" id="slot1"><canvas width="48" height="48"></canvas><span class="key">2</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot1-t"></span></div>
-    <div class="slot skill" id="slot2"><canvas width="48" height="48"></canvas><span class="key">3</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot2-t"></span></div>
-    <div class="slot skill" id="slot3"><canvas width="48" height="48"></canvas><span class="key">4</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot3-t"></span></div>
+  <div id="hotbar" class="px panel">
+    <div class="slot skill" id="slot0"><canvas width="54" height="54"></canvas><span class="key">1</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot0-t"></span></div>
+    <div class="slot skill" id="slot1"><canvas width="54" height="54"></canvas><span class="key">2</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot1-t"></span></div>
+    <div class="slot skill" id="slot2"><canvas width="54" height="54"></canvas><span class="key">3</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot2-t"></span></div>
+    <div class="slot skill" id="slot3"><canvas width="54" height="54"></canvas><span class="key">4</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot3-t"></span></div>
     <div class="sep"></div>
-    <div class="slot pot" id="pot-hp" data-tip="Poção de Vida&#10;Recupera 35% da vida.&#10;Tecla Q"><canvas width="48" height="48"></canvas><span class="key">Q</span><span class="count" id="pot-hp-n">0</span></div>
-    <div class="slot pot" id="pot-mp" data-tip="Poção de Mana&#10;Recupera 40% da mana.&#10;Tecla E"><canvas width="48" height="48"></canvas><span class="key">E</span><span class="count" id="pot-mp-n">0</span></div>
+    <div class="slot pot" id="pot-hp" data-tip="Poção de Vida&#10;Recupera 35% da vida. Tecla Q"><canvas width="54" height="54"></canvas><span class="key">Q</span><span class="count" id="pot-hp-n">0</span></div>
+    <div class="slot pot" id="pot-mp" data-tip="Poção de Mana&#10;Recupera 40% da mana. Tecla E"><canvas width="54" height="54"></canvas><span class="key">E</span><span class="count" id="pot-mp-n">0</span></div>
     <div id="passive"></div>
   </div>
 
-  <button id="btn-help" class="frame">?</button>
-  <div id="help" class="frame parchment hidden">
-    <h3>Controles</h3>
-    <div><kbd>W A S D</kbd> / setas / clique no chão — andar</div>
-    <div><kbd>Clique</kbd> no monstro — mirar (ataca sozinho quando estiver no alcance)</div>
-    <div><kbd>Espaço</kbd> — mirar no monstro mais próximo</div>
-    <div><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd> — habilidades</div>
-    <div><kbd>Q</kbd> poção de vida · <kbd>E</kbd> poção de mana</div>
-    <div><kbd>Roda do mouse</kbd> — zoom</div>
-    <div><kbd>Enter</kbd> — chat · <kbd>Esc</kbd> — cancelar</div>
-    <div>Clique nos moradores para conversar, comprar e descansar.</div>
-    <div>Fora de combate, vida e mana se recuperam sozinhas.</div>
+  <div id="prompt" class="hidden"></div>
+  <div id="downed-ui" class="px panel hidden">
+    <div class="d-title">Você caiu</div>
+    <div class="bar hp"><div id="downed-fill"></div><span id="downed-time"></span></div>
+    <div class="d-help">Um aliado pode te reanimar (F) ou te carregar até a capela (G).<br><kbd>R</kbd> desistir e renascer na capela</div>
+  </div>
+
+  <button id="btn-help" class="px panel">?</button>
+  <div id="help" class="px panel parch hidden">
+    <h4>Controles</h4>
+    <div><kbd>W A S D</kbd> / setas / clique — andar livremente</div>
+    <div><kbd>Clique</kbd> no monstro / <kbd>Espaço</kbd> — mirar (ataca sozinho no alcance)</div>
+    <div><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd> habilidades · <kbd>Q</kbd><kbd>E</kbd> poções</div>
+    <div><kbd>F</kbd> (segurar) reanimar aliado caído · <kbd>G</kbd> carregar/soltar</div>
+    <div><kbd>R</kbd> desistir quando caído · <kbd>Roda</kbd> zoom</div>
+    <div><kbd>Enter</kbd> chat · <kbd>Esc</kbd> cancelar</div>
+    <div>As escadas de pedra no pátio levam às muralhas e à torre.</div>
   </div>
 </div>
 
-<!-- diálogo com NPC -->
 <div id="dialog" class="hidden">
-  <div class="frame parchment dlg">
+  <div class="px panel parch dlg">
     <canvas id="dlg-portrait" width="96" height="140"></canvas>
     <div class="dlg-body">
-      <div class="dlg-head"><span id="dlg-name"></span><span class="dlg-gold"><span class="coin">●</span> <span id="dlg-gold">0</span></span></div>
+      <div class="dlg-head"><span id="dlg-name"></span><span class="dlg-gold"><span class="coin"></span><span id="dlg-gold">0</span></span></div>
       <p id="dlg-text"></p>
       <div id="dlg-opts"></div>
     </div>
@@ -128,18 +133,21 @@
 <div id="toast"></div>
 <div id="tooltip" class="hidden"></div>
 <div id="disconnected" class="hidden">
-  <div class="scroll small-scroll">
-    <h1 style="font-size:28px">Conexão perdida</h1>
+  <div class="scroll px small-scroll">
+    <h1 style="font-size:46px">Conexão perdida</h1>
     <p class="sub">O anfitrião fechou o jogo ou a internet caiu.</p>
     <button class="btn gold" onclick="location.reload()">Voltar ao início</button>
   </div>
 </div>
 
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="js/world.js"></script>
 <script src="js/config.js"></script>
+<script src="js/world.js"></script>
 <script src="js/net.js"></script>
+<script src="js/pixel.js"></script>
 <script src="js/sprites.js"></script>
+<script src="js/props.js"></script>
+<script src="js/terrain.js"></script>
 <script src="js/render.js"></script>
 <script src="js/server.js"></script>
 <script src="js/game.js"></script>
