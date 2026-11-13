@@ -2,11 +2,11 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Eldmar Online</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>World of Sxan</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Jacquard+24&family=Pixelify+Sans:wght@400;500;600;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Cinzel+Decorative:wght@700;900&family=Alegreya:ital,wght@0,400;0,500;0,700;1,400;1,500&family=Alegreya+Sans+SC:wght@500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -15,9 +15,10 @@
 
 <!-- ================= TELA INICIAL ================= -->
 <div id="lobby">
-  <div class="scroll px">
-    <h1>Eldmar Online</h1>
-    <p class="sub">As muralhas caíram. O reino ainda precisa de quem as defenda.</p>
+  <div class="scroll">
+    <div class="logo-small">⚔</div>
+    <h1>World of Sxan</h1>
+    <p class="sub">Erga a espada, retese o arco ou invoque o fogo. A Cidadela de Eldmar espera por você.</p>
     <div class="lobby-grid">
       <section>
         <h2>I · Seu herói</h2>
@@ -29,7 +30,7 @@
         <div id="saved-info"></div>
       </section>
       <section class="wide">
-        <h2>II · Vocação e aparência</h2>
+        <h2>II · Vocação e armadura</h2>
         <div id="classes"></div>
       </section>
     </div>
@@ -50,8 +51,8 @@
 
 <!-- ================= INTERFACE DO JOGO ================= -->
 <div id="hud" class="hidden">
-  <div id="char" class="px panel">
-    <canvas id="portrait" width="72" height="77"></canvas>
+  <div id="char" class="panel">
+    <div class="portrait-ring"><canvas id="portrait" width="80" height="84"></canvas><div id="hud-lvl"></div></div>
     <div class="char-info">
       <div id="hud-name"></div>
       <div id="hud-class"></div>
@@ -63,63 +64,65 @@
     </div>
   </div>
 
-  <div id="quests" class="px panel parch hidden">
+  <div id="quests" class="panel parch hidden">
     <h4>Contratos</h4>
     <div id="quest-list"></div>
   </div>
 
-  <div id="target-frame" class="px panel hidden">
+  <div id="target-frame" class="panel hidden">
     <div class="tg-top"><span id="tg-name"></span><span id="tg-stars"></span></div>
     <div class="bar hp"><div id="tg-fill"></div><span id="tg-text"></span></div>
     <div id="tg-range"></div>
   </div>
 
-  <div id="map-panel" class="px panel">
-    <div class="map-ring"><canvas id="minimap" width="160" height="160"></canvas></div>
+  <div id="map-panel">
+    <div class="map-ring"><canvas id="minimap" width="170" height="170"></canvas><div class="map-n">N</div></div>
     <div id="zone-name"></div>
     <div id="zone-stars"></div>
     <div class="map-foot"><span id="daytime"></span><span>Sala <b id="room-code"></b></span></div>
     <button class="btn small" id="btn-copy">Copiar convite</button>
   </div>
 
-  <div id="chat" class="px panel parch">
+  <div id="chat" class="panel parch">
     <div id="chat-log"></div>
     <input type="text" id="chat-input" maxlength="140" placeholder="Enter para falar...">
   </div>
 
-  <div id="hotbar" class="px panel">
-    <div class="slot skill" id="slot0"><canvas width="54" height="54"></canvas><span class="key">1</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot0-t"></span></div>
-    <div class="slot skill" id="slot1"><canvas width="54" height="54"></canvas><span class="key">2</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot1-t"></span></div>
-    <div class="slot skill" id="slot2"><canvas width="54" height="54"></canvas><span class="key">3</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot2-t"></span></div>
-    <div class="slot skill" id="slot3"><canvas width="54" height="54"></canvas><span class="key">4</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot3-t"></span></div>
-    <div class="sep"></div>
-    <div class="slot pot" id="pot-hp" data-tip="Poção de Vida&#10;Recupera 35% da vida. Tecla Q"><canvas width="54" height="54"></canvas><span class="key">Q</span><span class="count" id="pot-hp-n">0</span></div>
-    <div class="slot pot" id="pot-mp" data-tip="Poção de Mana&#10;Recupera 40% da mana. Tecla E"><canvas width="54" height="54"></canvas><span class="key">E</span><span class="count" id="pot-mp-n">0</span></div>
+  <!-- comandos em círculo (estilo MOBA) -->
+  <div id="combat-pad">
+    <div class="slot round pot" id="pot-hp" data-tip="Poção de Vida&#10;Recupera 35% da vida. Tecla Q"><canvas width="72" height="72"></canvas><span class="key">Q</span><span class="count" id="pot-hp-n">0</span></div>
+    <div class="slot round pot" id="pot-mp" data-tip="Poção de Mana&#10;Recupera 40% da mana. Tecla E"><canvas width="72" height="72"></canvas><span class="key">E</span><span class="count" id="pot-mp-n">0</span></div>
+    <div class="slot round skill" id="slot0"><canvas width="96" height="96"></canvas><span class="key">1</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot0-t"></span></div>
+    <div class="slot round skill" id="slot1"><canvas width="96" height="96"></canvas><span class="key">2</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot1-t"></span></div>
+    <div class="slot round skill" id="slot2"><canvas width="96" height="96"></canvas><span class="key">3</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot2-t"></span></div>
+    <div class="slot round skill" id="slot3"><canvas width="96" height="96"></canvas><span class="key">4</span><span class="cost"></span><span class="cd"></span><span class="cdt" id="slot3-t"></span></div>
+    <button id="btn-attack" data-tip="Atacar&#10;Mira no inimigo mais próximo. Tecla X ou Espaço"><span>⚔</span></button>
     <div id="passive"></div>
   </div>
+  <div id="joystick"><div id="joy-knob"></div></div>
 
   <div id="prompt" class="hidden"></div>
-  <div id="downed-ui" class="px panel hidden">
+  <div id="downed-ui" class="panel hidden">
     <div class="d-title">Você caiu</div>
     <div class="bar hp"><div id="downed-fill"></div><span id="downed-time"></span></div>
     <div class="d-help">Um aliado pode te reanimar (F) ou te carregar até a capela (G).<br><kbd>R</kbd> desistir e renascer na capela</div>
   </div>
 
-  <button id="btn-help" class="px panel">?</button>
-  <div id="help" class="px panel parch hidden">
+  <button id="btn-help">?</button>
+  <div id="help" class="panel parch hidden">
     <h4>Controles</h4>
-    <div><kbd>W A S D</kbd> / setas / clique — andar livremente</div>
-    <div><kbd>Clique</kbd> no monstro / <kbd>Espaço</kbd> — mirar (ataca sozinho no alcance)</div>
+    <div><kbd>W A S D</kbd> / setas / clique — andar · joystick no celular</div>
+    <div><kbd>Clique</kbd> no inimigo · <kbd>X</kbd> / <kbd>Espaço</kbd> — mirar (ataca sozinho no alcance)</div>
     <div><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd> habilidades · <kbd>Q</kbd><kbd>E</kbd> poções</div>
-    <div><kbd>F</kbd> (segurar) reanimar aliado caído · <kbd>G</kbd> carregar/soltar</div>
+    <div><kbd>F</kbd> (segurar) reanimar aliado · <kbd>G</kbd> carregar/soltar</div>
     <div><kbd>R</kbd> desistir quando caído · <kbd>Roda</kbd> zoom</div>
     <div><kbd>Enter</kbd> chat · <kbd>Esc</kbd> cancelar</div>
-    <div>As escadas de pedra no pátio levam às muralhas e à torre.</div>
+    <div>As rampas de pedra levam às muralhas e ao salão da torre de menagem.</div>
   </div>
 </div>
 
 <div id="dialog" class="hidden">
-  <div class="px panel parch dlg">
+  <div class="panel parch dlg">
     <canvas id="dlg-portrait" width="96" height="140"></canvas>
     <div class="dlg-body">
       <div class="dlg-head"><span id="dlg-name"></span><span class="dlg-gold"><span class="coin"></span><span id="dlg-gold">0</span></span></div>
@@ -133,8 +136,8 @@
 <div id="toast"></div>
 <div id="tooltip" class="hidden"></div>
 <div id="disconnected" class="hidden">
-  <div class="scroll px small-scroll">
-    <h1 style="font-size:46px">Conexão perdida</h1>
+  <div class="scroll small-scroll">
+    <h1 style="font-size:40px">Conexão perdida</h1>
     <p class="sub">O anfitrião fechou o jogo ou a internet caiu.</p>
     <button class="btn gold" onclick="location.reload()">Voltar ao início</button>
   </div>

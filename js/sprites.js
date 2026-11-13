@@ -1,11 +1,7 @@
 // ============================================================
-//  SPRITES — personagens, NPCs e monstros em pixel art.
-//  Heróis: 4 direções (S = frente, N = costas, E = lado; W = E espelhado),
-//  8 quadros de caminhada, ataques, animações de espera e "sentado".
+//  SPRITES — heróis (esqueleto com membros dinâmicos), NPCs,
+//  monstros e ícones, em pixel art realista (resolução 2x).
 // ============================================================
-const HW = 40, HH = 52, HAX = 20, HAY = 48; // tela do herói; pés na linha 47
-const B = 2; // deslocamento vertical (desenho original com pés na linha 45)
-
 // ---------- visual de cada skin ----------
 function heroLook(cls, skinId, accentHex) {
   const A = tone(accentHex || '#8b2e2e');
@@ -52,412 +48,450 @@ const NPC_LOOKS = {
   merchant: () => Object.assign(heroLook('archer', 'scout', '#2f5a3a'), { armor: 'vest', body: tone('#7a3b22'), body2: tone('#d6c9a8'), head: 'cap', headTone: tone('#2f5a3a'), weapon: null, quiver: false, beard: tone('#5a3a22'), hair: tone('#5a3a22') }),
   innkeeper: () => Object.assign(heroLook('archer', 'scout', '#8b3a22'), { armor: 'vest', body: tone('#8b3a22'), body2: tone('#ece6d6'), head: 'none', hairStyle: 'long', hair: tone('#a8562a'), weapon: 'mug', quiver: false, skin: tone('#e8b994') }),
   guard: () => Object.assign(heroLook('knight', 'iron', '#2c4a7a'), { head: 'helm', cape: false, weapon: 'spear', shield: null, beard: tone('#5a4a3a') }),
+  smith: () => Object.assign(heroLook('archer', 'scout', '#5a3a22'), { armor: 'vest', body: tone('#5a4a3e'), body2: tone('#6b4423'), head: 'none', hair: tone('#3a2a1e'), hairStyle: 'short', beard: tone('#6a3a1e'), weapon: 'hammer', quiver: false, skin: tone('#c8906a') }),
   captain: () => Object.assign(heroLook('knight', 'iron', '#2c3f6b'), { head: 'none', hairStyle: 'short', hair: tone('#2a2420'), body: tone('#6f7682'), cape: true, capeTone: tone('#24365c'), shield: null, weapon: 'sword', pauldron: 'round', scar: true }),
 };
 
-// ---------- pose: braços, arma, corpo ----------
-function heroPose(L, P) {
-  const v = P.view, wf = P.walk, walking = wf >= 0 && !P.sit;
-  const ph = walking ? wf / 8 * Math.PI * 2 : 0;
-  const bob = walking ? ((wf % 4 === 1 || wf % 4 === 2) ? -1 : 0) : (P.breath ? 0 : 0);
-  const oy = (P.sit ? 5 : 0) + bob + B;
-  const s = Math.sin(ph);
-  // ombros e mãos padrão (A = braço da arma, F = outro braço)
-  let sA, sF, hA, hF;
-  if (v === 'E') { sA = [20, 27 + oy]; sF = [21, 26 + oy]; hA = [20 + s * 3, 35 + oy]; hF = [21 - s * 3, 34 + oy]; }
-  else if (v === 'S') { sA = [25, 27 + oy]; sF = [15, 27 + oy]; hA = [26.5, 35 + oy + s]; hF = [13.5, 35 + oy - s]; }
-  else { sA = [15, 27 + oy]; sF = [25, 27 + oy]; hA = [13.5, 35 + oy - s]; hF = [26.5, 35 + oy + s]; }
-  const side = v === 'S' ? 1 : v === 'N' ? -1 : 1; // para onde fica o braço da arma (+x)
-  const at = (sh, dx, dy) => [sh[0] + dx * (v === 'N' ? -1 : 1), sh[1] + dy];
-  let wAng = L.weapon === 'staff' || L.weapon === 'starstaff' || L.weapon === 'druidstaff' || L.weapon === 'spear' ? 0.08 : 2.5;
-  if (L.weapon && L.weapon.endsWith('bow')) wAng = 0;
-  let pull = 0, shieldUp = false, mouth = false, eyeShift = 0, glow = 0, kickLeg = 0;
-  const act = P.act, idle = P.idle;
-  if (act) {
-    const f = act.f;
-    switch (act.k) {
-      case 'swing': case 'bash': {
-        const angs = [-0.5, -1.0, 0.3, 1.3, 2.1, 2.5];
-        const hands = [[2, -9], [1, -10], [6, -5], [7, -1], [5, 5], [3, 7]];
-        wAng = angs[f]; hA = at(sA, hands[f][0], hands[f][1]);
-        if (act.k === 'bash') glow = 1;
-        break;
-      }
-      case 'spin': wAng = 1.57; hA = at(sA, 7, 1); break;
-      case 'block': shieldUp = true; break;
-      case 'shout': mouth = true; hA = at(sA, 5, -9); hF = at(sF, -5, -9); wAng = 0.2; break;
-      case 'thrust': { const t = [0.2, 0.6, 1.2, 1.4, 1.0, 0.5][f]; wAng = t; hA = at(sA, 4 + t * 2, -2 + t); glow = f >= 2 && f <= 3 ? 1 : 0; break; }
-      case 'cast': hA = at(sA, 4, -8 - (f % 2)); hF = at(sF, -4, -8 - ((f + 1) % 2)); wAng = 0.15; glow = 1; break;
-      case 'shoot': case 'shootup': pull = f < 4 ? (f + 1) / 4 : 0; break;
-    }
-  } else if (idle) {
-    const f = idle.f;
-    switch (idle.k) {
-      case 'look': eyeShift = [0, -1, -1, 0, 1, 1, 0, 0][f]; break;
-      case 'stretch': { const u = Math.sin(f / 7 * Math.PI); hA = at(sA, 2, -10 * u); hF = at(sF, -2, -10 * u); if (u > 0.5) wAng = 0.2; mouth = u > 0.8; break; }
-      case 'yawn': mouth = f >= 2 && f <= 5; if (mouth) hF = at(sF, 4 * (v === 'S' ? 1 : 1), -4); break;
-      case 'kick': kickLeg = [0, 1, 2, 1, 2, 1, 0, 0][f]; break;
-      case 'polish': hA = at(sA, -3, -3); hF = at(sF, 3, -2); wAng = L.weapon && L.weapon.includes('staff') ? 0 : 1.57; glow = f % 4 === 1 ? 1 : 0; break;
-      case 'pray': hA = v === 'E' ? [23, 29 + oy] : [20.5, 30 + oy]; hF = v === 'E' ? [23, 29 + oy] : [19.5, 30 + oy]; break;
-      case 'salute': hA = at(sA, -1, -8); break;
-      case 'drink': hA = at(sA, -3, -7 + (f % 4 === 1 ? -1 : 0)); break;
-      case 'read': hA = at(sA, -4, -4); hF = at(sF, 4, -4); break;
-      case 'wave': hA = at(sA, 4, -10 + (f % 2) * 2); break;
-    }
-  }
-  if (P.carry) { hA = at(sA, -2, -10); hF = at(sF, 2, -10); }
-  if (L.weapon && L.weapon.endsWith('bow') && !P.carry && !(idle && idle.k === 'stretch')) {
-    if (v === 'E') hA = [25, 30 + oy - (act && act.k === 'shootup' ? 3 : 0)];
-    if (pull) hF = v === 'E' ? [25 - pull * 6, 30 + oy] : hF;
-  }
-  return { v, oy, ph, s, walking, sA, sF, hA, hF, wAng, pull, shieldUp, mouth, eyeShift, glow, kickLeg, side };
+// ============================================================
+//  ESQUELETO DOS HERÓIS — juntas (ombro, cotovelo, quadril, joelho)
+//  num "3D simplificado" projetado para 4 vistas. Cada animação é
+//  uma sequência de poses (keyframes) interpoladas.
+//  Eixos do corpo: f = frente, s = lado, v = para baixo.
+// ============================================================
+const HW = 88, HH = 116, HAX = 44, HAY = 108;
+const BODY = { thigh: 13, shin: 14, neck: -24, head: -31, shoulder: 8.5, hip: 4, upper: 11, fore: 10.5 };
+
+const add3 = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const mul3 = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+const dir3 = (th, ph, side) => [Math.sin(th) * Math.cos(ph), side * Math.sin(ph), Math.cos(th) * Math.cos(ph)];
+function proj(p, view) {
+  if (view === 'E') return [p[0] + p[1] * 0.28, p[2], p[1]];
+  if (view === 'S') return [p[1], p[2], p[0]];
+  return [-p[1], p[2], -p[0]];
 }
 
-// ---------- partes ----------
-function drawLegs(pc, L, Q, P) {
-  const { v, oy, ph, walking } = Q;
-  const legC = L.legs, bootC = L.boots;
-  if (P.sit) {
-    if (v === 'E') {
-      pc.l(19, 40 + oy - 5 + 5, 25, 40 + oy - 5 + 5, legC.b, 3); pc.l(25, 40 + oy, 25, 43 + B, legC.d, 3);
-      pc.r(24, 43 + B, 5, 3, bootC.b);
-    } else { pc.r(14, 40 + oy, 12, 3, legC.b); pc.r(13, 42 + B, 5, 3, bootC.b); pc.r(22, 42 + B, 5, 3, bootC.b); }
-    return;
+// ---------- poses-base por classe ----------
+const BASE = {
+  knight: { aA: [0.3, 0.12, 0.55], aB: [0.55, 0.2, 0.9], wp: 0.55, tl: 0.02 },
+  archer: { aA: [0.12, 0.12, 0.35], aB: [0.06, 0.1, 0.25], wp: 3.14, tl: 0 },
+  mage: { aA: [0.4, 0.16, 0.85], aB: [0.15, 0.12, 0.4], wp: 3.1, tl: 0.02 },
+};
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = t => t * t * (3 - 2 * t);
+
+// keyframes: [progresso, {campos}] — campos ausentes ficam na pose-base
+const ACTS = {
+  // ---- Cavaleiro ----
+  swing: [[0, {}], [0.35, { aA: [2.7, 0.25, 0.4], wp: 3.5, tl: -0.12, tw: -0.35 }], [0.6, { aA: [1.0, 0.1, 0.1], wp: 1.1, tl: 0.22, tw: 0.35, lA: [0.4, -0.2] }], [1, { aA: [0.45, 0.12, 0.4], wp: 0.7, tl: 0.08 }]],
+  bash: [[0, {}], [0.4, { aA: [2.95, 0.12, 0.2], aB: [2.8, -0.05, 0.3], wp: 3.4, tl: -0.18, tw: -0.1 }], [0.66, { aA: [1.25, 0.05, 0.1], aB: [1.15, 0.0, 0.2], wp: 1.35, tl: 0.38, kn: -0.65, drop: 4 }], [1, { aA: [0.6, 0.1, 0.4], wp: 0.8, tl: 0.1 }]],
+  spin: [[0, { tw: 0 }], [0.15, { aA: [1.3, 1.2, 0.1], wp: 1.57, tw: -0.6, kn: -0.35 }], [0.85, { aA: [1.3, 1.2, 0.1], wp: 1.57, tw: 5.7, kn: -0.35 }], [1, { tw: 6.28 }]],
+  block: [[0, {}], [0.3, { aB: [1.45, 0.05, 0.35], aA: [0.7, 0.1, 0.8], wp: 2.1, tl: 0.12, kn: -0.45, drop: 2 }], [0.8, { aB: [1.45, 0.05, 0.35], aA: [0.7, 0.1, 0.8], wp: 2.1, tl: 0.12, kn: -0.45, drop: 2 }], [1, {}]],
+  warcry: [[0, {}], [0.3, { aA: [3.05, 0.25, 0.08], aB: [0.9, 1.0, 0.3], wp: 3.14, tl: -0.16, ht: -0.25, mouth: 1 }], [0.8, { aA: [3.05, 0.25, 0.08], aB: [0.9, 1.0, 0.3], wp: 3.14, tl: -0.16, ht: -0.25, mouth: 1 }], [1, {}]],
+  // ---- Atirador ----
+  shoot: [[0, {}], [0.2, { aA: [1.55, 0.0, 0.0], aB: [1.35, 0.05, -0.6], tw: 0.45, pull: 0.3 }], [0.6, { aA: [1.57, 0.0, 0.0], aB: [1.25, 0.12, -2.3], tw: 0.5, pull: 1 }], [0.68, { aA: [1.6, 0.0, 0.0], aB: [1.1, 0.35, -2.6], tw: 0.5, pull: 0, tl: -0.05 }], [1, {}]],
+  double: [[0, {}], [0.15, { aA: [1.55, 0, 0], aB: [1.3, 0.1, -2.2], tw: 0.5, pull: 1 }], [0.3, { aA: [1.6, 0, 0], aB: [1.1, 0.35, -2.6], tw: 0.5, pull: 0 }], [0.5, { aA: [1.55, 0, 0], aB: [1.3, 0.1, -2.2], tw: 0.5, pull: 1 }], [0.62, { aA: [1.6, 0, 0], aB: [1.1, 0.35, -2.6], tw: 0.5, pull: 0 }], [1, {}]],
+  pierce: [[0, {}], [0.25, { aA: [1.5, 0, 0], aB: [1.3, 0.1, -1.0], tw: 0.55, kn: -0.6, drop: 4, tl: 0.15, pull: 0.4 }], [0.7, { aA: [1.52, 0, 0], aB: [1.2, 0.15, -2.5], tw: 0.6, kn: -0.6, drop: 4, tl: 0.15, pull: 1, glow: 1 }], [0.78, { aA: [1.6, 0, 0], aB: [0.9, 0.45, -2.7], tw: 0.6, tl: -0.12, pull: 0 }], [1, {}]],
+  rain: [[0, {}], [0.3, { aA: [2.55, 0, 0], aB: [2.25, 0.1, -2.1], tl: -0.28, tw: 0.4, pull: 1, wp: 2.5 }], [0.62, { aA: [2.6, 0, 0], aB: [2.0, 0.3, -2.5], tl: -0.3, tw: 0.4, pull: 0, wp: 2.5 }], [1, {}]],
+  dash: [[0, {}], [0.25, { tl: 0.15, kn: -0.7, drop: 5, aA: [-0.4, 0.2, 0.3], aB: [-0.5, 0.2, 0.3] }], [0.55, { tl: 0.45, lA: [0.8, -0.4], lB: [-0.7, -0.6], aA: [-0.9, 0.25, 0.4], aB: [-0.9, 0.25, 0.4] }], [1, {}]],
+  // ---- Mago ----
+  bolt: [[0, {}], [0.35, { aA: [1.25, 0.1, 0.15], wp: 1.4, aB: [1.1, 0.3, 0.2], tl: 0.15, glow: 1 }], [0.6, { aA: [1.35, 0.1, 0.05], wp: 1.3, aB: [1.3, 0.3, 0.05], tl: 0.18, glow: 1 }], [1, {}]],
+  fireball: [[0, {}], [0.35, { aB: [-0.6, 0.4, 1.5], aA: [0.9, 0.2, 0.6], wp: 2.6, tw: -0.4, tl: -0.08 }], [0.62, { aB: [1.55, 0.05, 0.05], aA: [0.8, 0.2, 0.6], wp: 2.5, tw: 0.4, tl: 0.2, glow: 1 }], [1, {}]],
+  nova: [[0, {}], [0.4, { aA: [2.85, 0.15, 0.3], aB: [2.75, -0.1, 0.4], wp: 3.1, tl: -0.12 }], [0.62, { aA: [0.7, 0.1, 0.4], aB: [0.8, 0.1, 0.5], wp: 0.05, tl: 0.3, kn: -0.75, drop: 5, glow: 1 }], [1, {}]],
+  heal: [[0, {}], [0.4, { aA: [2.1, 0.9, 0.2], aB: [2.1, 0.9, 0.2], wp: 2.8, ht: -0.3, glow: 1 }], [0.8, { aA: [2.2, 1.0, 0.2], aB: [2.2, 1.0, 0.2], wp: 2.8, ht: -0.3, glow: 1 }], [1, {}]],
+  meteor: [[0, { aA: [2.9, 0.2, 0.2], aB: [2.9, 0.1, 0.2], wp: 3.1, ht: -0.25 }], [0.35, { aA: [3.05, 0.25, 0.1], aB: [3.05, 0.15, 0.1], wp: 3.14, ht: -0.35, glow: 1 }], [0.62, { aA: [0.95, 0.2, 0.2], aB: [1.0, 0.15, 0.2], wp: 1.6, tl: 0.35, kn: -0.5, drop: 3, glow: 1 }], [1, {}]],
+  cast: [[0, { aA: [2.0, 0.6, 0.6], aB: [2.0, 0.7, 0.6], wp: 2.9, glow: 1 }], [0.5, { aA: [2.3, 0.7, 0.4], aB: [2.3, 0.8, 0.4], wp: 3.0, glow: 1 }], [1, { aA: [2.0, 0.6, 0.6], aB: [2.0, 0.7, 0.6], wp: 2.9, glow: 1 }]],
+};
+const ACT_MS = { swing: 400, bash: 520, spin: 560, block: 650, warcry: 700, shoot: 440, double: 620, pierce: 640, rain: 560, dash: 560, bolt: 400, fireball: 520, nova: 620, heal: 680, meteor: 720, cast: 600, bite: 320 };
+const IDLES = {
+  look: [[0, {}], [0.25, { hw: 0.6 }], [0.6, { hw: -0.6 }], [1, {}]],
+  stretch: [[0, {}], [0.4, { aA: [3.0, 0.3, 0.2], aB: [3.0, 0.3, 0.2], tl: -0.12, mouth: 1, wp: 3.1 }], [0.7, { aA: [3.0, 0.3, 0.2], aB: [3.0, 0.3, 0.2], tl: -0.12, wp: 3.1 }], [1, {}]],
+  yawn: [[0, {}], [0.3, { aB: [1.4, 0.15, 1.9], ht: -0.15, mouth: 1 }], [0.7, { aB: [1.4, 0.15, 1.9], ht: -0.15, mouth: 1 }], [1, {}]],
+  kick: [[0, {}], [0.3, { lA: [0.6, -0.3] }], [0.5, { lA: [0.1, 0] }], [0.7, { lA: [0.6, -0.3] }], [1, {}]],
+  polish: [[0, {}], [0.3, { aA: [1.3, 0.0, 0.9], aB: [1.2, 0.0, 1.2], wp: 1.57, tl: 0.1, ht: 0.25 }], [0.8, { aA: [1.3, 0.0, 0.9], aB: [1.25, 0.0, 1.0], wp: 1.57, tl: 0.1, ht: 0.25 }], [1, {}]],
+  pray: [[0, {}], [0.3, { aA: [1.0, -0.1, 1.5], aB: [1.0, -0.1, 1.5], ht: 0.25 }], [0.85, { aA: [1.0, -0.1, 1.5], aB: [1.0, -0.1, 1.5], ht: 0.25 }], [1, {}]],
+  salute: [[0, {}], [0.3, { aA: [2.4, 0.4, 1.4] }], [0.8, { aA: [2.4, 0.4, 1.4] }], [1, {}]],
+  drink: [[0, {}], [0.3, { aA: [1.5, 0.1, 1.8], ht: -0.2 }], [0.7, { aA: [1.5, 0.1, 1.8], ht: -0.25 }], [1, {}]],
+  read: [[0, {}], [0.2, { aA: [0.9, 0.0, 1.1], aB: [0.9, 0.0, 1.1], ht: 0.3 }], [0.9, { aA: [0.9, 0.0, 1.1], aB: [0.9, 0.0, 1.1], ht: 0.3 }], [1, {}]],
+  wave: [[0, {}], [0.25, { aA: [2.6, 0.5, 0.5] }], [0.45, { aA: [2.6, 0.8, 0.2] }], [0.65, { aA: [2.6, 0.5, 0.5] }], [1, {}]],
+};
+
+function sampleKeys(keys, p) {
+  let a = keys[0], b = keys[keys.length - 1];
+  for (let i = 0; i < keys.length - 1; i++) if (p >= keys[i][0] && p <= keys[i + 1][0]) { a = keys[i]; b = keys[i + 1]; break; }
+  const t = ease((p - a[0]) / ((b[0] - a[0]) || 1));
+  return { a: a[1], b: b[1], t };
+}
+function mixField(base, a, b, t, key) {
+  const va = a[key] ?? base[key], vb = b[key] ?? base[key];
+  if (va == null && vb == null) return undefined;
+  if (Array.isArray(va) || Array.isArray(vb)) { const x = va || vb, y = vb || va; return x.map((v, i) => lerp(v, y[i], t)); }
+  return lerp(va ?? 0, vb ?? 0, t);
+}
+
+// calcula a pose final (ângulos) a partir de caminhada + ação + idle
+function buildPose(cls, P) {
+  const base = BASE[cls] || BASE.knight;
+  const Q = { aA: base.aA.slice(), aB: base.aB.slice(), wp: base.wp, tl: base.tl, tw: 0, lA: [0.04, -0.06], lB: [-0.04, -0.06], kn: 0, drop: 0, ht: 0, hw: 0, mouth: 0, pull: 0, glow: 0 };
+  if (P.walk >= 0) {
+    const ph = P.walk / 8 * Math.PI * 2, s = Math.sin(ph), c = Math.cos(ph);
+    Q.lA = [s * 0.55, -Math.max(0, -c) * 0.9 - 0.08]; Q.lB = [-s * 0.55, -Math.max(0, c) * 0.9 - 0.08];
+    Q.aB[0] += -s * 0.45; Q.aA[0] += s * (cls === 'archer' ? 0.35 : 0.18);
+    Q.tl += 0.06;
   }
-  if (v === 'E') {
-    const s = Math.sin(ph), c = Math.cos(ph);
-    const hip = [20, 36 + oy];
-    const feet = [[20 - s * 4, 45 + B - Math.max(0, -c) * (walking ? 2 : 0)], [20 + s * 4, 45 + B - Math.max(0, c) * (walking ? 2 : 0)]];
-    if (Q.kickLeg) feet[1] = [24 + Q.kickLeg, 43 + B - Q.kickLeg];
-    feet.forEach(([fx, fy], k) => {
-      const t = k === 0 ? legC.d : legC.b, bt = k === 0 ? bootC.d : bootC.b;
-      pc.l(hip[0] - 0.5 + k, hip[1], fx, fy - 3, t, 3);
-      pc.r(Math.round(fx) - 1, Math.round(fy) - 3, 5, 3, bt);
-      pc.p(Math.round(fx) + 3, Math.round(fy) - 1, bt);
+  const apply = (keys, p) => {
+    const { a, b, t } = sampleKeys(keys, p);
+    for (const k of ['aA', 'aB', 'wp', 'tl', 'tw', 'lA', 'lB', 'kn', 'drop', 'ht', 'hw', 'mouth', 'pull', 'glow']) {
+      if (a[k] == null && b[k] == null) continue;
+      const v = mixField(Q, a, b, t, k);
+      if (v !== undefined) Q[k] = v;
+    }
+  };
+  if (P.act && ACTS[P.act.k]) apply(ACTS[P.act.k], (P.act.f + 0.5) / 8);
+  else if (P.idle && IDLES[P.idle.k]) apply(IDLES[P.idle.k], (P.idle.f + 0.5) / 8);
+  if (P.sit) { Q.lA = [1.45, -1.6]; Q.lB = [1.35, -1.5]; Q.drop = 12; Q.aA = [0.5, 0.25, 0.6]; Q.aB = [0.5, 0.25, 0.6]; Q.tl = 0.05; }
+  if (P.carry) { Q.aA = [2.75, 0.25, 0.4]; Q.aB = [2.75, 0.25, 0.4]; Q.wp = 0.4; }
+  if (Q.kn) { Q.lA = [Q.lA[0] - Q.kn * 0.5, Q.lA[1] + Q.kn]; Q.lB = [Q.lB[0] - Q.kn * 0.5, Q.lB[1] + Q.kn]; }
+  return Q;
+}
+
+// ---------- montagem do esqueleto ----------
+function skeleton(Q, view) {
+  const ct = Math.cos(Q.tw), st = Math.sin(Q.tw), cl = Math.cos(Q.tl), sl = Math.sin(Q.tl);
+  // tronco: gira (tw) e inclina (tl) em volta da pelve
+  const up = p => { let f = p[0] * ct - p[1] * st, s = p[0] * st + p[1] * ct, v = p[2]; const f2 = f * cl - v * sl, v2 = f * sl + v * cl; return [f2, s, v2]; };
+  const upDir = d => up(d);
+  const sh = side => up([0, side * BODY.shoulder, BODY.neck + 2]);
+  const arm = (a, side) => {
+    const s0 = sh(side), d1 = upDir(dir3(a[0], a[1], side)), el = add3(s0, mul3(d1, BODY.upper));
+    const d2 = upDir(dir3(a[0] + a[2], a[1], side)), hand = add3(el, mul3(d2, BODY.fore));
+    return { s: s0, e: el, h: hand, d: d2 };
+  };
+  const leg = (l, side) => {
+    const h0 = [0, side * BODY.hip, 0], d1 = dir3(l[0], 0, side), kn = add3(h0, mul3(d1, BODY.thigh));
+    const d2 = dir3(l[0] + l[1], 0, side), ft = add3(kn, mul3(d2, BODY.shin));
+    return { h: h0, k: kn, f: ft };
+  };
+  const A = arm(Q.aA, 1), Bm = arm(Q.aB, -1), LA = leg(Q.lA, 1), LB = leg(Q.lB, -1);
+  const neck = up([0, 0, BODY.neck]), head = up([0, 0, BODY.head]), pelvis = [0, 0, 0];
+  const fwd = up([1, 0, 0]);
+  const wdir = upDir([Math.sin(Q.wp), 0, Math.cos(Q.wp)]);
+  // apoio no chão: o pé mais baixo encosta no solo
+  const footV = Math.max(LA.f[2], LB.f[2]);
+  const oy = HAY - 2 - footV + Q.drop * 0;
+  const P2 = p => { const q = proj(p, view); return [HAX + q[0], oy + q[1], q[2]]; };
+  return { A, B: Bm, LA, LB, neck, head, pelvis, fwd, wdir, P2, oy, up };
+}
+
+// ---------- desenho ----------
+function drawHeroPC(pc, L, P, cls) {
+  const view = P.view, Q = buildPose(cls, P), K = skeleton(Q, view), P2 = K.P2;
+  const parts = [];
+  const add = (d, fn) => parts.push({ d, fn });
+  const capP = (a, b, ra, rb, T) => { const p1 = P2(a), p2 = P2(b); pc.cap(p1[0], p1[1], p2[0], p2[1], ra, rb, T); };
+  const dOf = (...pts) => pts.reduce((s, p) => s + P2(p)[2], 0) / pts.length;
+  const robe = L.armor === 'robe';
+  const sleeve = L.armor === 'vest' ? tone('#cfc6b4') : L.body;
+  const glove = L.armor === 'plate' ? L.body : L.armor === 'leather' ? L.body2 : L.skin;
+
+  // capa
+  if (L.cape) {
+    const sway = P.walk >= 0 ? 4 : 1.5, sA = K.A.s, sB = K.B.s, back = mul3(K.fwd, -1);
+    const bA = add3(add3(sA, mul3(back, 3 + sway)), [0, 0.8, 27]), bB = add3(add3(sB, mul3(back, 3 + sway)), [0, -0.8, 27]);
+    add(dOf(sA, sB) - 4.5 * (view === 'N' ? -1 : 1) * 0 + (view === 'N' ? 3 : -3), () => {
+      const a = P2(sA), b = P2(sB), c = P2(bB), d = P2(bA);
+      const T = L.capeTone;
+      pc.poly([a[0], a[1] - 1, b[0], b[1] - 1, c[0], c[1], d[0], d[1]], 0, (x, y) => lit(T, ((x * 3 + y) % 11 < 2 ? -0.5 : 0.05) - (y - a[1]) / 60, x, y));
     });
-    return;
   }
-  const s = Math.sin(ph);
-  const liftL = walking ? Math.max(0, s) * 2 : 0, liftR = walking ? Math.max(0, -s) * 2 : 0;
-  let kick = Q.kickLeg;
-  [[16, liftL], [21, liftR + (kick ? kick : 0)]].forEach(([x, lift], k) => {
-    const top = 36 + oy, bot = 45 + B - Math.round(lift);
-    const t = (k === 0) === (v === 'S') ? legC.b : legC.d;
-    pc.r(x, top, 3, bot - top - 2, t);
-    pc.p(x, top, legC.l);
-    pc.r(x - (k === 0 ? 1 : 0), bot - 3, 4, 3, k === 0 ? bootC.b : bootC.d);
-    pc.p(x - (k === 0 ? 1 : 0), bot - 3, bootC.l);
-  });
-}
-
-function drawTorso(pc, L, Q, P) {
-  const { v, oy } = Q, E = v === 'E';
-  const x0 = E ? 17 : 15, x1 = E ? 23 : 24, top = 26 + oy;
-  const bt = L.body;
-  const shadeAt = (x, y) => { const t = (x - x0) / (x1 - x0); return t < 0.22 ? bt.l : t > 0.78 ? bt.d : bt.b; };
-  if (L.armor === 'robe') {
-    const hem = Q.walking ? Math.round(Q.s) : 0;
-    const bl = E ? 15 + hem : 13, br = E ? 25 + hem : 26;
-    pc.poly([x0, top, x1 + 1, top, br + 1, 45 + B, bl, 45 + B], 0, (x, y) => {
-      const t = (x - bl) / (br - bl); const pat = L.pattern === 'stars' && hash2(x, y, 7) < 0.07 ? L.trim.ll : L.pattern === 'leaves' && hash2(x, y, 9) < 0.09 ? L.body2.l : 0;
-      return pat || (t < 0.25 ? bt.l : t > 0.75 ? bt.d : bt.b);
+  // aljava
+  if (L.quiver) {
+    const q0 = K.up([-4, -3, BODY.neck + 1]), q1 = K.up([-4, 3, -6]);
+    add(dOf(q0, q1) - 2, () => {
+      capP(q0, q1, 2.6, 2.4, tone('#5a3a22'));
+      const t = P2(q0);
+      for (let k = 0; k < 4; k++) { pc.P(Math.round(t[0] - 2 + k * 1.5), Math.round(t[1] - 3), px('#e8e2d0')); pc.P(Math.round(t[0] - 2 + k * 1.5), Math.round(t[1] - 4), px('#a83226')); }
     });
-    pc.r(bl, 44 + B, br - bl + 1, 2, L.trim.b);
-    if (!E && v === 'S') pc.r(19, top + 2, 2, 45 + B - top - 3, L.trim.d);
-    pc.r(x0, 34 + oy, x1 - x0 + 1, 2, L.body2.b);
-    pc.p(E ? 21 : 19, 34 + oy, L.trim.l); pc.p(E ? 21 : 20, 35 + oy, L.trim.b);
-    return;
   }
-  // tronco (placas / couro / colete)
-  pc.poly([x0 + 1, top, x1, top, x1 + 1, top + 1, x1 + 1, 36 + oy, x0, 36 + oy, x0, top + 1], 0, shadeAt);
-  if (L.armor === 'plate') {
-    if (L.pattern === 'scales') for (let y = top + 2; y < 35 + oy; y += 2) for (let x = x0 + 1; x <= x1; x += 2) pc.p(x + (y % 4 === 0 ? 1 : 0), y, bt.d);
-    if (!E && v === 'S') {
-      pc.r(18, top + 2, 4, 1, bt.ll);
-      // tabardo
-      pc.r(18, top + 3, 4, 12, L.accent.b); pc.r(18, top + 3, 1, 12, L.accent.l); pc.r(21, top + 3, 1, 12, L.accent.d);
-      pc.p(19, top + 6, L.trim.l); pc.p(20, top + 6, L.trim.b); pc.p(19, top + 7, L.trim.b); pc.p(20, top + 7, L.trim.d);
-    } else if (E) { pc.r(20, top + 3, 3, 12, L.accent.b); pc.r(22, top + 3, 1, 12, L.accent.d); }
-    pc.r(x0, 35 + oy, x1 - x0 + 2, 2, L.body2.b);
-    pc.p(E ? 21 : 19, 35 + oy, L.trim.ll);
-  } else if (L.armor === 'leather') {
-    pc.r(x0 - (E ? 0 : 1), 36 + oy, x1 - x0 + (E ? 2 : 4), 3, bt.d);
-    if (L.pattern === 'leaves') for (let y = top + 1; y < 38 + oy; y += 3) for (let x = x0; x <= x1; x += 3) pc.p(x + (y % 2), y, L.body2.b);
-    if (v === 'S') { pc.p(19, top + 3, L.body2.d); pc.p(20, top + 4, L.body2.d); pc.p(19, top + 5, L.body2.d); pc.p(20, top + 6, L.body2.d); }
-    pc.r(x0, 34 + oy, x1 - x0 + 2, 2, L.body2.b);
-    pc.p(E ? 21 : 19, 34 + oy, L.trim.l);
-    if (v !== 'N') pc.r(E ? 18 : 22, 35 + oy, 2, 2, L.body2.d);
-  } else if (L.armor === 'vest') {
-    if (v !== 'N') pc.r(E ? 19 : 17, top + 2, E ? 4 : 6, 12, L.body2.b);
-    pc.r(x0, 34 + oy, x1 - x0 + 2, 1, L.body2.d);
+  // pernas
+  for (const [Lg, far] of [[K.LA, 0], [K.LB, 1]]) {
+    add(dOf(Lg.h, Lg.k, Lg.f), () => {
+      const pants = L.legs, boots = L.boots;
+      capP(Lg.h, Lg.k, 3.2, 2.7, pants);
+      const mid = add3(Lg.k, mul3(add3(Lg.f, mul3(Lg.k, -1)), 0.35));
+      capP(Lg.k, mid, 2.6, 2.4, pants);
+      capP(mid, Lg.f, 2.6, 2.3, boots);
+      const toe = add3(Lg.f, mul3(K.fwd, 3.5));
+      capP(Lg.f, add3(toe, [0, 0, 0.5]), 2.2, 1.8, boots);
+      if (L.armor === 'plate') { const kp = P2(Lg.k); pc.e(kp[0], kp[1], 2.4, 2, 0, (x, y, nx, ny) => lit(L.body, -nx * 0.5 - ny * 0.6 + 0.3, x, y)); }
+    });
   }
-}
-
-function drawPauldrons(pc, L, Q) {
-  if (!L.pauldron) return;
-  const { v, oy } = Q, b = L.body;
-  const list = v === 'E' ? [[20, 27.5 + oy]] : [[15, 27.5 + oy], [25, 27.5 + oy]];
-  for (const [x, y] of list) {
-    pc.e(x, y, 3.3, 2.4, 0, (xx, yy, nx, ny) => ny < -0.3 ? b.ll : nx < 0 ? b.l : b.b);
-    if (L.pauldron === 'spike') { pc.p(x - 1, y - 3, b.l); pc.p(x - 1, y - 4, b.ll); pc.p(x + 1, y - 3, b.l); }
-    if (L.pauldron === 'wing') { pc.p(x + (x < 20 ? -2 : 2), y - 3, L.trim.ll); pc.p(x + (x < 20 ? -3 : 3), y - 4, L.trim.l); pc.p(x + (x < 20 ? -1 : 1), y - 3, L.trim.b); }
-    pc.p(x, y + 1, L.trim.b);
-  }
-}
-
-function drawArm(pc, L, sh, hand, far) {
-  const sleeve = L.armor === 'robe' ? L.body : L.armor === 'plate' ? L.body : L.armor === 'vest' ? tone('#d9d2c2') : L.body;
-  const c = far ? sleeve.d : sleeve.b;
-  pc.l(sh[0], sh[1], hand[0], hand[1] - 1, c, L.armor === 'robe' ? 3 : 2);
-  if (L.armor === 'leather' || L.armor === 'plate') pc.l(hand[0] - (hand[0] - sh[0]) * 0.35, hand[1] - 1 - (hand[1] - sh[1]) * 0.35, hand[0], hand[1] - 1, far ? L.body2.d : L.body2.b, 2);
-  pc.r(Math.round(hand[0]) - 1, Math.round(hand[1]) - 1, 2, 2, far ? L.skin.d : L.skin.b);
-}
-
-function drawHead(pc, L, Q, P) {
-  const { v, oy, eyeShift, mouth } = Q, E = v === 'E', N = v === 'N';
-  const cx = E ? 20.5 : 20, cy = 20 + oy;
-  const sk = L.skin;
-  const helmFull = L.head === 'greathelm' || L.head === 'horned' || L.head === 'winged';
-  // pescoço + cabeça
-  if (!helmFull) {
-    pc.e(cx, cy, 4.6, 4.8, 0, (x, y, nx, ny) => (E ? nx < -0.4 : nx > 0.45) || ny > 0.6 ? sk.d : nx < -0.3 && ny < -0.2 && !E ? sk.l : sk.b);
-    if (!N) {
-      if (E) { pc.p(23 + Math.max(0, eyeShift), 20 + oy, L.eyes); pc.p(25, 21 + oy, sk.b); pc.p(25, 22 + oy, sk.d); if (mouth) pc.p(23, 23 + oy, px('#5a2a22')); }
-      else { pc.p(17 + eyeShift, 21 + oy, L.eyes); pc.p(22 + eyeShift, 21 + oy, L.eyes); pc.p(17 + eyeShift, 20 + oy, sk.d); pc.p(22 + eyeShift, 20 + oy, sk.d); if (mouth) pc.r(19, 23 + oy, 2, 1, px('#5a2a22')); else pc.r(19, 23 + oy, 2, 1, sk.d); }
-      if (L.scar && !E) { pc.p(21, 19 + oy, px('#a05a4a')); pc.p(22, 20 + oy, px('#a05a4a')); }
+  // tronco
+  add(0, () => {
+    const pv = P2(K.pelvis), nk = P2(K.neck);
+    const wS = view === 'E' ? 6.5 : 9.5, wC = view === 'E' ? 6.8 : 8.6, wW = view === 'E' ? 5.4 : 6.6, wH = view === 'E' ? 5.6 : 7.2;
+    const ax = nk[0] - pv[0], ay = nk[1] - pv[1], al = Math.hypot(ax, ay) || 1, nx = -ay / al, ny = ax / al;
+    const lv = [[0, wH], [0.35, wW], [0.72, wC], [1, wS]];
+    const ptsR = [], ptsL = [];
+    for (const [t, w] of lv) { const cx = pv[0] + ax * t, cy = pv[1] + ay * t; ptsR.push(cx + nx * w, cy + ny * w); ptsL.unshift(cx - nx * w, cy - ny * w); }
+    const wAt = t => t < 0.35 ? lerp(wH, wW, t / 0.35) : t < 0.72 ? lerp(wW, wC, (t - 0.35) / 0.37) : lerp(wC, wS, (t - 0.72) / 0.28);
+    const T = L.body;
+    pc.poly([...ptsR, ...ptsL.slice(0)].map(v => v), 0, (x, y) => {
+      const rx = x + 0.5 - pv[0], ry = y + 0.5 - pv[1], t = clamp((rx * ax + ry * ay) / (al * al), 0, 1);
+      const side = (rx * nx + ry * ny) / wAt(t);
+      let l = -side * 0.75 * (view === 'N' ? -1 : 1) + 0.15 - side * side * 0.25 + (t - 0.5) * 0.25;
+      if (L.pattern === 'scales' && (Math.floor(x / 2) + Math.floor(y / 2)) % 2 === 0) l -= 0.25;
+      if (L.pattern === 'stars' && hash2(x, y, 7) < 0.04) return L.trim.lll;
+      if (L.pattern === 'leaves' && hash2(x >> 1, y >> 1, 9) < 0.12) return L.body2.l;
+      return lit(T, l, x, y);
+    });
+    // detalhes do peito e cinto
+    const at = (t, s) => [pv[0] + ax * t + nx * s, pv[1] + ay * t + ny * s];
+    const beltY = 0.3;
+    for (let s = -wW; s <= wW; s += 0.5) { const p = at(beltY, s); pc.P(Math.round(p[0]), Math.round(p[1]), L.body2.d); pc.P(Math.round(p[0]), Math.round(p[1]) + 1, L.body2.b); }
+    { const p = at(beltY, view === 'E' ? 2 : 0); pc.e(p[0], p[1] + 0.5, 1.6, 1.4, L.trim.l); }
+    if (view === 'S' && L.armor === 'plate') {
+      // tabardo com brasão
+      const top = at(0.85, 0), bot = at(-0.25, 0);
+      pc.poly([top[0] - 3.5, top[1], top[0] + 3.5, top[1], bot[0] + 3.8, bot[1], bot[0], bot[1] + 3, bot[0] - 3.8, bot[1]], 0, (x, y) => lit(L.accent, (x - top[0]) / -6 + 0.1, x, y));
+      const em = at(0.6, 0); pc.poly([em[0], em[1] - 3, em[0] + 2.5, em[1], em[0], em[1] + 3, em[0] - 2.5, em[1]], 0, (x, y) => lit(L.trim, 0.4 - (y - em[1]) / 6, x, y));
     }
-    // cabelo
-    const hair = L.hair;
-    if (hair && L.head !== 'hood' && L.head !== 'furhood' && L.head !== 'astralhood' && L.head !== 'antlerhood') {
-      pc.e(cx, cy - 1, 4.8, 4.6, 0, (x, y, nx, ny) => {
-        const edge = N ? true : E ? (nx < 0.1 || ny < -0.45) : ny < -0.35 || (Math.abs(nx) > 0.82 && ny < 0.3);
-        return edge ? (ny < -0.6 ? hair.l : hair.b) : 0;
+    if (view === 'E' && L.armor === 'plate') { const top = at(0.8, 3), bot = at(-0.25, 3.5); pc.poly([top[0] - 1.5, top[1], top[0] + 2.5, top[1], bot[0] + 2.5, bot[1], bot[0] - 1.5, bot[1]], 0, (x, y) => lit(L.accent, -0.1, x, y)); }
+    if (view === 'S' && L.armor === 'leather') for (let k = 0; k < 4; k++) { const p = at(0.45 + k * 0.1, (k % 2 ? 1 : -1)); pc.P(Math.round(p[0]), Math.round(p[1]), L.body2.dd); }
+    if (L.armor === 'vest' && view !== 'N') { const a = at(0.85, view === 'E' ? 2 : -3), b = at(0.0, view === 'E' ? 3 : -3.5); pc.poly([a[0], a[1], a[0] + (view === 'E' ? 4 : 6), a[1], b[0] + (view === 'E' ? 4.5 : 7), b[1], b[0], b[1]], 0, (x, y) => lit(L.body2, 0.1, x, y)); }
+    if (robe) {
+      const sw = P.walk >= 0 ? Math.sin(P.walk / 8 * Math.PI * 2) * 1.5 : 0;
+      const wl = at(0.32, -wW - 0.5), wr = at(0.32, wW + 0.5);
+      const hemY = Math.max(P2(K.LA.f)[1], P2(K.LB.f)[1]) - 2;
+      const spread = view === 'E' ? 4 : 5.5;
+      pc.poly([wl[0], wl[1], wr[0], wr[1], wr[0] + spread + sw, hemY, wl[0] - spread + sw, hemY], 0, (x, y) => {
+        const t = (x - (wl[0] - spread)) / (wr[0] - wl[0] + spread * 2);
+        if (y >= hemY - 2) return lit(L.trim, 0.2, x, y);
+        if (view === 'S' && Math.abs(x + 0.5 - (wl[0] + wr[0]) / 2 - sw * (y - wl[1]) / (hemY - wl[1])) < 1) return L.trim.b;
+        if (L.pattern === 'stars' && hash2(x, y, 7) < 0.04) return L.trim.lll;
+        return lit(L.body, (0.5 - t) * 1.2 * (view === 'N' ? -1 : 1) + ((x + y * 2) % 13 < 2 ? -0.4 : 0), x, y);
       });
-      if (L.hairStyle === 'long') { if (!E) { pc.r(15, cy, 2, 7, hair.b); pc.r(23, cy, 2, 7, hair.d); } else pc.r(16, cy, 3, 8, hair.b); if (N) pc.r(16, cy, 8, 7, hair.b); }
+    }
+  });
+  // braços
+  const armPart = (Ar, isA) => () => {
+    capP(Ar.s, Ar.e, robe ? 3.4 : 2.9, robe ? 3.2 : 2.4, sleeve);
+    capP(Ar.e, Ar.h, robe ? 3.3 : 2.3, robe ? 2.8 : 2.0, robe ? sleeve : glove);
+    if (robe) { const cuff = P2(add3(Ar.e, mul3(add3(Ar.h, mul3(Ar.e, -1)), 0.8))); pc.e(cuff[0], cuff[1], 2.6, 2.2, L.trim.b); }
+    const hp = P2(Ar.h); pc.e(hp[0], hp[1], 2.1, 2.1, 0, (x, y, nx, ny) => lit(L.armor === 'plate' ? L.body : L.skin, -nx * 0.6 - ny * 0.6, x, y));
+  };
+  add(dOf(K.A.s, K.A.e, K.A.h) + 0.2, armPart(K.A, true));
+  add(dOf(K.B.s, K.B.e, K.B.h), armPart(K.B, false));
+  // ombreiras
+  if (L.pauldron) for (const Ar of [K.A, K.B]) add(P2(Ar.s)[2] + 0.5, () => {
+    const p = P2(Ar.s);
+    pc.e(p[0], p[1] - 0.5, 3.6, 2.8, 0, (x, y, nx, ny) => lit(L.body, -nx * 0.6 - ny * 0.8 + 0.15, x, y));
+    pc.l(p[0] - 3, p[1] + 1.8, p[0] + 3, p[1] + 1.8, L.trim.b, 1);
+    if (L.pauldron === 'spike') { pc.l(p[0], p[1] - 2, p[0] - 1, p[1] - 6, L.body.ll, 1); pc.l(p[0] + 2, p[1] - 2, p[0] + 3, p[1] - 5, L.body.l, 1); }
+    if (L.pauldron === 'wing') { pc.l(p[0], p[1] - 2, p[0] + (p[0] < HAX ? -4 : 4), p[1] - 7, L.trim.ll, 1); pc.l(p[0] + (p[0] < HAX ? -1 : 1), p[1] - 1, p[0] + (p[0] < HAX ? -5 : 5), p[1] - 4, L.trim.l, 1); }
+  });
+  // cabeça
+  add(P2(K.head)[2] + 0.3, () => drawHead2(pc, L, P2(K.head), P2(K.neck), view, Q));
+  // arma
+  if (L.weapon) add(P2(K.A.h)[2] + (view === 'N' ? -0.6 : 0.6), () => drawWeapon2(pc, L, K, Q, view));
+  // escudo
+  if (L.shield) add(P2(K.B.h)[2] + 0.8, () => drawShield2(pc, L, K, view));
+
+  parts.sort((a, b) => a.d - b.d);
+  for (const p of parts) p.fn();
+}
+
+function drawHead2(pc, L, h, nk, view, Q) {
+  const E = view === 'E', N = view === 'N', sk = L.skin;
+  const hx = h[0] + (E ? 0.5 : 0) + Q.hw * (view === 'S' ? 0 : 1.2), hy = h[1];
+  // pescoço
+  pc.cap(nk[0], nk[1] - 1, hx, hy + 4, 2.2, 2.0, sk);
+  const helm = L.head === 'greathelm' || L.head === 'horned' || L.head === 'winged';
+  const hood = L.head === 'hood' || L.head === 'furhood' || L.head === 'astralhood' || L.head === 'antlerhood';
+  const fx = E ? 1 : 0; // deslocamento do rosto no perfil
+  const look = view === 'S' ? Math.round(Q.hw * 1.5) : 0;
+  if (!helm) {
+    pc.e(hx, hy, 5.6, 6.4, 0, (x, y, nx, ny) => lit(sk, -nx * 0.55 - ny * 0.45 + 0.2 - (E && nx < -0.3 ? 0.3 : 0), x, y));
+    if (!N) {
+      const ey = Math.round(hy + 0.5), mouthY = Math.round(hy + 3.5 - Q.ht * 2);
+      if (E) {
+        pc.P(Math.round(hx + 3), ey, L.eyes); pc.P(Math.round(hx + 3), ey - 1, sk.dd); pc.P(Math.round(hx + 2), ey - 2, L.hair ? L.hair.d : sk.dd);
+        pc.P(Math.round(hx + 6), ey + 1, sk.b); pc.P(Math.round(hx + 6), ey + 2, sk.d); pc.P(Math.round(hx + 5), ey + 2, sk.dd);
+        pc.P(Math.round(hx + 4), mouthY, Q.mouth > 0.5 ? px('#4a1a14') : sk.dd);
+        pc.e(hx - 1.5, hy + 0.5, 1.2, 1.6, sk.d);
+      } else {
+        for (const ex of [-2.5, 2.5]) { const X = Math.round(hx + ex - 0.5 + look); pc.P(X, ey, px('#e8e0d0')); pc.P(X + (ex < 0 ? 1 : 0), ey, L.eyes); pc.P(X, ey - 2, L.hair ? L.hair.d : sk.dd); pc.P(X + 1, ey - 2, L.hair ? L.hair.d : sk.dd); }
+        pc.P(Math.round(hx), ey + 2, sk.d); pc.P(Math.round(hx - 1), ey + 2, sk.dd);
+        if (Q.mouth > 0.5) { pc.P(Math.round(hx - 1), mouthY, px('#4a1a14')); pc.P(Math.round(hx), mouthY, px('#4a1a14')); pc.P(Math.round(hx - 1), mouthY + 1, px('#4a1a14')); pc.P(Math.round(hx), mouthY + 1, px('#4a1a14')); }
+        else { pc.P(Math.round(hx - 1), mouthY, sk.dd); pc.P(Math.round(hx), mouthY, sk.dd); }
+        if (L.scar) { pc.P(Math.round(hx + 2), ey - 1, px('#9a5444')); pc.P(Math.round(hx + 3), ey + 1, px('#9a5444')); pc.P(Math.round(hx + 3), ey, px('#9a5444')); }
+      }
+    }
+    if (L.hair && !hood) {
+      const hr = L.hair;
+      pc.e(hx, hy - 1.2, 5.9, 5.8, 0, (x, y, nx, ny) => {
+        const keep = N ? true : E ? (nx < 0.15 || ny < -0.5) : (ny < -0.42 || (Math.abs(nx) > 0.82 && ny < 0.35));
+        return keep ? lit(hr, -nx * 0.4 - ny * 0.7 + ((x + y) % 3 === 0 ? -0.3 : 0), x, y) : 0;
+      });
+      if (L.hairStyle === 'long') { const side = E ? [-3.5] : [-5, 5]; for (const sx of side) pc.cap(hx + sx, hy, hx + sx * 1.1, hy + 10, 2, 1.6, hr); if (N) pc.cap(hx, hy, hx, hy + 10, 4.5, 3.5, hr); }
     }
     if (L.beard && !N) {
-      if (E) { pc.r(21, 22 + oy, 4, 3, L.beard.b); pc.p(22, 25 + oy, L.beard.d); }
-      else { pc.r(16, 22 + oy, 8, 3, L.beard.b); pc.r(17, 25 + oy, 6, 2, L.beard.b); pc.r(18, 27 + oy, 4, 1, L.beard.d); if (mouth) pc.r(19, 23 + oy, 2, 1, px('#5a2a22')); }
+      if (E) pc.e(hx + 2.5, hy + 4.5, 3.5, 3.2, 0, (x, y, nx, ny) => lit(L.beard, -ny * 0.4 + ((x + y) % 2 ? -0.2 : 0.1), x, y));
+      else { pc.e(hx, hy + 4.8, 4.8, 3.8, 0, (x, y, nx, ny) => ny < -0.3 && Math.abs(nx) < 0.35 ? 0 : lit(L.beard, -nx * 0.3 - ny * 0.3 + ((x + y) % 2 ? -0.15 : 0.1), x, y)); if (Q.mouth > 0.5) pc.r(hx - 1, hy + 3.5, 2, 2, px('#4a1a14')); }
     }
   }
   const H = L.headTone;
   switch (L.head) {
     case 'greathelm': case 'horned': case 'winged': {
-      pc.e(cx, cy, 5, 5.3, 0, (x, y, nx, ny) => (E ? nx < -0.35 : nx > 0.45) ? H.d : nx < -0.25 && ny < 0 && !E ? H.ll : ny < -0.55 ? H.l : H.b);
+      pc.e(hx, hy, 6, 6.8, 0, (x, y, nx, ny) => lit(H, -nx * 0.65 - ny * 0.5 + 0.2 + (Math.abs(nx - 0.05) < 0.08 && !E ? 0.4 : 0), x, y));
       if (!N) {
-        if (E) { pc.r(21, 20 + oy, 5, 1, px('#14100c')); pc.p(24, 22 + oy, px('#14100c')); pc.p(24, 23 + oy, px('#14100c')); }
-        else { pc.r(16, 20 + oy, 8, 1, px('#14100c')); pc.r(19, 21 + oy, 2, 3, H.d); pc.p(18, 23 + oy, px('#14100c')); pc.p(21, 23 + oy, px('#14100c')); }
+        if (E) { pc.r(hx + 1, hy - 0.5, 5, 1, px('#100c08')); for (let k = 0; k < 3; k++) pc.P(Math.round(hx + 3 + (k % 2)), Math.round(hy + 2 + k), px('#100c08')); }
+        else { pc.r(hx - 4.5, hy - 0.5, 9, 1, px('#100c08')); pc.r(hx - 0.5, hy + 1, 1, 4, H.d); for (const ox of [-2.5, 2.5]) { pc.P(Math.round(hx + ox), Math.round(hy + 3), px('#100c08')); pc.P(Math.round(hx + ox), Math.round(hy + 4.5), px('#100c08')); } }
       }
-      pc.r(Math.round(cx) - (E ? 1 : 1), cy - 6, 2, 2, L.trim.b);
-      if (L.head === 'greathelm') { // penacho
+      pc.r(hx - 6, hy + 5.2, 12, 1.2, H.dd);
+      if (L.head === 'greathelm') {
         const pl = L.plume;
-        if (E) { pc.l(19, cy - 6, 14, cy - 9, pl.b, 2); pc.l(15, cy - 9, 12, cy - 5, pl.d, 2); pc.p(17, cy - 8, pl.l); }
-        else { pc.l(20, cy - 6, 20, cy - 10, pl.b, 2); pc.p(19, cy - 10, pl.l); pc.l(21, cy - 10, 23, cy - 7, pl.d, 2); }
+        for (let k = 0; k < 9; k++) { const t = k / 8, x = hx - (E ? 1 + t * 9 : t * 2 - 1), y = hy - 6.5 - Math.sin(t * Math.PI) * 4 + t * 3; pc.e(x, y, 1.8, 1.4, 0, (xx, yy, nx, ny) => lit(pl, -ny * 0.6 + 0.1, xx, yy)); }
       } else if (L.head === 'horned') {
-        const hn = tone('#d9ceb2');
-        if (E) { pc.l(18, cy - 3, 15, cy - 7, hn.b, 2); pc.p(14, cy - 9, hn.l); pc.l(22, cy - 4, 25, cy - 8, hn.d, 2); }
-        else { pc.l(15, cy - 2, 12, cy - 6, hn.b, 2); pc.p(12, cy - 8, hn.l); pc.l(24, cy - 2, 27, cy - 6, hn.d, 2); pc.p(27, cy - 8, hn.l); }
-        pc.p(cx, cy - 5, px('#e04a2a'));
+        const hn = tone('#d6c9aa');
+        const horn = (sx, d) => { for (let k = 0; k < 8; k++) { const t = k / 7; pc.e(hx + sx + d * t * 4, hy - 3 - t * 6 + t * t * 2, 1.6 - t * 0.9, 1.6 - t * 0.9, 0, (x, y, nx, ny) => lit(hn, -nx * 0.5 - ny * 0.4 + 0.2, x, y)); } };
+        if (E) horn(-2, -1); else { horn(-5, -1); horn(5, 1); }
+        pc.P(Math.round(hx), Math.round(hy - 5), px('#e04a2a'));
       } else {
-        const wg = tone('#f4efe2');
-        const wing = (x, d) => { pc.l(x, cy - 2, x + d * 4, cy - 8, wg.b, 2); pc.l(x + d, cy - 1, x + d * 5, cy - 5, wg.l, 1); pc.p(x + d * 5, cy - 9, wg.ll); };
-        if (E) wing(17, -1); else { wing(15, -1); wing(24, 1); }
+        const wg = tone('#f0ebde');
+        const wing = (sx, d) => { for (let k = 0; k < 4; k++) pc.l(hx + sx, hy - 1 - k, hx + sx + d * (6 - k), hy - 7 - k * 1.5, k % 2 ? wg.l : wg.b, 1); };
+        if (E) wing(-3, -1); else { wing(-5, -1); wing(5, 1); }
       }
       break;
     }
     case 'hood': case 'furhood': case 'astralhood': case 'antlerhood': {
-      pc.e(cx, cy - 0.5, 5.2, 5.4, 0, (x, y, nx, ny) => {
-        const face = !N && (E ? (nx > 0.15 && ny > -0.3) : (Math.abs(nx) < 0.62 && ny > -0.38 && ny < 0.85));
+      pc.e(hx, hy - 0.5, 6.6, 7.2, 0, (x, y, nx, ny) => {
+        const face = !N && (E ? (nx > 0.2 && ny > -0.35 && ny < 0.8) : (Math.abs(nx) < 0.58 && ny > -0.4 && ny < 0.85));
         if (face) return 0;
-        const pat = L.head === 'astralhood' && hash2(x, y, 3) < 0.1 ? L.trim.ll : 0;
-        return pat || ((E ? nx < -0.3 : nx > 0.4) ? H.d : ny < -0.5 ? H.l : H.b);
+        if (L.head === 'astralhood' && hash2(x, y, 3) < 0.06) return L.trim.lll;
+        return lit(H, -nx * 0.6 - ny * 0.5 + 0.1 - (face ? 0 : 0), x, y);
       });
-      if (!E && !N) { pc.r(15, cy + 3, 2, 6, H.d); pc.r(23, cy + 3, 2, 6, H.d); }
-      if (E) pc.poly([16, cy + 1, 18, cy + 1, 16, cy + 9], H.d);
+      if (!N) { const T2 = H; if (E) pc.cap(hx - 3, hy + 2, hx - 4, hy + 10, 2.5, 2, T2); else { pc.cap(hx - 5, hy + 3, hx - 6, hy + 10, 2, 2.2, T2); pc.cap(hx + 5, hy + 3, hx + 6, hy + 10, 2, 2.2, T2); } }
       if (L.head === 'furhood') {
-        const fr = tone('#f2f2ee');
-        if (!N) { if (E) pc.l(21, cy - 4, 21, cy + 4, fr.b, 2); else { pc.l(16, cy - 3, 16, cy + 4, fr.b, 1); pc.l(24, cy - 3, 24, cy + 4, fr.b, 1); pc.r(17, cy - 4, 7, 1, fr.l); } }
-        pc.poly([16, cy - 4, 17, cy - 8, 19, cy - 5], fr.b); pc.poly([21, cy - 5, 23, cy - 8, 24, cy - 4], fr.d);
+        const fr = tone('#ecebe6');
+        if (!N) pc.e(hx + (E ? 2 : 0), hy - 0.5, E ? 3 : 4.6, 5.8, 0, (x, y, nx, ny) => nx * nx + ny * ny > 0.72 ? lit(fr, -ny * 0.4 + 0.2, x, y) : 0);
+        pc.poly([hx - 5, hy - 5, hx - 3.5, hy - 10, hx - 1.5, hy - 6], fr.b); pc.poly([hx + 1.5, hy - 6, hx + 3.5, hy - 10, hx + 5, hy - 5], fr.d);
       }
-      if (L.head === 'astralhood') { if (!N) pc.r(E ? 21 : 17, cy - 3, E ? 4 : 7, 1, L.trim.l); pc.p(E ? 23 : 20, cy - 4, px('#bfe3ff')); }
+      if (L.head === 'astralhood' && !N) { pc.l(hx - (E ? -1 : 4), hy - 3.5, hx + 4, hy - 3.5, L.trim.l, 1); pc.e(hx + (E ? 3 : 0), hy - 4, 1, 1, px('#c8e8ff')); }
       if (L.head === 'antlerhood') {
-        const an = tone('#cdbb94');
-        const antler = (x, d) => { pc.l(x, cy - 4, x + d * 3, cy - 10, an.b, 1); pc.l(x + d * 2, cy - 8, x + d * 5, cy - 10, an.b, 1); pc.l(x + d * 1, cy - 6, x - d, cy - 9, an.d, 1); pc.p(x + d * 3, cy - 11, an.l); };
-        if (E) antler(19, -1); else { antler(17, -1); antler(23, 1); }
-        pc.p(cx - 2, cy - 5, px('#7cc24a')); pc.p(cx + 2, cy - 5, px('#5aa23a'));
+        const an = tone('#c8b48c');
+        const ant = (sx, d) => { pc.l(hx + sx, hy - 5, hx + sx + d * 4, hy - 13, an.b, 1); pc.l(hx + sx + d * 2.5, hy - 10, hx + sx + d * 7, hy - 12, an.l, 1); pc.l(hx + sx + d * 1.2, hy - 7, hx + sx - d * 1, hy - 11, an.d, 1); pc.l(hx + sx + d * 3.5, hy - 12, hx + sx + d * 3, hy - 16, an.l, 1); };
+        if (E) ant(-1, -1); else { ant(-3, -1); ant(3, 1); }
       }
       break;
     }
     case 'circlet':
-      if (!N) pc.r(E ? 18 : 16, cy - 3, E ? 7 : 8, 1, L.trim.b);
-      if (!N) pc.p(E ? 23 : 20, cy - 3, px('#6fe0a8'));
-      if (E) pc.p(16, cy - 1, px('#e8c3a0')); // orelha pontuda
-      else { pc.p(14, cy - 1, L.skin.b); pc.p(25, cy - 1, L.skin.d); }
+      if (!N) pc.l(hx - (E ? -1 : 5), hy - 3, hx + 5, hy - 3, L.trim.b, 1);
+      if (!N) pc.P(Math.round(hx + (E ? 3 : 0)), Math.round(hy - 3), px('#6fe0a8'));
+      if (E) { pc.P(Math.round(hx - 4), Math.round(hy - 1), sk.b); pc.P(Math.round(hx - 5), Math.round(hy - 2), sk.l); }
+      else { pc.P(Math.round(hx - 6), Math.round(hy - 1), sk.b); pc.P(Math.round(hx + 5), Math.round(hy - 1), sk.d); }
       break;
     case 'wizard': {
-      pc.e(cx, cy - 4, 7.5, 1.8, H.d);
-      const tip = E ? [15, cy - 17] : [17, cy - 17];
-      pc.poly([cx - 4.5, cy - 4, cx + 4.5, cy - 4, cx + 1.5, cy - 11, tip[0], tip[1], cx - 2, cy - 10], 0, (x, y) => x < cx - 1 ? H.d : x > cx + 2 ? H.b : H.l);
-      pc.r(Math.round(cx - 4), cy - 6, 8, 1, L.trim.b);
-      if (!N) { pc.p(cx, cy - 9, L.trim.ll); pc.p(cx - 1, cy - 8, L.trim.l); pc.p(cx + 1, cy - 8, L.trim.l); }
+      pc.e(hx + fx, hy - 4.5, 9, 2.2, 0, (x, y, nx, ny) => lit(H, -ny * 0.3 - 0.25, x, y));
+      const tip = [hx - (E ? 7 : 4), hy - 22];
+      pc.poly([hx - 5.5, hy - 5, hx + 5.5, hy - 5, hx + 2, hy - 13, tip[0], tip[1], hx - 2.5, hy - 12], 0, (x, y, lx, ly) => lit(H, (hx - lx) / 6 + 0.05 - (y - hy) / 60, x, y));
+      pc.l(hx - 5, hy - 7, hx + 5, hy - 7, L.trim.b, 2);
+      if (!N) pc.e(hx + (E ? 2 : 0), hy - 10, 1.2, 1.2, L.trim.ll);
       break;
     }
     case 'cap':
-      pc.e(cx + (E ? 1 : 0), cy - 4, 6, 1.5, H.d); pc.e(cx, cy - 6, 4, 2.5, H.b);
-      pc.l(cx - 3, cy - 7, cx - 6, cy - 11, px('#b8382a'), 1);
+      pc.e(hx + fx, hy - 5, 7, 1.8, H.d); pc.e(hx, hy - 7, 5, 3, 0, (x, y, nx, ny) => lit(H, -nx * 0.5 - ny * 0.5, x, y));
+      pc.l(hx - 3, hy - 9, hx - 8, hy - 15, px('#a8382a'), 1); pc.l(hx - 4, hy - 9, hx - 9, hy - 14, px('#c8584a'), 1);
       break;
     case 'helm':
-      pc.e(cx, cy - 2.5, 5, 3.5, 0, (x, y, nx, ny) => ny > 0.5 ? 0 : nx > 0.4 ? H.d : H.b);
-      pc.e(cx, cy - 0.5, 6, 1.2, H.d);
+      pc.e(hx, hy - 3, 6.2, 4.6, 0, (x, y, nx, ny) => ny > 0.55 ? 0 : lit(H, -nx * 0.6 - ny * 0.4 + 0.2, x, y));
+      pc.e(hx, hy - 0.5, 7.5, 1.5, H.d);
+      if (!N) pc.r(hx - 0.5 + (E ? 3 : 0), hy - 3, 1, 5, H.dd);
       break;
   }
 }
 
-// arma presa na mão (ângulo: 0 = para cima, + = para a frente)
-function drawWeapon(pc, L, Q, kind, hand, ang, glowOn) {
-  const flipX = Q.v === 'N' ? -1 : 1;
-  const dx = Math.sin(ang) * flipX, dy = -Math.cos(ang);
-  const [hx, hy] = hand;
-  const at = k => [hx + dx * k, hy + dy * k];
+function drawWeapon2(pc, L, K, Q, view) {
+  const P2 = K.P2, hand = K.A.h, w = K.wdir, kind = L.weapon;
+  const pt = d => P2(add3(hand, mul3(w, d)));
+  const glowOn = Q.glow > 0.5;
   switch (kind) {
     case 'sword': case 'darkblade': case 'goldsword': {
-      const len = kind === 'darkblade' ? 15 : 13;
-      const blade = kind === 'darkblade' ? tone('#3a2a2c') : tone('#d4d9e0');
-      const edge = kind === 'darkblade' ? px('#e0482a') : px('#ffffff');
-      const guard = kind === 'goldsword' ? L.trim : kind === 'darkblade' ? tone('#6a1c1c') : tone('#9a7a3a');
-      const g0 = at(-3); pc.l(hx, hy, g0[0], g0[1], px('#4a3020'), 1); pc.p(g0[0], g0[1], guard.b);
-      const p1 = at(1), p2 = at(len);
-      pc.l(p1[0], p1[1], p2[0], p2[1], blade.b, 2);
-      const q1 = at(2), q2 = at(len - 1); pc.l(q1[0] - dy * 0.5, q1[1] + dx * 0.5, q2[0], q2[1], glowOn ? px('#ffd27a') : edge, 1);
-      pc.l(hx - dy * 2.5, hy + dx * 2.5, hx + dy * 2.5, hy - dx * 2.5, guard.b, 1);
-      if (kind === 'goldsword') { const t = at(len + 1); pc.p(t[0], t[1], px('#fff4c8')); }
+      const len = kind === 'darkblade' ? 25 : 22;
+      const blade = kind === 'darkblade' ? tone('#3a2c2e') : tone('#c8ced6');
+      const guard = kind === 'goldsword' ? L.trim : kind === 'darkblade' ? tone('#5a1818') : tone('#8a6a34');
+      const g0 = pt(-4), g1 = pt(0), b0 = pt(1.5), b1 = pt(len);
+      pc.cap(g0[0], g0[1], g1[0], g1[1], 1.1, 1.1, tone('#4a3020'));
+      pc.e(g0[0], g0[1], 1.5, 1.5, guard.l);
+      pc.cap(b0[0], b0[1], b1[0], b1[1], 1.7, 0.5, blade);
+      pc.l(b0[0], b0[1], b1[0], b1[1], glowOn ? px('#ffd07a') : kind === 'darkblade' ? px('#e0482a') : blade.lll, 1);
+      // guarda perpendicular
+      const sx = b1[1] - b0[1], sy = -(b1[0] - b0[0]), sl = Math.hypot(sx, sy) || 1;
+      pc.l(g1[0] - sx / sl * 4, g1[1] - sy / sl * 4, g1[0] + sx / sl * 4, g1[1] + sy / sl * 4, guard.b, 2);
       break;
     }
     case 'staff': case 'starstaff': case 'druidstaff': {
-      const pole = kind === 'starstaff' ? tone('#b8c0cc') : tone('#6b4a2b');
-      const a = at(-10), b2 = at(15);
-      if (kind === 'druidstaff') { for (let k = -10; k < 15; k += 3) { const p1 = at(k), p2 = at(k + 3); pc.l(p1[0] + (k % 2), p1[1], p2[0] - (k % 2), p2[1], pole.b, 1); } }
-      else { pc.l(a[0], a[1], b2[0], b2[1], pole.b, 1); pc.l(a[0] + 1, a[1], b2[0] + 1, b2[1], pole.d, 1); }
-      const o = at(17), oc = tone(L.orb);
-      if (kind === 'starstaff') { pc.poly([o[0], o[1] - 3, o[0] + 2, o[1], o[0], o[1] + 3, o[0] - 2, o[1]], oc.b); pc.p(o[0] - 1, o[1] - 1, oc.ll); }
-      else { pc.e(o[0] + 0.5, o[1] + 0.5, 2.2, 2.2, 0, (x, y, nx, ny) => nx < -0.2 && ny < -0.2 ? oc.ll : oc.b); }
-      if (kind === 'druidstaff') { pc.p(o[0] - 2, o[1] - 2, px('#5aa23a')); pc.p(o[0] + 2, o[1] - 1, px('#7cc24a')); pc.p(o[0] + 1, o[1] - 3, px('#4a8a2a')); }
-      else pc.l(o[0] - 2, o[1] + 2, o[0] + 2, o[1] + 2, L.trim.b, 1);
-      if (glowOn) { pc.p(o[0] - 3, o[1], oc.ll); pc.p(o[0] + 3, o[1], oc.ll); pc.p(o[0], o[1] - 4, oc.ll); }
+      const pole = kind === 'starstaff' ? tone('#aeb6c2') : kind === 'druidstaff' ? tone('#5a4028') : tone('#6b4a2b');
+      const a = pt(-14), b = pt(24);
+      if (kind === 'druidstaff') { for (let k = -14; k < 24; k += 4) { const p1 = pt(k), p2 = pt(k + 4); pc.cap(p1[0] + (k % 8 ? 0.6 : -0.6), p1[1], p2[0], p2[1], 1.2, 1.1, pole); } }
+      else pc.cap(a[0], a[1], b[0], b[1], 1.1, 1.0, pole);
+      const o = pt(27), oc = tone(L.orb);
+      if (kind === 'starstaff') { pc.poly([o[0], o[1] - 4.5, o[0] + 2.8, o[1], o[0], o[1] + 4.5, o[0] - 2.8, o[1]], 0, (x, y, lx, ly) => lit(oc, (o[0] - lx) / 3 + 0.4, x, y)); }
+      else {
+        pc.e(o[0], o[1], 3.2, 3.2, 0, (x, y, nx, ny) => lit(oc, -nx * 0.7 - ny * 0.7 + 0.5, x, y));
+        if (kind === 'staff') { pc.l(o[0] - 3, o[1] + 3, o[0] - 1, o[1] + 1, L.trim.b, 1); pc.l(o[0] + 3, o[1] + 3, o[0] + 1, o[1] + 1, L.trim.b, 1); }
+      }
+      if (kind === 'druidstaff') for (let k = 0; k < 5; k++) pc.e(o[0] + Math.cos(k * 1.3) * 4, o[1] + Math.sin(k * 1.3) * 3, 1.4, 1, px(k % 2 ? '#5aa23a' : '#7cc24a'));
+      if (glowOn) for (let k = 0; k < 6; k++) { const an = k / 6 * Math.PI * 2; pc.P(Math.round(o[0] + Math.cos(an) * 5.5), Math.round(o[1] + Math.sin(an) * 5.5), oc.lll); }
       break;
     }
     case 'bow': case 'frostbow': case 'elfbow': {
-      const wood = kind === 'frostbow' ? tone('#cfe2f0') : kind === 'elfbow' ? L.trim : tone('#7a4a22');
-      const up = Q.v === 'E' ? 1 : 0;
-      if (Q.v === 'E') {
-        const tilt = ang ? -0.5 : 0;
-        const pts = [];
-        for (let t = -1; t <= 1.001; t += 0.25) pts.push([hx + 1 + (1 - t * t) * 3 + t * tilt * 4, hy + t * 10]);
-        for (let k = 0; k < pts.length - 1; k++) pc.l(pts[k][0], pts[k][1], pts[k + 1][0], pts[k + 1][1], k % 4 === 0 ? wood.l : wood.b, 1);
-        const top = pts[0], bot = pts[pts.length - 1], pullX = hx + 1 - Q.pull * 6;
-        pc.l(top[0], top[1], pullX, hy, px('#e8e2d0'), 1); pc.l(pullX, hy, bot[0], bot[1], px('#e8e2d0'), 1);
-        if (Q.pull > 0) { pc.l(pullX, hy, hx + 7, hy, px('#d6c9a8'), 1); pc.p(hx + 8, hy, px('#c0c6ce')); }
-        if (kind === 'elfbow') { pc.p(top[0], top[1] - 1, px('#6fe0a8')); pc.p(bot[0], bot[1] + 1, px('#6fe0a8')); }
-      } else {
-        // de frente/costas: arco na vertical ao lado
-        const x = hx + (Q.v === 'S' ? 1 : -1);
-        for (let t = -1; t <= 1.001; t += 0.2) pc.p(x + (1 - t * t) * 2 * (Q.v === 'S' ? 1 : -1), hy - 2 + t * 9, wood.b);
-        pc.l(x, hy - 11, x, hy + 7, px('#e8e2d0'), 1);
+      const wood = kind === 'frostbow' ? tone('#c4d8e8') : kind === 'elfbow' ? L.trim : tone('#6e4320');
+      // eixo do arco: perpendicular à direção de tiro, curvado para a frente
+      const shoot = K.up([Math.sin(Q.aA[0]), 0, Math.cos(Q.aA[0])]);
+      const axis = K.up([Math.cos(Q.aA[0]), 0, -Math.sin(Q.aA[0])]);
+      const tipA = add3(hand, mul3(axis, 13)), tipB = add3(hand, mul3(axis, -13));
+      let prev = null;
+      for (let t = -1; t <= 1.001; t += 0.125) {
+        const p = add3(add3(hand, mul3(axis, t * 13)), mul3(shoot, (1 - t * t) * 3.5 - 1));
+        const q = P2(p);
+        if (prev) pc.cap(prev[0], prev[1], q[0], q[1], 1.1, 1.1, wood);
+        prev = q;
       }
+      const pullP = Q.pull > 0.05 ? add3(hand, mul3(shoot, -1 - Q.pull * 11)) : add3(hand, mul3(shoot, -1));
+      const a = P2(tipA), b = P2(tipB), c = P2(pullP);
+      pc.l(a[0], a[1], c[0], c[1], px('#e6e0cc'), 0.5); pc.l(c[0], c[1], b[0], b[1], px('#e6e0cc'), 0.5);
+      if (Q.pull > 0.05) { const tip = P2(add3(hand, mul3(shoot, 5))); pc.l(c[0], c[1], tip[0], tip[1], px('#d4c8a6'), 1); pc.P(Math.round(tip[0]), Math.round(tip[1]), Q.glow > 0.5 ? px('#d8ffd0') : px('#c0c6ce')); pc.P(Math.round(c[0]), Math.round(c[1]), px('#a83226')); }
+      if (kind === 'elfbow') { pc.P(Math.round(a[0]), Math.round(a[1]) - 1, px('#6fe0a8')); pc.P(Math.round(b[0]), Math.round(b[1]) + 1, px('#6fe0a8')); }
       break;
     }
-    case 'spear': { const a = at(-12), b2 = at(16); pc.l(a[0], a[1], b2[0], b2[1], px('#6b4a2b'), 1); const t = at(19); pc.poly([b2[0] - 1.5, b2[1], b2[0] + 1.5, b2[1], t[0], t[1]], px('#d4d9e0')); break; }
-    case 'book': pc.r(hx - 2, hy - 2, 5, 4, px('#6a1f22')); pc.r(hx - 2, hy - 2, 1, 4, px('#c9a24a')); break;
-    case 'mug': pc.r(hx - 1, hy - 3, 3, 4, px('#a0662a')); pc.r(hx - 1, hy - 4, 3, 1, px('#f2ead8')); pc.p(hx + 2, hy - 2, px('#a0662a')); break;
+    case 'hammer': { const a = pt(-4), b = pt(12); pc.cap(a[0], a[1], b[0], b[1], 1, 1, tone('#6b4a2b')); const h1 = pt(10), h2 = pt(15); pc.cap(h1[0] - 3, h1[1], h2[0] + 3, h2[1], 2.4, 2.4, tone('#5a5c62')); break; }
+    case 'spear': { const a = pt(-16), b = pt(24); pc.cap(a[0], a[1], b[0], b[1], 1, 1, tone('#6b4a2b')); const t = pt(30); pc.cap(b[0], b[1], t[0], t[1], 1.8, 0.4, tone('#c8ced6')); break; }
+    case 'book': { const h = P2(hand); pc.r(h[0] - 3, h[1] - 4, 6, 5, px('#5a1a1c')); pc.r(h[0] - 3, h[1] - 4, 1, 5, px('#c9a24a')); pc.r(h[0] - 2, h[1] - 4, 4, 1, px('#e8e0cc')); break; }
+    case 'mug': { const h = P2(hand); pc.r(h[0] - 2, h[1] - 5, 4, 5, px('#8a5424')); pc.r(h[0] - 2, h[1] - 6, 4, 1.5, px('#f2ead8')); pc.P(Math.round(h[0] + 2), Math.round(h[1] - 3), px('#8a5424')); break; }
   }
 }
 
-function drawShield(pc, L, Q, hand) {
-  const k = L.shield;
-  if (!k) return;
-  const E = Q.v === 'E';
-  let [cx, cy] = hand; cy -= 2;
-  if (Q.shieldUp) { cx = E ? 25 : 20; cy = 27 + Q.oy; }
-  const rim = k === 'dragon' ? tone('#2a1416') : L.trim, field = k === 'dragon' ? tone('#3a1a1c') : k === 'sun' ? tone('#f0ead8') : L.accent;
-  const w = E && !Q.shieldUp ? 2 : 4;
+function drawShield2(pc, L, K, view) {
+  const k = L.shield, P2 = K.P2;
+  const c3 = add3(K.B.h, mul3(K.fwd, 2));
+  const c = P2(c3);
+  const nScreen = proj(K.fwd, view);           // normal do escudo projetada
+  const faceW = Math.max(1.6, 5.8 * Math.sqrt(Math.max(0, 1 - nScreen[0] * nScreen[0])));
+  const rim = k === 'dragon' ? tone('#24120f') : L.trim, field = k === 'dragon' ? tone('#3a1a1c') : k === 'sun' ? tone('#ece6d4') : L.accent;
+  const cx = c[0], cy = c[1] - 2;
   if (k === 'sun') {
-    pc.e(cx, cy, w + 0.6, 5, rim.b); pc.e(cx, cy, w - 0.6, 4, field.b);
-    pc.e(cx, cy, Math.max(1, w - 2.5), 1.6, L.trim.ll);
+    pc.e(cx, cy, faceW + 0.8, 7, 0, (x, y, nx, ny) => lit(rim, -nx * 0.5 - ny * 0.5 + 0.2, x, y));
+    pc.e(cx, cy, faceW - 0.6, 5.8, 0, (x, y, nx, ny) => lit(field, -nx * 0.4 - ny * 0.4 + 0.2, x, y));
+    if (faceW > 3) { pc.e(cx, cy, 2, 2, L.trim.ll); for (let a = 0; a < 8; a++) pc.l(cx + Math.cos(a * 0.785) * 2.5, cy + Math.sin(a * 0.785) * 2.5, cx + Math.cos(a * 0.785) * 4, cy + Math.sin(a * 0.785) * 4, L.trim.b, 1); }
   } else {
-    pc.poly([cx - w, cy - 5, cx + w + 1, cy - 5, cx + w + 1, cy + 2, cx + 0.5, cy + 7, cx - w, cy + 2], rim.b);
-    pc.poly([cx - w + 1, cy - 4, cx + w, cy - 4, cx + w, cy + 2, cx + 0.5, cy + 5.5, cx - w + 1, cy + 2], 0, (x) => x < cx ? field.b : field.d);
-    if (w >= 3) {
-      if (k === 'dragon') { pc.p(cx, cy - 1, px('#e0482a')); pc.p(cx + 1, cy - 1, px('#ff8a4a')); pc.p(cx, cy, px('#8a1c1c')); }
-      else { pc.r(cx, cy - 3, 1, 7, L.trim.l); pc.r(cx - 2, cy - 1, 5, 1, L.trim.l); }
+    const W = faceW;
+    pc.poly([cx - W - 0.8, cy - 7, cx + W + 0.8, cy - 7, cx + W + 0.8, cy + 2, cx, cy + 10, cx - W - 0.8, cy + 2], 0, (x, y, lx, ly) => lit(rim, (cx - lx) / (W + 1) * 0.5 + 0.2 - (ly - cy) / 20, x, y));
+    pc.poly([cx - W + 0.6, cy - 5.6, cx + W - 0.6, cy - 5.6, cx + W - 0.6, cy + 1.6, cx, cy + 8, cx - W + 0.6, cy + 1.6], 0, (x, y, lx, ly) => lit(field, (cx - lx) / W * 0.45 + 0.1 - (ly - cy) / 22, x, y));
+    if (W > 3) {
+      if (k === 'dragon') { pc.e(cx, cy, 2, 1.4, px('#e0482a')); pc.P(Math.round(cx), Math.round(cy), px('#2a0a08')); }
+      else { pc.r(cx - 0.6, cy - 4.5, 1.2, 10, L.trim.l); pc.r(cx - 3.5, cy - 1.5, 7, 1.2, L.trim.l); }
     }
   }
-}
-
-function drawCape(pc, L, Q, over) {
-  if (!L.cape) return;
-  const { v, oy, walking, s } = Q;
-  const c = L.capeTone, wv = walking ? Math.round(s * 1.5) : 0;
-  if (v === 'E') {
-    pc.poly([18, 26 + oy, 21, 26 + oy, 20, 40 + oy, 15 - wv, 44 + B, 12 - wv, 42 + B], 0, (x, y) => x < 16 ? c.d : c.b);
-  } else if (v === 'S' && !over) {
-    pc.poly([14, 27 + oy, 26, 27 + oy, 27 + wv, 44 + B, 13 + wv, 44 + B], c.d);
-  } else if (v === 'N' && over) {
-    pc.poly([14, 27 + oy, 26, 27 + oy, 27 + wv, 44 + B, 13 + wv, 44 + B], 0, (x, y) => (x + y) % 5 === 0 ? c.d : x < 17 ? c.l : x > 23 ? c.d : c.b);
-    pc.r(15, 27 + oy, 10, 1, L.trim.b);
-  }
-}
-
-function drawQuiver(pc, L, Q, over) {
-  if (!L.quiver) return;
-  const { v, oy } = Q, q = tone('#5a3a22');
-  const fl = (x, y) => { pc.p(x, y, px('#e8e2d0')); pc.p(x + 1, y - 1, px('#b8382a')); pc.p(x + 2, y, px('#e8e2d0')); };
-  if (v === 'E' && !over) { pc.l(15, 26 + oy, 17, 37 + oy, q.b, 3); fl(13, 25 + oy); fl(15, 24 + oy); }
-  else if (v === 'S' && !over) { fl(12, 24 + oy); fl(14, 23 + oy); }
-  else if (v === 'N' && over) { pc.l(16, 25 + oy, 23, 37 + oy, q.b, 3); pc.l(16, 25 + oy, 23, 37 + oy, q.d, 1); fl(14, 23 + oy); fl(16, 22 + oy); }
-}
-
-function drawHeroPC(pc, L, P) {
-  const Q = heroPose(L, P);
-  const { v } = Q;
-  const weaponIsBow = L.weapon && L.weapon.endsWith('bow');
-  if (v === 'N') {
-    if (L.weapon) drawWeapon(pc, L, Q, L.weapon, Q.hA, Q.wAng, Q.glow);
-    drawShield(pc, L, Q, Q.hF);
-    drawLegs(pc, L, Q, P);
-    drawTorso(pc, L, Q, P);
-    drawArm(pc, L, Q.sA, Q.hA, false); drawArm(pc, L, Q.sF, Q.hF, false);
-    drawPauldrons(pc, L, Q);
-    drawHead(pc, L, Q, P);
-    drawCape(pc, L, Q, true);
-    drawQuiver(pc, L, Q, true);
-    return;
-  }
-  if (v === 'E') {
-    drawCape(pc, L, Q, false);
-    drawQuiver(pc, L, Q, false);
-    drawArm(pc, L, Q.sF, Q.hF, true);
-    if (!Q.shieldUp) drawShield(pc, L, Q, Q.hF);
-    drawLegs(pc, L, Q, P);
-    drawTorso(pc, L, Q, P);
-    drawPauldrons(pc, L, Q);
-    drawHead(pc, L, Q, P);
-    if (L.weapon && !weaponIsBow) drawWeapon(pc, L, Q, L.weapon, Q.hA, Q.wAng, Q.glow);
-    drawArm(pc, L, Q.sA, Q.hA, false);
-    if (L.weapon && weaponIsBow) drawWeapon(pc, L, Q, L.weapon, Q.hA, Q.wAng, Q.glow);
-    if (Q.shieldUp) drawShield(pc, L, Q, Q.hF);
-    return;
-  }
-  // S (frente)
-  drawCape(pc, L, Q, false);
-  drawQuiver(pc, L, Q, false);
-  drawLegs(pc, L, Q, P);
-  drawTorso(pc, L, Q, P);
-  drawArm(pc, L, Q.sF, Q.hF, false);
-  drawArm(pc, L, Q.sA, Q.hA, false);
-  drawPauldrons(pc, L, Q);
-  drawHead(pc, L, Q, P);
-  drawShield(pc, L, Q, Q.hF);
-  if (L.weapon) drawWeapon(pc, L, Q, L.weapon, Q.hA, Q.wAng, Q.glow);
 }
 
 function poseKey(P) {
@@ -468,18 +502,19 @@ function lookFor(key, make) { let l = _lookCache.get(key); if (!l) { l = make();
 function heroSprite(cls, skin, color, P) {
   const lk = cls + ':' + skin + ':' + color;
   const L = lookFor(lk, () => heroLook(cls, skin, color));
-  return sprite('h|' + lk + '|' + poseKey(P), HW, HH, HAX, HAY, pc => drawHeroPC(pc, L, P));
+  return sprite('h|' + lk + '|' + poseKey(P), HW, HH, HAX, HAY, pc => drawHeroPC(pc, L, P, cls), { ok: 0.42 });
 }
+const NPC_CLS = { priest: 'mage', merchant: 'archer', innkeeper: 'archer', guard: 'knight', captain: 'knight', smith: 'knight' };
 function npcSprite(kind, P) {
   const L = lookFor('npc:' + kind, NPC_LOOKS[kind]);
-  return sprite('n|' + kind + '|' + poseKey(P), HW, HH, HAX, HAY, pc => drawHeroPC(pc, L, P));
+  return sprite('n|' + kind + '|' + poseKey(P), HW, HH, HAX, HAY, pc => drawHeroPC(pc, L, P, NPC_CLS[kind] || 'knight'), { ok: 0.42 });
 }
 
 // ---------- MONSTROS (vista lateral, olhando para a direita) ----------
 const MON_SIZE = { rat: [36, 26], slime: [32, 28], wolf: [44, 34], spider: [44, 30], toad: [38, 30], goblin: [36, 44], skeleton: [36, 50], orc: [44, 54], troll: [64, 70] };
 function monSprite(type, f, atk) {
   const [w, h] = MON_SIZE[type];
-  return sprite(`m|${type}|${f}|${atk}`, w, h, w >> 1, h - 3, pc => drawMonsterPC(pc, type, f, atk, w, h));
+  return sprite(`m|${type}|${f}|${atk}`, w, h, w >> 1, h - 3, pc => drawMonsterPC(pc, type, f, atk, w, h), { k: ART });
 }
 function drawMonsterPC(pc, type, f, atk, w, h) {
   const ph = f / 4 * Math.PI * 2, s = Math.sin(ph), c = Math.cos(ph);
@@ -643,5 +678,5 @@ function iconSprite(id) {
       case 'meteor': pc.l(3, 3, 9, 9, px('#ff8a2a'), 2); pc.e(11, 11, 3.5, 3.5, px('#7a3a14')); pc.p(10, 10, px('#ffb04a')); break;
       case 'hp': case 'mp': { const c2 = id === 'hp' ? '#c43a3a' : '#3a5ac4'; pc.e(9, 11, 5, 5, px(c2)); pc.p(7, 9, px('#ffffff')); pc.r(7, 3, 4, 4, px('#c9c2b0')); pc.r(7, 2, 4, 1, px('#7a4a22')); break; }
     }
-  });
+  }, { k: ART });
 }

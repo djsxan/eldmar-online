@@ -7,7 +7,7 @@
 //             atrasar, o próximo já substitui — evita "engasgos")
 // ============================================================
 const Net = {
-  PREFIX: 'eldmar-online-v3-',
+  PREFIX: 'world-of-sxan-v4-',
   peer: null, isHost: false, offline: false, myId: null, room: null,
   rel: {}, fast: {},          // (anfitrião) conexões por jogador
   hostRel: null, hostFast: null,

@@ -1,13 +1,13 @@
-# Eldmar Online
+# World of Sxan
 
-RPG multiplayer isométrico de fantasia medieval em pixel art, direto no navegador.
+RPG multiplayer isométrico de fantasia medieval em pixel art realista, direto no navegador.
 
 **Jogar:** https://djsxan.github.io/eldmar-online/
 
 ## Como jogar com os amigos
 
-1. Escolha nome, cor do brasão e vocação.
-2. Um jogador clica em **Criar um novo reino** — ele vira o *anfitrião* (o mundo roda no navegador dele, então ele precisa manter o jogo aberto).
+1. Escolha nome, cor do brasão, vocação e armadura (skin).
+2. Um jogador clica em **Criar um novo reino** — ele vira o *anfitrião* (o mundo roda no navegador dele, que precisa ficar aberto).
 3. O anfitrião clica em **Copiar convite** e manda o link aos amigos.
 4. Os amigos abrem o link e clicam em **Entrar no reino**.
 
@@ -19,49 +19,46 @@ RPG multiplayer isométrico de fantasia medieval em pixel art, direto no navegad
 | Atirador | Dano à distância | Tiro Duplo, Flecha Perfurante, Chuva de Flechas, Passo Ágil | Olho de Águia (20% crítico) |
 | Mago | Magia / Cura | Bola de Fogo, Nova de Gelo, Luz Curativa, Chuva de Meteoros | Mente Arcana (mana 2x) |
 
-Cada vocação tem 3 skins: Comum, Rara e Lendária.
+Cada vocação tem 3 skins (Comum, Rara, Lendária) e cada ataque tem sua própria animação, com braços, pernas e arma articulados.
 
 ## Controles
 
 | Tecla | Ação |
 |---|---|
-| W A S D / setas / clique no chão | Andar |
-| Clique no monstro / Espaço | Mirar (ataca sozinho quando o alvo está no alcance) |
-| 1 2 3 4 | Habilidades |
+| W A S D / setas / clique no chão | Andar (joystick na tela no celular) |
+| Clique no inimigo / X / Espaço | Mirar (ataca sozinho quando o alvo está no alcance) |
+| 1 2 3 4 | Habilidades (botões redondos no canto direito) |
 | Q / E | Poção de vida / mana |
-| Roda do mouse | Zoom |
-| Enter | Chat |
-| Esc | Cancelar alvo / fechar diálogo |
 | F (segurar) | Reanimar aliado caído |
 | G | Carregar / soltar aliado caído |
 | R | Desistir quando caído (renasce na capela) |
+| Roda do mouse | Zoom |
+| Enter / Esc | Chat / cancelar |
 
 ## O mundo
 
-- **Ruínas de Eldmar** (zona protegida): castelo em ruínas com escadas para as muralhas e a torre (2 andares), Capela da Aurora, Empório do Borin, Taverna do Javali e a Capitã Varn, que dá contratos de caça (missões).
-- **Caído (downed)**: ao perder toda a vida você fica caído por 30s. Um aliado pode te reanimar (F) ou te carregar (G) até a capela. A Luz Curativa do Mago também reanima.
+- **Cidadela de Eldmar** (zona protegida): fosso com pontes, muralhas com caminho de ronda, torres, torre de menagem com salão superior, capela, mercado, empório, taverna, estábulo, forja, quartel e pátio de treino.
+- **Andares fluidos**: rampas de pedra levam às muralhas e ao salão — o personagem sobe de verdade, sem teletransporte.
+- **Caído (downed)**: aliados podem reanimar (F) ou carregar (G) até a capela. A Luz Curativa também reanima.
+- **Contratos** com a Capitã Varn, **lâmina afiada** com o ferreiro Hrodgar, **bênção** na capela, **hidromel** na taverna.
 - Uma cachoeira desce da montanha a noroeste e forma um rio que atravessa o mapa.
-- Fora de combate, vida e mana se regeneram sozinhas.
-- Regiões de dificuldade: Campos ★, Bosque Sombrio ★★ (norte), Pântano Pútrido ★★ (leste), Colinas de Ossos ★★★ (sul), Acampamento Orc ★★★ (oeste), Terras Selvagens ★★★★ (litoral).
-- Ciclo de dia e noite de 12 minutos (igual para todos).
-- O personagem fica salvo no navegador.
+- Regiões: Campos ★, Bosque Sombrio ★★, Pântano Pútrido ★★, Colinas de Ossos ★★★, Acampamento Orc ★★★, Terras Selvagens ★★★★.
+- Ciclo de dia e noite de 12 minutos; fora de combate, vida e mana se regeneram.
 
 ## Como funciona
 
-- Sem servidor: os navegadores se conectam direto via WebRTC usando [PeerJS](https://peerjs.com/).
-- Hospedado de graça no GitHub Pages.
-- Toda a arte é pixel art gerada por código e guardada em cache; o mundo é desenhado em baixa resolução e ampliado.
-- Rede otimizada: cada jogador só recebe o que está perto, por um canal rápido sem fila.
+- Sem servidor: os navegadores se conectam direto via WebRTC ([PeerJS](https://peerjs.com/)), com um canal rápido para posições.
+- Toda a arte é gerada por código e guardada em cache; o mundo é desenhado em baixa resolução e ampliado.
 
 | Arquivo | Conteúdo |
 |---|---|
-| `js/world.js` | Mapa, zonas, vilarejo |
-| `js/config.js` | Classes, habilidades, monstros, itens (balanceamento) |
+| `js/config.js` | Classes, skins, habilidades, monstros, missões |
+| `js/world.js` | Mapa, cidadela, rio, rampas |
 | `js/net.js` | Rede |
 | `js/server.js` | Regras do jogo (roda no anfitrião) |
-| `js/pixel.js` | Pincel de pixel art e cache de sprites |
-| `js/sprites.js` | Personagens, skins, monstros, ícones |
+| `js/pixel.js` | Pincel de pixel art e cache |
+| `js/sprites.js` | Esqueleto dos heróis, animações, monstros |
 | `js/props.js` | Árvores, castelo, construções, cachoeira |
-| `js/terrain.js` | Chão pré-desenhado e água animada |
-| `js/render.js` | Cenário, luz, partículas, efeitos |
+| `js/terrain.js` | Chão e água |
+| `js/render.js` | Cenário, luz, efeitos, correção de cor |
 | `js/game.js` | Controles, interface, tela inicial |

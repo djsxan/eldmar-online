@@ -65,30 +65,30 @@ function clientOnServer(m) {
       if (oldLvl && m.lvl > oldLvl) showBanner(`Nível ${m.lvl}`, 'Sua força cresce.');
       break;
     }
-    case 'tp': if (G.me) { Object.assign(G.me, { x: m.x, y: m.y, rx: m.x, ry: m.y, z: m.z | 0, lastTile: tileAt(m.x, m.y) }); G.path = null; G.pathGoal = null; } break;
+    case 'tp': if (G.me) { Object.assign(G.me, { x: m.x, y: m.y, rx: m.x, ry: m.y, z: +m.z || 0 }); G.path = null; G.pathGoal = null; } break;
     case 'hit':
       later(m.d, () => {
         const t = performance.now();
         const e = m.k === 'm' ? G.monsters[m.id] : G.players[m.id];
-        const pos = e ? tileW(e.rx, e.ry, e.z ? FLOOR_H : 0) : tileW(m.x, m.y);
+        const pos = e ? tileW(e.rx, e.ry, (e.z || 0) * FLOOR_PX) : tileW(m.x, m.y);
         if (e) e.hitAt = t;
         const mine = m.k === 'p' && m.id === G.myId;
         G.nums.push({ wx: pos.x, wy: pos.y, text: String(m.dmg), color: m.k === 'm' ? (m.crit ? '#f8d850' : '#ffffff') : (mine ? '#f05040' : '#f0a090'), crit: m.crit, big: m.crit, t0: t, vx: (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.6) });
-        for (let k = 0; k < 5; k++) spawnPart(m.k === 'p' ? 'blood' : 'spark', pos.x, pos.y - 12, { color: 'rgba(255,240,180,A)' });
+        for (let k = 0; k < 6; k++) spawnPart(m.k === 'p' ? 'blood' : 'spark', pos.x, pos.y - 26, { color: 'rgba(255,240,180,A)' });
         if (mine) { G.shake = Math.max(G.shake, 2.5); flashDamage(); }
       });
       break;
-    case 'fx': later(m.d, () => { const p = tileW(m.x, m.y); G.nums.push({ wx: p.x, wy: p.y - 10, text: m.text, color: m.color, small: !m.big, big: m.big, t0: performance.now(), vx: 0 }); }); break;
+    case 'fx': later(m.d, () => { const p = tileW(m.x, m.y); G.nums.push({ wx: p.x, wy: p.y - 24, text: m.text, color: m.color, small: !m.big, big: m.big, t0: performance.now(), vx: 0 }); }); break;
     case 'anim': {
       const e = (m.w === 'p' ? G.players : G.monsters)[m.id];
       if (!e) break;
       e.anim = { a: m.a, t0: now, tx: m.tx, ty: m.ty };
-      if (m.tx != null && m.w === 'p') e.dir = dirFromVec(m.tx - e.rx, m.ty - e.ry, e.dir);
+      if (m.tx != null && m.w === 'p' && m.a !== 'spin') e.dir = dirFromVec(m.tx - e.rx, m.ty - e.ry, e.dir);
       if (m.s) { e.shout = m.s; e.shoutUntil = now + 1600; }
       if (m.proj) {
         const rel = m.a === 'shoot' ? 230 : 130;
         for (let k = 0; k < (m.n || 1); k++) {
-          const from = tileW(e.rx, e.ry, 16 + (e.z ? FLOOR_H : 0));
+          const from = tileW(e.rx, e.ry, 34 + (e.z || 0) * FLOOR_PX);
           G.effects.push({ a: 'proj', kind: m.proj, from, tx: m.tx, ty: m.ty, x: m.tx, y: m.ty, t0: now + rel + k * 160, dur: Math.max(120, m.d - rel) });
         }
       }
@@ -96,7 +96,7 @@ function clientOnServer(m) {
     }
     case 'aoe':
       G.effects.push({ a: m.a, x: m.x, y: m.y, x2: m.x2, y2: m.y2, k: m.k, id: m.id, t0: now + (m.d || 0), dur: { whirl: 520, warcry: 800, wall: 600, agile: 600, potion: 500, pierce: 500, rain: 900, boom: 500, nova: 700, heal: 1000, lvlup: 1600, meteor: 1600 }[m.a] || 600, seed: Math.floor(Math.random() * 1000) });
-      if (m.a === 'lvlup') later(m.d, () => { const p = tileW(m.x, m.y); G.nums.push({ wx: p.x, wy: p.y - 20, text: 'LEVEL UP!', color: '#f0d050', big: true, t0: performance.now(), vx: 0 }); });
+      if (m.a === 'lvlup') later(m.d, () => { const p = tileW(m.x, m.y); G.nums.push({ wx: p.x, wy: p.y - 44, text: 'LEVEL UP!', color: '#f0d050', big: true, t0: performance.now(), vx: 0 }); });
       break;
     case 'cast': { const e = G.players[m.id]; if (e) { e.cast = { start: now, end: now + m.ms, el: m.el }; } break; }
     case 'castend': { const e = G.players[m.id]; if (e) e.cast = null; break; }
@@ -121,12 +121,12 @@ function clientOnServer(m) {
 
 function applySnapshot(m, now) {
   const seenP = new Set();
-  for (const [id, x100, y100, z, dir, fl, hpPct, carrying] of m.p) {
+  for (let [id, x100, y100, z, dir, fl, hpPct, carrying] of m.p) {
     seenP.add(id);
     let e = G.players[id];
     if (!e) e = G.players[id] = mkEnt({ id, name: '...', cls: 'knight', skin: 'iron', color: '#888888', lvl: 1 });
     const x = x100 / 100, y = y100 / 100;
-    e.flags = fl; e.visible = true; e.carrying = carrying || null; e.carriedBy = !!(fl & 4);
+    e.flags = fl; e.visible = true; e.carrying = carrying || null; e.carriedBy = !!(fl & 4); z = z / 100;
     const wasDown = e.downed; e.downed = !!(fl & 2);
     if (e.downed && !wasDown && !e.downUntil) e.downUntil = now + DOWNED_MS;
     if (id === G.myId) {
@@ -176,7 +176,7 @@ function monsterNear(x, y, r = 0.5) {
   for (const id in G.monsters) { const m = G.monsters[id]; if (!m.dieAt && dist(m.rx, m.ry, x, y) < r) return true; }
   return false;
 }
-function freeAt(x, y, z) { return canStand(x, y, z, z ? 0.2 : 0.28) && (z === 1 || !monsterNear(x, y)); }
+function freeAt(x, y, z) { return canStandZ(x, y, z, 0.22) && (z >= 0.5 || !monsterNear(x, y)); }
 
 function myInput() {
   const k = G.keys;
@@ -185,6 +185,7 @@ function myInput() {
   if (k.has('s') || k.has('arrowdown')) sy += 1;
   if (k.has('a') || k.has('arrowleft')) sx -= 1;
   if (k.has('d') || k.has('arrowright')) sx += 1;
+  if (G.joy) { sx = G.joy[0]; sy = G.joy[1]; }
   if (!sx && !sy) return null;
   // direção na tela -> direção no mapa isométrico
   let dx = sx * 0.5 + sy, dy = -sx * 0.5 + sy;
@@ -213,6 +214,7 @@ function updateLocal(now, dt) {
     if (me.carrying) sp *= 0.75;
     if (me.downed) sp *= 0.22;
     if (WORLD.ground[tileAt(me.x, me.y)] === T.SHALLOW) sp *= 0.65;
+    if (stairH(me.x, me.y) >= 0) sp *= 0.8;
     const step = sp * dt, nx = me.x + v[0] * step, ny = me.y + v[1] * step;
     const ox = me.x, oy = me.y;
     if (freeAt(nx, ny, me.z)) { me.x = nx; me.y = ny; }
@@ -224,25 +226,24 @@ function updateLocal(now, dt) {
   }
   me.walking = moved > 0.0005;
   me.walkDist += moved;
-  if (me.walking && Math.random() < 0.08) { const w = tileW(me.x, me.y, me.z ? FLOOR_H : 0); spawnPart('dust', w.x, w.y); }
-  // escadas: entrar no tile da escada troca de andar
-  const t = tileAt(me.x, me.y);
-  if (t !== me.lastTile) {
-    if (WORLD.stair[t]) { me.z = me.z ? 0 : 1; me.x = t % MAP_W; me.y = Math.floor(t / MAP_W); G.path = null; G.pathGoal = null; }
-    me.lastTile = t;
-  }
+  if (me.walking && Math.random() < 0.08) { const w = tileW(me.x, me.y, me.z * FLOOR_PX); spawnPart('dust', w.x, w.y); }
+  // rampas: a altura acompanha a posição (sem teletransporte)
+  me.z = heightAt(me.x, me.y, me.z);
+  // na rampa, centraliza suavemente no degrau
+  { const t = tileAt(me.x, me.y), d = WORLD.stair[t]; if (d && moved) { const k = Math.min(1, dt * 10); if (d <= 2) me.y += (Math.round(me.y) - me.y) * k; else me.x += (Math.round(me.x) - me.x) * k; } }
   me.rx = me.x; me.ry = me.y;
   if (now - me.sendT > 100 && (moved || me.walking !== me.sentWalk)) {
     me.sendT = now; me.sentWalk = me.walking;
-    Net.send({ t: 'mv', x: Math.round(me.x * 100) / 100, y: Math.round(me.y * 100) / 100, z: me.z, d: me.dir, w: me.walking ? 1 : 0 }, true);
+    Net.send({ t: 'mv', x: Math.round(me.x * 100) / 100, y: Math.round(me.y * 100) / 100, z: Math.round(me.z * 100) / 100, d: me.dir, w: me.walking ? 1 : 0 }, true);
   }
 }
 function lineFree(ax, ay, bx, by, z) {
-  const d = Math.hypot(bx - ax, by - ay), n = Math.ceil(d / 0.3);
-  for (let k = 1; k <= n; k++) { const t = k / n; if (!canStand(ax + (bx - ax) * t, ay + (by - ay) * t, z, 0.28)) return false; }
+  const d = Math.hypot(bx - ax, by - ay), n = Math.ceil(d / 0.3), L = z >= 0.5 ? 1 : 0;
+  for (let k = 1; k <= n; k++) { const t = k / n, x = ax + (bx - ax) * t, y = ay + (by - ay) * t; if (stairH(x, y) >= 0 || !canStand(x, y, L, 0.26)) return false; }
   return true;
 }
 function findPath(sx, sy, tx, ty, z, near = 0) {
+  z = z >= 0.5 ? 1 : 0;
   sx = Math.round(sx); sy = Math.round(sy);
   const key = (x, y) => y * MAP_W + x, start = key(sx, sy), prev = new Map([[start, -1]]), q = [[sx, sy]];
   for (let qi = 0; qi < q.length && qi < 6000; qi++) {
@@ -297,7 +298,7 @@ function nearestDowned() {
 }
 
 // ---------------- salvar no navegador ----------------
-const SAVE_KEY = 'eldmar-chars-v3';
+const SAVE_KEY = 'wos-chars-v4';
 function loadChars() { try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; } catch (e) { return {}; } }
 function charKey(name, cls) { return name.trim().toLowerCase() + '|' + cls; }
 function saveChar() {
@@ -321,7 +322,7 @@ function resize() {
   W = window.innerWidth; H = window.innerHeight;
   canvas.width = W * DPR; canvas.height = H * DPR;
   canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
-  if (!G.zoomUser) SCALE = clamp(Math.round(H / 140), 4, 9);
+  if (!G.zoomUser) SCALE = clamp(Math.floor(H / 400), 2, 5);
 }
 window.addEventListener('resize', resize);
 resize();
@@ -330,7 +331,7 @@ function bar(id, v, max, text) { $(id + '-fill').style.width = (100 * clamp(v / 
 function updateHud() {
   const me = G.me; if (!me) return;
   $('hud-name').textContent = me.name;
-  $('hud-class').textContent = `${CLASSES[me.cls].name} · Nível ${me.lvl}`;
+  $('hud-class').textContent = CLASSES[me.cls].name; $('hud-lvl').textContent = me.lvl;
   bar('hp', me.hp, me.maxHp, `${me.hp} / ${me.maxHp}`);
   bar('mp', me.mp, me.maxMp, `${me.mp} / ${me.maxMp}`);
   bar('xp', me.xp, need(me.lvl), `${me.xp} / ${need(me.lvl)} xp`);
@@ -374,7 +375,7 @@ function updateTargetFrame() {
   bar('tg', t.hp, t.maxHp, `${Math.max(0, t.hp)} / ${t.maxHp}`);
   const d = dist(G.me.x, G.me.y, t.rx, t.ry), r = CLASSES[G.me.cls].range, safe = inSafe(G.me.x, G.me.y);
   const rs = $('tg-range');
-  rs.textContent = safe ? 'Você está nas ruínas (zona protegida)' : d <= r ? '⚔ Ao alcance' : `Fora de alcance (${d.toFixed(1)} / ${r})`;
+  rs.textContent = safe ? 'Você está na cidadela (zona protegida)' : d <= r ? '⚔ Ao alcance' : `Fora de alcance (${d.toFixed(1)} / ${r})`;
   rs.className = !safe && d <= r ? 'ok' : 'far';
 }
 function updateSlots(now) {
@@ -416,7 +417,7 @@ function showBanner(title, sub, dark) {
 function flashDamage() { const v = $('vignette'); v.classList.remove('hit'); void v.offsetWidth; v.classList.add('hit'); }
 
 // ---------- diálogos com NPCs ----------
-const GUARD_TEXT = 'Ao redor das ruínas: os Campos (★) logo além da paliçada; o Bosque Sombrio (★★) ao norte; o Pântano Pútrido (★★) a leste; as Colinas de Ossos (★★★) ao sul; o Acampamento Orc (★★★) a oeste. Perto do mar, as Terras Selvagens (★★★★). A cachoeira fica na montanha, a noroeste.';
+const GUARD_TEXT = 'Além do fosso: os Campos (★) logo além da paliçada; o Bosque Sombrio (★★) ao norte; o Pântano Pútrido (★★) a leste; as Colinas de Ossos (★★★) ao sul; o Acampamento Orc (★★★) a oeste. Perto do mar, as Terras Selvagens (★★★★). A cachoeira fica na montanha, a noroeste.';
 const NPC_DIALOG = {
   merchant: { greet: 'Bem-vindo ao Empório. Não é muito, mas o que vendo funciona.', opts: [
     ['Poção de Vida — 20 ouro', { a: 'buy', item: 'hp', qty: 1 }], ['5 Poções de Vida — 100 ouro', { a: 'buy', item: 'hp', qty: 5 }],
@@ -424,19 +425,20 @@ const NPC_DIALOG = {
   priest: { greet: 'Paz, viajante. A capela é pequena, mas a Aurora ainda escuta quem pede. Traga aqui os que caírem; eu cuido deles.', opts: [['Receber a bênção (grátis)', { a: 'bless' }]] },
   innkeeper: { greet: 'Sente-se. Tem fogo, comida quente e gente falando demais. Do que precisa?', opts: [
     ['Hidromel — 15 ouro (+10% de dano por 3 min)', { a: 'mead' }], ['Ensopado de javali — 10 ouro (recupera tudo)', { a: 'stew' }], ['Ouvir as conversas da taverna', { a: 'rumor' }]] },
-  guard: { greet: 'Fique atento lá fora. Quanto mais longe das ruínas, mais o mundo tenta te matar.', opts: [['Quais são as regiões?', { local: GUARD_TEXT }]] },
+  guard: { greet: 'Fique atento lá fora. Quanto mais longe da cidadela, mais o mundo tenta te matar.', opts: [['Quais são as regiões?', { local: GUARD_TEXT }]] },
+  smith: { greet: 'Hrodgar. Ferreiro da cidadela. Se a lâmina está cega, eu resolvo.', opts: [['Afiar a arma — 25 ouro (+15% de dano por 4 min)', { a: 'whet' }], ['Conversar', { a: 'talk' }]] },
   captain: { greet: 'Sou a Capitã Varn. Temos poucos braços e muitas ameaças. Aceite um contrato e eu pago pelo serviço.', opts: [] },
 };
 function npcUnderMouse(mx, my) {
   const S = SCALE;
   for (const n of NPCS) {
     const e = G.npcs[n.id], p = iso(e.rx, e.ry), sx = (p.sx + G.view.ox) * S, sy = (p.sy + G.view.oy) * S;
-    if (mx > sx - 9 * S && mx < sx + 9 * S && my > sy - 34 * S && my < sy + 3 * S) return n;
+    if (mx > sx - 16 * S && mx < sx + 16 * S && my > sy - 72 * S && my < sy + 6 * S) return n;
   }
   return null;
 }
 function openDialog(id) {
-  const n = NPCS.find(q => q.id === id), def = NPC_DIALOG[n.kind === 'guard' ? 'guard' : n.id === 'captain' ? 'captain' : n.kind];
+  const n = NPCS.find(q => q.id === id), def = NPC_DIALOG[n.id === 'captain' ? 'captain' : n.kind];
   G.dialog = { id };
   $('dlg-name').textContent = n.name;
   setDialogText(def.greet);
@@ -444,7 +446,7 @@ function openDialog(id) {
   const pc = $('dlg-portrait'), pctx = pc.getContext('2d');
   pctx.setTransform(1, 0, 0, 1, 0, 0); pctx.clearRect(0, 0, pc.width, pc.height); pctx.imageSmoothingEnabled = false;
   const spr = npcSprite(n.kind, { view: 'S', walk: -1 });
-  pctx.drawImage(spr.c, 0, 0, spr.w, spr.h, pc.width / 2 - spr.ax * 3, pc.height - spr.ay * 3 + 6, spr.w * 3, spr.h * 3);
+  pctx.drawImage(spr.c, 0, 0, spr.w, spr.h, pc.width / 2 - spr.ax * 1.6, pc.height - spr.ay * 1.6 + 46, spr.w * 1.6, spr.h * 1.6);
   refreshDialogGold();
   $('dialog').classList.remove('hidden');
 }
@@ -461,7 +463,7 @@ function buildDialogOptions(id) {
       else add(`${q.name} — ${q.count} ${MON[q.mon].name} · ${q.xp} xp${done ? ` · feito ${done}x` : ''}`, () => { setDialogText(q.desc); Net.send({ t: 'npc', n: id, a: 'quest', id: q.id }); });
     }
   } else {
-    const def = NPC_DIALOG[n.kind === 'guard' ? 'guard' : n.kind];
+    const def = NPC_DIALOG[n.kind];
     for (const [label, act] of def.opts) add(label, () => { if (act.local) setDialogText(act.local); else Net.send({ t: 'npc', n: id, ...act }); });
   }
   add('Até logo', closeDialog, 'ghost');
@@ -472,7 +474,7 @@ function closeDialog() { G.dialog = null; $('dialog').classList.add('hidden'); }
 
 // ---------- mouse e teclado ----------
 function screenToWorld(mx, my) {
-  const z = G.me && G.me.z ? FLOOR_H : 0;
+  const z = G.me ? (G.me.z || 0) * FLOOR_PX : 0;
   return unIso(mx / SCALE - G.view.ox, my / SCALE - G.view.oy + z);
 }
 function monsterUnderMouse(mx, my) {
@@ -481,8 +483,8 @@ function monsterUnderMouse(mx, my) {
   for (const id in G.monsters) {
     const e = G.monsters[id]; if (e.dieAt || !e.visible) continue;
     const spr = monSprite(e.type, 0, -1), p = iso(e.rx, e.ry), sx = (p.sx + G.view.ox) * S, sy = (p.sy + G.view.oy) * S;
-    const hw = Math.max(9, spr.w * 0.4) * S;
-    if (mx > sx - hw && mx < sx + hw && my > sy - spr.ay * S && my < sy + 3 * S) { const d = e.rx + e.ry; if (d > bestD) { found = e; bestD = d; } }
+    const hw = Math.max(18, spr.w * 0.4) * S;
+    if (mx > sx - hw && mx < sx + hw && my > sy - spr.ay * S && my < sy + 6 * S) { const d = e.rx + e.ry; if (d > bestD) { found = e; bestD = d; } }
   }
   return found;
 }
@@ -519,7 +521,7 @@ canvas.addEventListener('mousedown', e => {
 });
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
-  SCALE = clamp(SCALE + (e.deltaY < 0 ? 1 : -1), 3, 10);
+  SCALE = clamp(SCALE + (e.deltaY < 0 ? 1 : -1), 1, 6);
   G.zoomUser = true;
 }, { passive: false });
 
@@ -540,6 +542,7 @@ window.addEventListener('keydown', e => {
   if (k === 'r' && G.me.downed) { Net.send({ t: 'giveup' }); return; }
   if (k === 'f' && !e.repeat) { const d = nearestDowned(); if (d) { G.reviving = d.id; Net.send({ t: 'revive', id: d.id, on: true }); } return; }
   if (k === 'g' && !e.repeat) { if (G.me.carrying) Net.send({ t: 'carry' }); else { const d = nearestDowned(); if (d) Net.send({ t: 'carry', id: d.id }); } return; }
+  if (k === 'x') { attackNearest(); return; }
   if (k === ' ' || k === 'tab') {
     e.preventDefault();
     let best = null, bd = 99;
@@ -587,7 +590,7 @@ function frame() {
       lastMini = now;
       renderMinimap(mctx, mini.width);
       const z = ZONES[zoneAt(G.me.x, G.me.y)];
-      $('zone-name').textContent = z.name + (G.me.z ? ' · Muralhas' : '');
+      $('zone-name').textContent = z.name + (G.me.z >= 0.5 ? ' · Muralhas' : '');
       $('zone-stars').textContent = z.stars ? '★'.repeat(z.stars) + '☆'.repeat(4 - z.stars) : 'Zona protegida';
       const d = dayInfo();
       $('daytime').textContent = d.night ? '☾ Noite' : d.dusk > 0.3 ? '◐ Crepúsculo' : '☀ Dia';
@@ -599,9 +602,30 @@ function frame() {
   requestAnimationFrame(frame);
 }
 
+function attackNearest() {
+  let best = null, bd = 99;
+  for (const id in G.monsters) { const m = G.monsters[id]; if (m.dieAt) continue; const d = dist(m.rx, m.ry, G.me.x, G.me.y); if (d < bd) { bd = d; best = m; } }
+  if (best && bd <= 10) setTarget(best.id); else showToast('Nenhum inimigo por perto.');
+  const b = $('btn-attack'); b.classList.remove('pressed'); void b.offsetWidth; b.classList.add('pressed');
+}
+function setupJoystick() {
+  const joy = $('joystick'), knob = $('joy-knob');
+  let id = null, cx = 0, cy = 0;
+  joy.addEventListener('pointerdown', e => { id = e.pointerId; const r = joy.getBoundingClientRect(); cx = r.left + r.width / 2; cy = r.top + r.height / 2; joy.setPointerCapture(id); move(e); });
+  const move = e => {
+    if (e.pointerId !== id) return;
+    let dx = e.clientX - cx, dy = e.clientY - cy; const L = Math.hypot(dx, dy), max = 46;
+    if (L > max) { dx = dx / L * max; dy = dy / L * max; }
+    knob.style.transform = `translate(${dx}px, ${dy}px)`;
+    G.joy = L > 10 ? [dx / max, dy / max] : null;
+  };
+  joy.addEventListener('pointermove', move);
+  const end = e => { if (e.pointerId !== id) return; id = null; G.joy = null; knob.style.transform = ''; };
+  joy.addEventListener('pointerup', end); joy.addEventListener('pointercancel', end);
+}
 function buildHotbar() {
   const cls = G.me.cls;
-  const iconTo = (cv, id) => { const c2 = cv.getContext('2d'); c2.imageSmoothingEnabled = false; c2.clearRect(0, 0, cv.width, cv.height); c2.drawImage(iconSprite(id).c, 0, 0, 18, 18, 0, 0, cv.width, cv.height); };
+  const iconTo = (cv, id) => { const c2 = cv.getContext('2d'); c2.imageSmoothingEnabled = false; c2.clearRect(0, 0, cv.width, cv.height); const ic = iconSprite(id); c2.drawImage(ic.c, 0, 0, ic.w, ic.h, 0, 0, cv.width, cv.height); };
   SKILLS[cls].forEach((sk, i) => {
     const el = $('slot' + i);
     iconTo(el.querySelector('canvas'), sk.id);
@@ -616,16 +640,18 @@ function buildHotbar() {
   const pc = $('portrait'), pctx = pc.getContext('2d');
   pctx.setTransform(1, 0, 0, 1, 0, 0); pctx.clearRect(0, 0, pc.width, pc.height); pctx.imageSmoothingEnabled = false;
   const spr = heroSprite(cls, G.me.skin, G.me.color, { view: 'S', walk: -1 });
-  pctx.drawImage(spr.c, 6, 2, 28, 30, 0, 0, pc.width, pc.width * 30 / 28);
+  pctx.drawImage(spr.c, 22, 28, 44, 46, 0, 0, pc.width, pc.height);
 }
 function startGame() {
   if (G.started) return;
   G.started = true;
   $('lobby').classList.add('hidden');
   $('hud').classList.remove('hidden');
-  buildHotbar(); updateHud(); updateQuests();
-  addChat('', `Bem-vindo às Ruínas de Eldmar, ${G.me.name}. Fale com os moradores clicando neles. Enter abre o chat.`);
-  showBanner('Ruínas de Eldmar', 'Zona protegida — os monstros não entram aqui.');
+  buildHotbar(); updateHud(); updateQuests(); setupJoystick();
+  $('btn-attack').onclick = attackNearest;
+  if (matchMedia('(pointer: coarse)').matches) document.body.classList.add('touch');
+  addChat('', `Bem-vindo a World of Sxan, ${G.me.name}. Fale com os moradores clicando neles. Enter abre o chat.`);
+  showBanner('Cidadela de Eldmar', 'Zona protegida — os monstros não atravessam o fosso.');
 }
 
 // tooltips
@@ -694,20 +720,20 @@ function drawClassPreviews(now) {
     pctx.setTransform(1, 0, 0, 1, 0, 0); pctx.clearRect(0, 0, c.width, c.height); pctx.imageSmoothingEnabled = false;
     const sel = cls === chosenClass, cyc = (now / 1000) % 8;
     const dirs = ['S', 'E', 'N', 'W'], view = sel ? dirs[Math.floor(cyc / 2) % 4] : 'S';
-    const atkK = { knight: 'swing', archer: 'shoot', mage: 'cast' }[cls];
+    const atkK = { knight: ['swing', 'bash', 'warcry'], archer: ['shoot', 'pierce', 'rain'], mage: ['bolt', 'fireball', 'meteor'] }[cls][Math.floor(now / 8000) % 3];
     const inAtk = sel && (cyc % 2) > 1.4;
-    const P = { view: view === 'W' ? 'E' : view, walk: sel && !inAtk ? Math.floor(now / 90) % 8 : -1, act: inAtk ? { k: atkK, f: Math.min(5, Math.floor(((cyc % 2) - 1.4) / 0.6 * 6)) } : null };
+    const P = { view: view === 'W' ? 'E' : view, walk: sel && !inAtk ? Math.floor(now / 90) % 8 : -1, act: inAtk ? { k: atkK, f: Math.min(7, Math.floor(((cyc % 2) - 1.4) / 0.6 * 8)) } : null };
     const spr = heroSprite(cls, chosenSkin[cls], chosenColor, P);
-    const k = 3;
+    const k = 1.3;
     pctx.save();
-    pctx.translate(c.width / 2, c.height - 8);
+    pctx.translate(c.width / 2, c.height - 4);
     if (view === 'W') pctx.scale(-1, 1);
     pctx.drawImage(spr.c, -spr.ax * k, -spr.ay * k, spr.w * k, spr.h * k);
     pctx.restore();
   }
 }
 function buildLobby() {
-  $('version').textContent = `${VERSION} · ${VERSION_NAME}`;
+  $('version').textContent = `${GAME_NAME} ${VERSION} · ${VERSION_NAME}`;
   const box = $('classes');
   for (const [cls, c] of Object.entries(CLASSES)) {
     const card = document.createElement('div');
@@ -734,7 +760,7 @@ function buildLobby() {
     const sk = document.createElement('div'); sk.className = 'skills';
     for (const s of SKILLS[cls]) {
       const ic = document.createElement('canvas'); ic.width = 36; ic.height = 36;
-      const ictx = ic.getContext('2d'); ictx.imageSmoothingEnabled = false; ictx.drawImage(iconSprite(s.id).c, 0, 0, 18, 18, 0, 0, 36, 36);
+      const ictx = ic.getContext('2d'); ictx.imageSmoothingEnabled = false; { const ic = iconSprite(s.id); ictx.drawImage(ic.c, 0, 0, ic.w, ic.h, 0, 0, 36, 36); }
       ic.dataset.tip = `${s.name}\n${s.desc}\nMana ${s.mp} · Recarga ${s.cd / 1000}s`;
       sk.appendChild(ic);
     }

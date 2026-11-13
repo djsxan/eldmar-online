@@ -15,7 +15,7 @@ const RUMORS = [
   'Os orcs a oeste estão se organizando. Alguém está pagando os goblins para saquear as estradas.',
   'Um Cavaleiro na frente, um Atirador atrás e um Mago curando. É assim que se volta vivo.',
   'Se um companheiro cair, não o abandone. Levante-o, ou carregue-o até a capela.',
-  'Estas ruínas já foram o castelo de Eldmar. Ninguém sabe ao certo o que derrubou as muralhas.',
+  'A cidadela foi reconstruída pedra por pedra depois da última guerra. Ainda há quem jure ouvir os mortos nas muralhas.',
 ];
 
 const now_ = () => Date.now();
@@ -57,7 +57,7 @@ function monsterAtPos(x, y, self, r = 0.62) {
 function monStand(x, y, m) {
   if (!canStand(x, y, 0, 0.3) || inSafe(x, y)) return false;
   if (monsterAtPos(x, y, m)) return false;
-  for (const id in S.players) { const p = S.players[id]; if (p.z === 0 && !p.downed && dist(p.x, p.y, x, y) < 0.55) return false; }
+  for (const id in S.players) { const p = S.players[id]; if (p.z < 0.5 && !p.downed && dist(p.x, p.y, x, y) < 0.55) return false; }
   return true;
 }
 
@@ -96,7 +96,7 @@ function hostOnClient(from, m) {
     Net.toOne(from, { t: 'welcome', you: from, x: np.x, y: np.y, players: Object.values(S.players).map(pinfo) });
     Net.toOthers({ t: 'pinfo', p: pinfo(np) }, from);
     sendStat(np);
-    sys(`${np.name}, ${CLASSES[cls].name}, chegou às Ruínas de Eldmar.`);
+    sys(`${np.name}, ${CLASSES[cls].name}, chegou à Cidadela de Eldmar.`);
     return;
   }
   if (!p) return;
@@ -129,12 +129,12 @@ function hostOnClient(from, m) {
 function handleMove(p, m) {
   if (p.carriedBy) return;
   const now = now_();
-  const x = +m.x, y = +m.y, z = m.z === 1 ? 1 : 0;
+  const x = +m.x, y = +m.y;
   if (!isFinite(x) || !isFinite(y)) return;
+  const z = heightAt(x, y, p.z);
   const dt = Math.min(1, (now - p.lastMv) / 1000);
   const maxStep = PLAYER_SPEED * 1.7 * (dt + 0.25) + 0.4;
-  const stair = WORLD.stair[tileAt(x, y)] || WORLD.stair[tileAt(p.x, p.y)];
-  const ok = dist(p.x, p.y, x, y) <= maxStep && canStand(x, y, z, 0.2) && (z === p.z || stair);
+  const ok = dist(p.x, p.y, x, y) <= maxStep && canStandZ(x, y, z, 0.18) && Math.abs(z - (+m.z || 0)) < 0.45;
   if (!ok) { Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: p.z }); return; }
   p.x = x; p.y = y; p.z = z; p.dir = m.d | 0; p.walking = !!m.w; p.lastMv = now;
   if (p.casting && dist(p.x, p.y, p.castX, p.castY) > 0.3) { p.casting = null; near(p.x, p.y, { t: 'castend', id: p.id }); }
@@ -146,7 +146,7 @@ function dropCarried(p) {
   p.carrying = null;
   if (!t) return;
   t.carriedBy = null;
-  for (const [dx, dy] of [[0.6, 0], [-0.6, 0], [0, 0.6], [0, -0.6], [0, 0]]) if (canStand(p.x + dx, p.y + dy, p.z)) { t.x = p.x + dx; t.y = p.y + dy; break; }
+  for (const [dx, dy] of [[0.6, 0], [-0.6, 0], [0, 0.6], [0, -0.6], [0, 0]]) if (canStandZ(p.x + dx, p.y + dy, p.z)) { t.x = p.x + dx; t.y = p.y + dy; break; }
   t.z = p.z;
   near(p.x, p.y, { t: 'carry', by: p.id, id: null });
   Net.toOne(t.id, { t: 'tp', x: t.x, y: t.y, z: t.z });
@@ -159,7 +159,7 @@ function hostOnLeave(id) {
   if (p.carriedBy && S.players[p.carriedBy]) S.players[p.carriedBy].carrying = null;
   delete S.players[id];
   Net.toAll({ t: 'pleave', id });
-  sys(`${p.name} deixou as ruínas.`);
+  sys(`${p.name} deixou a cidadela.`);
 }
 
 // ---------------- combate ----------------
@@ -167,6 +167,7 @@ function roll(p, mult = 1) {
   const c = CLASSES[p.cls], l = p.lvl;
   let dmg = rint(Math.floor(c.dmg[0][0] + c.dmg[0][1] * l), Math.floor(c.dmg[1][0] + c.dmg[1][1] * l)) * mult;
   if (buffOn(p, 'mead')) dmg *= 1.1;
+  if (buffOn(p, 'whet')) dmg *= 1.15;
   const crit = Math.random() < c.crit + (buffOn(p, 'agile') ? 0.1 : 0);
   if (crit) dmg *= 1.8;
   return { dmg: Math.max(1, Math.round(dmg)), crit };
@@ -281,7 +282,7 @@ function basicAttack(p, m, now) {
   p.nextAtk = now + c.atkMs * (buffOn(p, 'agile') ? 0.5 : 1);
   if (p.cls === 'knight') { anim('p', p, 'swing', m.x, m.y); hitMonster(p, m, 1, 180); }
   else if (p.cls === 'archer') { const d = flight(p.x, p.y, m.x, m.y) + 200; anim('p', p, 'shoot', m.x, m.y, { proj: 'arrow', d }); hitMonster(p, m, 1, d); }
-  else { const d = flight(p.x, p.y, m.x, m.y) + 150; anim('p', p, 'thrust', m.x, m.y, { proj: 'bolt', d }); hitMonster(p, m, 1, d); }
+  else { const d = flight(p.x, p.y, m.x, m.y) + 150; anim('p', p, 'bolt', m.x, m.y, { proj: 'bolt', d }); hitMonster(p, m, 1, d); }
 }
 
 // ---------------- habilidades ----------------
@@ -297,7 +298,7 @@ function useSkill(p, i) {
     if (dist(p.x, p.y, m.x, m.y) > sk.range) { tell(p, 'Alvo fora de alcance.'); return; }
   }
   const offensive = sk.id !== 'heal' && sk.id !== 'wall' && sk.id !== 'agile';
-  if (offensive && inSafe(p.x, p.y)) { tell(p, 'Não se luta dentro das ruínas.'); return; }
+  if (offensive && inSafe(p.x, p.y)) { tell(p, 'Não se luta dentro da cidadela.'); return; }
   p.mp -= sk.mp; p.cds[i] = now + sk.cd;
   if (sk.cast) {
     p.casting = { i, until: now + sk.cast, tid: m && m.id }; p.castX = p.x; p.castY = p.y;
@@ -315,15 +316,15 @@ function execSkill(p, i, m) {
   switch (sk.id) {
     case 'bash': anim('p', p, 'bash', tx, ty, shout); hitMonster(p, m, 2.2, 220); m.stunUntil = now + 1400; break;
     case 'warcry':
-      anim('p', p, 'shout', tx, ty, shout); aoe('warcry', p.x, p.y); p.buffs.warcry = now + 6000;
+      anim('p', p, 'warcry', tx, ty, shout); aoe('warcry', p.x, p.y); p.buffs.warcry = now + 6000;
       for (const q of monstersNear(p.x, p.y, 5)) { q.taunt = { pid: p.id, until: now + 6000 }; q.returning = false; }
       p.lastCombat = now; break;
     case 'whirl': anim('p', p, 'spin', tx, ty, shout); aoe('whirl', p.x, p.y, { id: p.id }); for (const q of monstersNear(p.x, p.y, 1.8)) hitMonster(p, q, 1.6, 250); break;
     case 'wall': anim('p', p, 'block', tx, ty, shout); aoe('wall', p.x, p.y, { id: p.id }); p.buffs.wall = now + 6000; break;
-    case 'double': { const d = flight(p.x, p.y, m.x, m.y) + 180; anim('p', p, 'shoot', tx, ty, { ...shout, proj: 'arrow', d, n: 2 }); hitMonster(p, m, 1, d); hitMonster(p, m, 1, d + 160); break; }
+    case 'double': { const d = flight(p.x, p.y, m.x, m.y) + 180; anim('p', p, 'double', tx, ty, { ...shout, proj: 'arrow', d, n: 2 }); hitMonster(p, m, 1, d); hitMonster(p, m, 1, d + 160); break; }
     case 'pierce': {
       const dx = m.x - p.x, dy = m.y - p.y, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
-      anim('p', p, 'shoot', tx, ty, shout); aoe('pierce', p.x, p.y, { x2: p.x + ux * 8, y2: p.y + uy * 8 });
+      anim('p', p, 'pierce', tx, ty, shout); aoe('pierce', p.x, p.y, { x2: p.x + ux * 8, y2: p.y + uy * 8 });
       for (const q of Object.values(S.monsters)) {
         const rx = q.x - p.x, ry = q.y - p.y, along = rx * ux + ry * uy;
         if (along < 0 || along > 8) continue;
@@ -331,12 +332,12 @@ function execSkill(p, i, m) {
       }
       break;
     }
-    case 'rain': anim('p', p, 'shootup', tx, ty, shout); aoe('rain', tx, ty); for (const q of monstersNear(tx, ty, 1.6)) hitMonster(p, q, 1.3, 650); break;
-    case 'agile': anim('p', p, 'shout', tx, ty, shout); aoe('agile', p.x, p.y, { id: p.id }); p.buffs.agile = now + 6000; break;
-    case 'fireball': { const d = flight(p.x, p.y, m.x, m.y) + 100; anim('p', p, 'thrust', tx, ty, { ...shout, proj: 'fire', d }); hitMonster(p, m, 2.6, d); aoe('boom', tx, ty, { d }); break; }
-    case 'nova': anim('p', p, 'cast', tx, ty, shout); aoe('nova', p.x, p.y); for (const q of monstersNear(p.x, p.y, 2.5)) { q.slowUntil = now + 4000; hitMonster(p, q, 1.4, 200); } break;
+    case 'rain': anim('p', p, 'rain', tx, ty, shout); aoe('rain', tx, ty); for (const q of monstersNear(tx, ty, 1.6)) hitMonster(p, q, 1.3, 650); break;
+    case 'agile': anim('p', p, 'dash', tx, ty, shout); aoe('agile', p.x, p.y, { id: p.id }); p.buffs.agile = now + 6000; break;
+    case 'fireball': { const d = flight(p.x, p.y, m.x, m.y) + 100; anim('p', p, 'fireball', tx, ty, { ...shout, proj: 'fire', d }); hitMonster(p, m, 2.6, d); aoe('boom', tx, ty, { d }); break; }
+    case 'nova': anim('p', p, 'nova', tx, ty, shout); aoe('nova', p.x, p.y); for (const q of monstersNear(p.x, p.y, 2.5)) { q.slowUntil = now + 4000; hitMonster(p, q, 1.4, 200); } break;
     case 'heal':
-      anim('p', p, 'cast', tx, ty, shout);
+      anim('p', p, 'heal', tx, ty, shout);
       for (const q of Object.values(S.players)) {
         if (dist(q.x, q.y, p.x, p.y) > 4) continue;
         if (q.downed) { revivePlayer(q, 0.25, p.name); continue; }
@@ -344,7 +345,7 @@ function execSkill(p, i, m) {
         q.hp += h; aoe('heal', q.x, q.y, { id: q.id }); sfx(q.x, q.y, `+${h}`, '#7ad87a', 150); sendStat(q);
       }
       break;
-    case 'meteor': anim('p', p, 'cast', tx, ty, shout); aoe('meteor', tx, ty); for (const q of monstersNear(tx, ty, 2.5)) hitMonster(p, q, 3.2, 750); break;
+    case 'meteor': anim('p', p, 'meteor', tx, ty, shout); aoe('meteor', tx, ty); for (const q of monstersNear(tx, ty, 2.5)) hitMonster(p, q, 3.2, 750); break;
   }
 }
 
@@ -384,6 +385,12 @@ function npcAction(p, m) {
     say('Ensopado de javali, como minha mãe fazia. Coma com calma.');
   } else if (n.id === 'innkeeper' && m.a === 'rumor') {
     say(pick(RUMORS));
+  } else if (n.id === 'smith' && m.a === 'whet') {
+    if (!pay(25)) return;
+    p.buffs.whet = now + 240000;
+    say('Pronto. Fio de navalha. Vai cortar como se fosse nova por uns quatro minutos (+15% de dano).');
+  } else if (n.id === 'smith' && m.a === 'talk') {
+    say(pick(['Aço bom não se apressa. Nem guerreiro bom.', 'Os orcs a oeste usam ferro ruim, mas batem forte. Mantenha o escudo alto.', 'Essa cidadela já caiu uma vez. Não vai cair de novo enquanto eu tiver carvão.']));
   } else if (n.id === 'captain' && m.a === 'quest') {
     const q = QUESTS.find(x => x.id === m.id);
     if (!q) return;
@@ -456,7 +463,7 @@ function monsterThink(m, players, now, dt) {
     return;
   }
   let tgt = null;
-  const valid = p => p && !p.downed && p.z === 0 && !inSafe(p.x, p.y);
+  const valid = p => p && !p.downed && p.z < 0.5 && !inSafe(p.x, p.y);
   if (m.taunt && m.taunt.until > now && valid(S.players[m.taunt.pid])) tgt = S.players[m.taunt.pid];
   if (!tgt && m.aggro && valid(S.players[m.aggro]) && dist(m.x, m.y, S.players[m.aggro].x, S.players[m.aggro].y) <= 11) tgt = S.players[m.aggro];
   if (!tgt) {
@@ -518,7 +525,7 @@ function hostTick() {
     if (!p.target) continue;
     const m = S.monsters[p.target];
     if (!m) { p.target = null; continue; }
-    if (!p.casting && !p.carrying && now >= p.nextAtk && !inSafe(p.x, p.y) && p.z === 0 && dist(p.x, p.y, m.x, m.y) <= CLASSES[p.cls].range) basicAttack(p, m, now);
+    if (!p.casting && !p.carrying && now >= p.nextAtk && !inSafe(p.x, p.y) && p.z < 0.5 && dist(p.x, p.y, m.x, m.y) <= CLASSES[p.cls].range) basicAttack(p, m, now);
   }
 
   for (const m of Object.values(S.monsters)) monsterThink(m, players, now, dt);
@@ -546,7 +553,7 @@ function hostTick() {
       if (dist(p.x, p.y, r.x, r.y) > VIEW_RADIUS) continue;
       let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0);
       for (const b in BUFF_BITS) if (buffOn(p, b)) fl |= BUFF_BITS[b];
-      pl.push([p.id, Math.round(p.x * 100), Math.round(p.y * 100), p.z, p.dir | 0, fl, Math.round(p.hp / p.maxHp * 100), p.carrying || 0]);
+      pl.push([p.id, Math.round(p.x * 100), Math.round(p.y * 100), Math.round(p.z * 100), p.dir | 0, fl, Math.round(p.hp / p.maxHp * 100), p.carrying || 0]);
     }
     for (const m of mons) {
       if (Math.abs(m.x - r.x) > VIEW_RADIUS || Math.abs(m.y - r.y) > VIEW_RADIUS) continue;

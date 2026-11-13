@@ -2,14 +2,15 @@
 //  CONFIGURAÇÃO — classes, skins, habilidades, monstros, missões.
 //  Mexa aqui para balancear o jogo.
 // ============================================================
-const VERSION = 'v0.3.0';
-const VERSION_NAME = 'Ruínas de Eldmar';
+const GAME_NAME = 'World of Sxan';
+const VERSION = 'v0.4.0';
+const VERSION_NAME = 'A Cidadela';
 
 const PLAYER_SPEED = 3.6;          // tiles por segundo
 const OUT_OF_COMBAT_MS = 5000;     // sem lutar por 5s = fora de combate (regenera)
 const DOWNED_MS = 30000;           // tempo caído antes de renascer no templo
 const REVIVE_MS = 3000;            // segurar F por 3s para reanimar
-const VIEW_RADIUS = 16;            // distância (tiles) que cada jogador "enxerga" na rede
+const VIEW_RADIUS = 20;            // distância (tiles) que cada jogador "enxerga" na rede
 
 // dmg: [mínimo base, mínimo por nível], [máximo base, máximo por nível]
 const CLASSES = {
@@ -122,7 +123,7 @@ const ITEMS = {
   mp: { name: 'Poção de Mana', price: 25, desc: 'Recupera 40% da mana.' },
 };
 
-const BUFF_NAMES = { warcry: 'Grito de Guerra', wall: 'Muralha de Ferro', agile: 'Passo Ágil', bless: 'Bênção da Aurora', mead: 'Hidromel' };
+const BUFF_NAMES = { warcry: 'Grito de Guerra', wall: 'Muralha de Ferro', agile: 'Passo Ágil', bless: 'Bênção da Aurora', mead: 'Hidromel', whet: 'Lâmina Afiada' };
 const BUFF_BITS = { wall: 16, agile: 32, bless: 64, warcry: 128 };
 
 const need = l => Math.floor(20 * Math.pow(l, 1.75));
