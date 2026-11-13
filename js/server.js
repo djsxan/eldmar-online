@@ -5,7 +5,7 @@
 //  (VIEW_RADIUS), em pacotes compactos 10x por segundo.
 // ============================================================
 const S = { players: {}, monsters: {}, nextMid: 1, nextSpawn: 0, lastRegen: 0, filled: false, lastTick: 0 };
-const MAX_MON = 320;
+const MAX_MON = typeof TEST3D !== 'undefined' && TEST3D ? 10 : 320;
 
 const RUMORS = [
   'Os lenhadores evitam o Bosque Sombrio depois do pôr do sol. Os lobos de lá caçam em bando.',

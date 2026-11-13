@@ -736,7 +736,7 @@ function mTower(v, off) {
   return o;
 }
 function mStairs(dir, part) {
-  const o = grp(), H = WALL_H / 2, n = 7, m = smat('stoneblock', '#aaa496', { bump: 1.2 }), base = (part || 0) * H, ax = dir <= 2;
+  const o = grp(), H = WALL_H / STAIR_N, n = 4, m = smat('stoneblock', '#aaa496', { bump: 1.2 }), base = (part || 0) * H, ax = dir <= 2;
   if (base > 0) o.add(wbox(1, base, 1, 0, base / 2, 0, smat('brick', '#958f84', { bump: 1.2 }), 1));
   for (let k = 0; k < n; k++) {
     const zt = base + (k + 1) * H / n, len = 1 - k / n, c = (dir === 1 || dir === 3) ? 0.5 - len / 2 : -0.5 + len / 2;
@@ -797,7 +797,7 @@ function mGateHouse(gt, f) {
     const leaf = grp(mk(wuv(new THREE.ExtrudeGeometry(ls, { depth: 0.09, bevelEnabled: false }).translate(0, 0, -0.045), 1.4), woodM));
     for (const y of [0.35, spring * 0.55, spring - 0.1]) leaf.add(mk(new THREE.BoxGeometry(lw * 0.96, 0.07, 0.11).translate(lw / 2, y, 0), ir));
     leaf.add(mk(new THREE.TorusGeometry(0.07, 0.015, 5, 12).translate(lw - 0.18, spring * 0.5, gt.out * 0.06), ir));
-    const pv = grp(leaf); pv.position.set(hinge, 0, zin);
+    const pv = grp(leaf); pv.position.set(hinge, 0, zin); pv.userData.leaf = (side === -1 ? 1 : -1) * (gt.out > 0 ? 1 : -1);
     if (side === 1) leaf.scale.x = -1;
     pv.rotation.y = (side === -1 ? 1 : -1) * ang * (gt.out > 0 ? 1 : -1);
     o.add(pv);
@@ -816,6 +816,7 @@ const BSTYLE = {
   smith: { wall: '#8e897e', roof: '#4e4844', tex: 'brick', roofTex: 'slate', trim: '#2a1e14' },
   barracks: { wall: '#9c968a', roof: '#5e4034', tex: 'brick', roofTex: 'shingle', trim: '#2a1e14' },
   stable: { wall: '#9a7850', roof: '#b0903a', tex: 'wood', roofTex: 'thatch', trim: '#3a2410' },
+  stairtower: { wall: '#a29c90', roof: '#3e4a66', tex: 'brick', roofTex: 'slate', trim: '#2a1e14' },
 };
 // variações de casas e lojas (cores de reboco, telhados e madeira)
 const HVAR = [
@@ -1071,7 +1072,7 @@ function mBuilding(b, night) {
 //  INTERIORES (aparecem quando o telhado some)
 // ============================================================
 function mInterior(b) {
-  const w = b.w, h = b.h, { H } = bldDims(b), o = grp(), L = interiorLayout(b), R = rng(b.x * 13 + b.y);
+  const [w, h] = bDims(b), { H } = bldDims(b), o = grp(), L = interiorLayout(b), R = rng(b.x * 13 + b.y);
   const stoneK = b.kind === 'temple' || b.kind === 'castle' || b.kind === 'smith' || b.kind === 'barracks';
   const floorM = stoneK ? smat('stoneblock', b.kind === 'castle' ? '#a8a092' : '#8e887c', { bump: 1 }) : smat('wood', b.kind === 'stable' ? '#8a6a3e' : '#7a5232', { bump: 1.2 });
   const wallM = stoneK ? smat('brick', b.kind === 'castle' ? '#b4ad9c' : '#a29c90', { bump: 1.2 }) : smat('plaster', '#e2d6bc', { bump: 0.7 });
@@ -1122,7 +1123,7 @@ function mInterior(b) {
       case 'banner': g.add(mk(new THREE.PlaneGeometry(0.7, 2.2).translate(0, 1.8, -0.4), smat('cloth', '#7a1a1c', { side: THREE.DoubleSide }))); g.add(mk(new THREE.CircleGeometry(0.2, 12).translate(0, 2.2, -0.39), smat(null, '#e2b74e', { metal: 1, rough: 0.3 }))); break;
       case 'rug': g.add(mk(new THREE.BoxGeometry(Math.min(3, w - 1.4), 0.015, Math.min(h - 1.4, b.kind === 'castle' ? h - 3 : 2)).translate(0, 0.07, b.kind === 'castle' ? (h - 3) / 2 - 0.5 : 0.5), cloth(b.kind === 'castle' ? '#8a1a1c' : ['#7a3a2a', '#3a4a6a', '#5a6a3a'][f.i % 3]))); break;
     }
-    g.position.set(cx, 0, cz);
+    g.position.set(cx, 0, cz); g.userData.furn = 1;
     { const sx = f.w > 1 || f.h > 1 || f.t === 'rug' ? 1 : 0.62; g.scale.set(sx, 0.55, sx); if (sx < 1) g.position.set(cx + (backX ? -0.15 : 0), 0, cz + (backZ ? -0.15 : 0)); }
     o.add(g);
   }

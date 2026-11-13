@@ -893,7 +893,7 @@ requestAnimationFrame(frame);
 //  NÉVOA DO MAPA (o que você já explorou) e MAPA DO MUNDO (M)
 // ============================================================
 const FOG_R = 13;
-function fogKey() { return 'wos-fog-' + ((G.me && G.me.name) || 'x'); }
+function fogKey() { return 'wos-fog-' + MAP_W + '-' + ((G.me && G.me.name) || 'x'); }
 function loadFog() {
   G.fog = new Uint8Array(MAP_W * MAP_H);
   try { const s = localStorage.getItem(fogKey()); if (s) { const bin = atob(s); for (let i = 0; i < MAP_W * MAP_H; i++) if (bin.charCodeAt(i >> 3) & (1 << (i & 7))) G.fog[i] = 1; } } catch (e) { }

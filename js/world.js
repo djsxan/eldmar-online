@@ -2,7 +2,8 @@
 //  MUNDO — mapa gerado por código (igual para todos: usa sempre a
 //  mesma semente). Tem 2 andares: 0 = chão, 1 = muralhas/torres.
 // ============================================================
-const MAP_W = 256, MAP_H = 256, CENTER = 128, SAFE_R = 38;
+const TEST3D = typeof window !== 'undefined' && !!window.TEST3D;   // bairro de teste em 3D
+const MAP_W = TEST3D ? 80 : 256, MAP_H = TEST3D ? 80 : 256, CENTER = TEST3D ? 40 : 128, SAFE_R = 38;
 const C = CENTER;
 
 const T = { WATER: 0, SAND: 1, GRASS: 2, FOREST: 3, STONE: 4, DIRT: 5, BRIDGE: 6, COBBLE: 7, SWAMP: 8, DEAD: 9, SHALLOW: 10, CLIFF: 11, FLOORSTONE: 12 };
@@ -72,7 +73,7 @@ function zoneOf(x, y) {
 const CASTLE = { x0: C - 32, y0: C - 32, x1: C + 33, y1: C + 33 };   // muralha externa
 const KEEP = { x0: C - 9, y0: C - 22, x1: C + 10, y1: C - 3 };       // castelo central
 const BH = (kind, w, h, H, RH, name, extra) => ({ kind, w, h, H, RH, name: name || '', wall: Math.round(H * 19.6), roof: Math.round(RH * 19.6), ...extra });
-const BUILDINGS = [
+const BUILDINGS = TEST3D ? [] : [
   { x: C - 28, y: C - 29, ...BH('temple', 9, 8, 9.0, 6.5, 'Catedral da Aurora') },
   { x: C + 13, y: C - 7, ...BH('shop', 5, 5, 6.2, 3.6, 'Empório do Borin') },
   { x: C + 21, y: C + 8, ...BH('smith', 6, 5, 4.6, 3.2, 'Forja de Hrodgar') },
@@ -85,13 +86,31 @@ const BUILDINGS = [
   { x: C + 21, y: C + 15, ...BH('shop', 6, 4, 5.8, 3.4, 'Pergaminhos & Mapas', { v: 4 }) },
   { x: C - 5, y: C - 19, ...BH('castle', 12, 10, 10, 6.5, 'Castelo de Eldmar') },
 ];
-// porta: sempre centrada num tile da face de baixo (+y)
-const doorCol = b => Math.floor((b.w - 1) / 2);
-const doorOf = b => ({ x: b.x + doorCol(b), y: b.y + b.h + 0.8 });
+// portas: lado S (+y, padrão), N (-y), E (+x) ou W (-x). O layout interno usa um "quadro local":
+// i = posição ao longo da parede da porta (largura A), j = profundidade (0 = fundo, D-1 = linha da porta)
+const DOOR_V = { S: [0, 1], N: [0, -1], E: [1, 0], W: [-1, 0] };
+const DOOR_ROT = { S: 0, N: Math.PI, E: Math.PI / 2, W: -Math.PI / 2 };
+function bDims(b) { const s = b.door || 'S'; return s === 'S' || s === 'N' ? [b.w, b.h] : [b.h, b.w]; }
+function bLocal(b, i, j) {
+  const s = b.door || 'S', w = b.w, h = b.h;
+  if (s === 'S') return [b.x + i, b.y + j];
+  if (s === 'N') return [b.x + w - 1 - i, b.y + h - 1 - j];
+  if (s === 'E') return [b.x + j, b.y + h - 1 - i];
+  return [b.x + w - 1 - j, b.y + i];
+}
+// direção (1:+x 3:-y 5:-x 7:+y) do quadro local para o mundo
+function bDir(b, d) {
+  const lv = { 1: [1, 0], 3: [0, -1], 5: [-1, 0], 7: [0, 1] }[d], a = DOOR_ROT[b.door || 'S'];
+  const x = lv[0] * Math.cos(a) + lv[1] * Math.sin(a), y = -lv[0] * Math.sin(a) + lv[1] * Math.cos(a);
+  return Math.abs(x) > Math.abs(y) ? (x > 0 ? 1 : 5) : (y > 0 ? 7 : 3);
+}
+const doorCol = b => Math.floor((bDims(b)[0] - 1) / 2);
+function doorTile(b) { const [A, D] = bDims(b); return bLocal(b, doorCol(b), D - 1); }
+const doorOf = b => { const [x, y] = doorTile(b), v = DOOR_V[b.door || 'S']; return { x: x + v[0] * 1.3, y: y + v[1] * 1.3 }; };
 // mobília dos interiores (coordenadas locais em tiles: i = coluna, j = linha; a porta fica na linha h-1)
 // direções de quem senta: 1 = olha +x, 3 = olha -y, 5 = olha -x, 7 = olha +y
 function interiorLayout(b) {
-  const w = b.w, h = b.h, F = [], taken = new Set(), key = (i, j) => i + ',' + j, dc = doorCol(b);
+  const [w, h] = bDims(b), F = [], taken = new Set(), key = (i, j) => i + ',' + j, dc = doorCol(b);
   const corridor = (i, j) => i === dc && j >= h - 2;
   const can = (i, j) => i >= 0 && j >= 0 && i < w && j < h && !taken.has(key(i, j)) && !corridor(i, j);
   const put = (t, i, j, o = {}) => {
@@ -131,6 +150,8 @@ function interiorLayout(b) {
     if (put('table', w - 3, 3)) { put('chair', w - 4, 3, { seat: 1 }); put('chair', w - 2, 3, { seat: 5 }); }
   } else if (k === 'stable') {
     put('hay', 0, 0); put('hay', w - 1, 0); put('trough', 1, 0, { w: w - 2 }); put('hay', 0, h - 2); put('crate', w - 1, h - 2);
+  } else if (k === 'stairtower') {
+    // escada interna: nenhuma mobília
   } else if (k === 'castle') {
     put('throne', dc, 0, { seat: 7 }); put('banner', dc - 2, 0); put('banner', dc + 2, 0); put('candles', dc - 4, 0); put('candles', dc + 4, 0);
     put('fireplace', 0, 1); put('fireplace', 0, h - 3);
@@ -139,9 +160,9 @@ function interiorLayout(b) {
   }
   return { F, npc };
 }
-const npcIn = (b, fb) => { const L = interiorLayout(b); return L.npc ? { x: b.x + L.npc.i, y: b.y + L.npc.j } : fb; };
+const npcIn = (b, fb) => { const L = interiorLayout(b); if (!L.npc) return fb; const [x, y] = bLocal(b, L.npc.i, L.npc.j); return { x, y }; };
 const BLD_BY = k => BUILDINGS.find(b => b.kind === k);
-const NPCS = [
+const NPCS = TEST3D ? [] : [
   { id: 'priest', name: 'Irmã Lúmina', kind: 'priest', ...npcIn(BUILDINGS[0]) },
   { id: 'merchant', name: 'Borin, o Mercador', kind: 'merchant', ...npcIn(BUILDINGS[1]) },
   { id: 'innkeeper', name: 'Greta, a Taverneira', kind: 'innkeeper', ...npcIn(BUILDINGS[3]) },
@@ -152,8 +173,27 @@ const NPCS = [
   { id: 'guard3', name: 'Sentinela Odo', kind: 'guard', x: C - 1.4, y: C - 29.4 },
   { id: 'guard4', name: 'Sentinela Wyn', kind: 'guard', x: C + 2.4, y: C - 29.4 },
 ];
-const TEMPLE_SPAWN = { x: BUILDINGS[0].x + 4, y: BUILDINGS[0].y + BUILDINGS[0].h + 2 };
-const MOUNTAIN = { x: 50, y: 52, r: 20 };
+// ---------- bairro de teste ----------
+if (TEST3D) {
+  BUILDINGS.push(
+    { x: 26, y: 22, ...BH('house', 6, 6, 5.9, 3.6, '', { v: 0, door: 'S' }) },
+    { x: 44, y: 22, ...BH('house', 5, 6, 7.4, 3.2, '', { v: 3, door: 'S' }) },
+    { x: 26, y: 34, ...BH('house', 6, 5, 4.4, 3.4, '', { v: 1, door: 'N' }) },
+    { x: 44, y: 34, ...BH('house', 6, 5, 5.9, 4.0, '', { v: 2, door: 'N' }) },
+    { x: 53, y: 41, ...BH('shop', 6, 6, 6.2, 3.6, 'Empório do Borin', { v: 0, door: 'W' }) },
+    { x: 21, y: 41, ...BH('tavern', 6, 7, 6.4, 4.2, 'Taverna do Javali', { door: 'E' }) },
+    { x: 55, y: 18, ...BH('stairtower', 3, STAIR_N + 1, 5.6, 0, '', { door: 'S' }) },
+  );
+  NPCS.push(
+    { id: 'merchant', name: 'Borin, o Mercador', kind: 'merchant', ...npcIn(BUILDINGS[4]) },
+    { id: 'innkeeper', name: 'Greta, a Taverneira', kind: 'innkeeper', ...npcIn(BUILDINGS[5]) },
+    { id: 'captain', name: 'Capitã Mirela Varn', kind: 'captain', x: 35.5, y: 43.5 },
+    { id: 'guard1', name: 'Sentinela Aldric', kind: 'guard', x: 36.6, y: 19.8 },
+    { id: 'guard2', name: 'Sentinela Bren', kind: 'guard', x: 42.4, y: 19.8 },
+  );
+}
+const TEMPLE_SPAWN = TEST3D ? { x: 40, y: 44 } : { x: BUILDINGS[0].x + 4, y: BUILDINGS[0].y + BUILDINGS[0].h + 2 };
+const MOUNTAIN = TEST3D ? { x: -100, y: -100, r: 1 } : { x: 50, y: 52, r: 20 };
 const RIVER_PTS = [[70, 74], [76, 100], [72, 128], [80, 172], [112, 198], [152, 214], [192, 234], [234, 254]];
 
 function catmull(p0, p1, p2, p3, t) {
@@ -444,8 +484,7 @@ function generateWorld() {
   BUILDINGS.forEach((b, bi) => {
     const L = interiorLayout(b);
     for (const f of L.F) {
-      for (let a = 0; a < f.w; a++) for (let c = 0; c < f.h; c++) { const i = idx(b.x + f.i + a, b.y + f.j + c); if (f.block) obj[i] = O.PART; }
-      if (f.seat) { if (f.t === 'pew') for (let a = 0; a < f.w; a++) seats.push({ x: b.x + f.i + a, y: b.y + f.j, dir: f.seat, h: 0.45, bi }); else seats.push({ x: b.x + f.i + (f.w - 1) / 2, y: b.y + f.j + (f.h - 1) / 2, dir: f.seat, h: f.t === 'throne' ? 0.6 : 0.45, bi }); }
+      placeFurniture(b, bi, f, obj, seats, idx);
     }
   });
   // ---- chão da cidade: pedra gasta, terra nas vielas, grama nos cantos, lajes na avenida ----
@@ -520,7 +559,74 @@ function generateWorld() {
   return { ground, obj, zone, bld, fl1, stair, stairK, tvar, toff, rdir, wdir, gateId, gates, seats, height, flow, river };
 }
 
-const WORLD = generateWorld();
+// mobília -> obstáculos (PART) e assentos, no quadro do mundo
+function placeFurniture(b, bi, f, obj, seats, idx) {
+  for (let a = 0; a < f.w; a++) for (let c = 0; c < f.h; c++) { const [x, y] = bLocal(b, f.i + a, f.j + c); if (f.block) obj[idx(x, y)] = O.PART; }
+  if (!f.seat) return;
+  const dir = bDir(b, f.seat);
+  if (f.t === 'pew') for (let a = 0; a < f.w; a++) { const [x, y] = bLocal(b, f.i + a, f.j); seats.push({ x, y, dir, h: 0.45, bi }); }
+  else { const [x0, y0] = bLocal(b, f.i, f.j), [x1, y1] = bLocal(b, f.i + f.w - 1, f.j + f.h - 1); seats.push({ x: (x0 + x1) / 2, y: (y0 + y1) / 2, dir, h: f.t === 'throne' ? 0.6 : 0.45, bi }); }
+}
+// ---------- gerador do bairro de teste ----------
+function generateDistrict() {
+  const N = MAP_W * MAP_H;
+  const ground = new Uint8Array(N).fill(T.GRASS), obj = new Uint8Array(N), zone = new Uint8Array(N);
+  const bld = new Int16Array(N).fill(-1), fl1 = new Uint8Array(N), stair = new Uint8Array(N), stairK = new Uint8Array(N);
+  const tvar = new Uint8Array(N), toff = new Uint8Array(N).fill(4), rdir = new Uint8Array(N), wdir = new Uint8Array(N), gateId = new Int8Array(N).fill(-1);
+  const height = new Uint8Array(N), flow = new Float32Array(N * 2), river = new Uint8Array(N);
+  const gates = [], seats = [];
+  const idx = (x, y) => y * MAP_W + x, R = (x, y, s) => hash2(x, y, s);
+  const WY = 17;                                     // linha da muralha
+  for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
+    const i = idx(x, y);
+    zone[i] = y < 14 ? Z.FIELDS : Z.VILLAGE;
+    if (x < 3 || y < 2 || x > MAP_W - 4 || y > MAP_H - 4) ground[i] = T.WATER;
+    else if (y === 14 || y === 15) ground[i] = x >= 38 && x <= 41 ? T.BRIDGE : T.WATER;   // fosso e ponte
+    else if (y > WY) ground[i] = vnoise(x / 4, y / 4, 700) > 0.62 ? T.DIRT : T.GRASS;
+    else if (y < 14 && vnoise(x / 6, y / 6, 701) > 0.66) ground[i] = T.FOREST;
+    if (ground[i] === T.BRIDGE) rdir[i] = 2;
+  }
+  const street = (ax, ay, bx, by, dir, g = T.COBBLE) => { for (let y = ay; y <= by; y++) for (let x = ax; x <= bx; x++) { ground[idx(x, y)] = g; rdir[idx(x, y)] = dir; } };
+  street(38, 2, 41, 13, 2, T.DIRT);                  // estrada lá fora
+  street(38, WY + 1, 41, 39, 2);                     // rua principal (portão -> praça)
+  street(14, 30, 66, 31, 1);                         // rua das lanternas
+  street(29, 40, 51, 54, 1);                         // praça
+  for (let y = 41; y <= 53; y++) for (let x = 30; x <= 50; x++) if ((x + y) % 7 === 0 && vnoise(x / 3, y / 3, 702) > 0.5) ground[idx(x, y)] = T.FLOORSTONE;
+  // muralha norte, torres e portão
+  for (let x = 8; x <= 72; x++) { const i = idx(x, WY); obj[i] = O.WALL; fl1[i] = 1; wdir[i] = 4; ground[i] = T.FLOORSTONE; }
+  const tower = (tx, ty, v, walk) => { for (let y = ty; y <= ty + 1; y++) for (let x = tx; x <= tx + 1; x++) { const i = idx(x, y); obj[i] = O.PART; fl1[i] = walk ? 1 : 0; ground[i] = T.FLOORSTONE; } const a = idx(tx + 1, ty + 1); obj[a] = O.TOWER; tvar[a] = v; toff[a] = (1) * 3 + 0; };
+  tower(7, WY, 0, 1); tower(72, WY, 1, 1); tower(22, WY, 2, 1);
+  tower(36, WY, 3, 0); tower(42, WY, 3, 0);          // torres altas do portão
+  for (let x = 38; x <= 41; x++) { const i = idx(x, WY); obj[i] = O.GATE; fl1[i] = 0; gateId[i] = 0; }
+  gates.push({ x0: 38, x1: 41, y: WY, out: -1, kind: 'main' });
+  // construções
+  BUILDINGS.forEach((b, bi) => { for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) { bld[idx(x, y)] = bi; obj[idx(x, y)] = O.NONE; ground[idx(x, y)] = T.COBBLE; } });
+  // torre-escada: rampa no meio, laterais fechadas, sobe até a muralha
+  BUILDINGS.forEach((b, bi) => {
+    if (b.kind !== 'stairtower') return;
+    const cx = b.x + 1;
+    for (let j = 0; j < b.h; j++) { for (const x of [b.x, b.x + 2]) obj[idx(x, b.y + j)] = O.PART; }
+    for (let j = 0; j < STAIR_N; j++) { const i = idx(cx, b.y + j); obj[i] = O.STAIRS; stair[i] = 4; stairK[i] = STAIR_N - 1 - j; fl1[i] = 3; ground[i] = T.FLOORSTONE; }
+  });
+  // mobília e assentos
+  BUILDINGS.forEach((b, bi) => { const L = interiorLayout(b); for (const f of L.F) placeFurniture(b, bi, f, obj, seats, idx); });
+  // decoração
+  const put = (x, y, o) => { const i = idx(x, y); if (bld[i] < 0 && !fl1[i] && !stair[i]) obj[i] = o; };
+  put(40, 47, O.FOUNTAIN);
+  for (const [x, y] of [[32, 42], [48, 42], [32, 52], [48, 52]]) put(x, y, O.STALL);
+  for (const [x, y] of [[37, 46], [43, 46], [37, 49], [43, 49]]) put(x, y, O.BENCH);
+  for (const [x, y] of [[30, 41], [50, 41], [30, 53], [50, 53]]) put(x, y, O.TREE);
+  for (let x = 16; x <= 64; x += 6) { put(x, 29, O.LAMP); put(x + 3, 32, O.LAMP); }
+  for (let y = 20; y <= 38; y += 6) { put(37, y, O.LAMP); put(42, y + 3, O.LAMP); }
+  put(36, 21, O.BRAZIER); put(43, 21, O.BRAZIER); put(34, 44, O.BARREL); put(46, 50, O.CRATE); put(33, 48, O.CART);
+  put(20, 24, O.WELL); put(60, 26, O.TREE); put(18, 36, O.TREE); put(62, 36, O.TREE); put(52, 29, O.BANNER); put(28, 29, O.BANNER);
+  for (let k = 0; k < 120; k++) { const x = 4 + Math.floor(R(k, 1, 703) * 72), y = 3 + Math.floor(R(k, 2, 703) * 10), i = idx(x, y); if (ground[i] === T.WATER || rdir[i]) continue; const r2 = R(k, 3, 703); obj[i] = r2 < 0.18 ? O.TREE : r2 < 0.3 ? O.BUSH : r2 < 0.38 ? O.ROCK : O.TALLGRASS; }
+  for (let k = 0; k < 60; k++) { const x = 10 + Math.floor(R(k, 4, 704) * 60), y = WY + 3 + Math.floor(R(k, 5, 704) * 50), i = idx(x, y); if (ground[i] !== T.GRASS || obj[i] || bld[i] >= 0) continue; let near = false; for (const [dx, dy] of DIRS8) if (bld[idx(x + dx, y + dy)] >= 0) near = true; if (!near) obj[i] = R(k, 6, 704) < 0.5 ? O.FLOWER : O.TALLGRASS; }
+  for (const n of NPCS) obj[idx(Math.round(n.x), Math.round(n.y))] = O.NONE;
+  for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (obj[idx(x, y)] === O.BENCH) seats.push({ x, y, dir: 7, h: 0.45, bi: -1 });
+  return { ground, obj, zone, bld, fl1, stair, stairK, tvar, toff, rdir, wdir, gateId, gates, seats, height, flow, river };
+}
+const WORLD = TEST3D ? generateDistrict() : generateWorld();
 const NPC_AT = new Set(NPCS.map(n => Math.round(n.y) * MAP_W + Math.round(n.x)));
 
 function inBounds(x, y) { return x >= 0 && y >= 0 && x < MAP_W && y < MAP_H; }
@@ -541,8 +647,12 @@ function wallHit(x, y, r) {
     const bi = WORLD.bld[(ty + dy) * MAP_W + tx + dx]; if (bi < 0) continue;
     const b = BUILDINGS[bi], X0 = b.x - 0.5, X1 = X0 + b.w, Y0 = b.y - 0.5, Y1 = Y0 + b.h, t = 0.12;
     if (x < X0 - r - t || x > X1 + r + t || y < Y0 - r - t || y > Y1 + r + t) continue;
-    if (Math.abs(x - X0) < r + t || Math.abs(x - X1) < r + t || Math.abs(y - Y0) < r + t) return true;
-    if (Math.abs(y - Y1) < r + t && Math.abs(x - (b.x + doorCol(b))) > 0.62 - r) return true;
+    const s = b.door || 'S', [dtx, dty] = doorTile(b), gap = 0.62 - r;
+    const nL = Math.abs(x - X0) < r + t, nR = Math.abs(x - X1) < r + t, nT = Math.abs(y - Y0) < r + t, nB = Math.abs(y - Y1) < r + t;
+    if (nL && !(s === 'W' && Math.abs(y - dty) <= gap)) return true;
+    if (nR && !(s === 'E' && Math.abs(y - dty) <= gap)) return true;
+    if (nT && !(s === 'N' && Math.abs(x - dtx) <= gap)) return true;
+    if (nB && !(s === 'S' && Math.abs(x - dtx) <= gap)) return true;
   }
   return false;
 }
@@ -554,8 +664,8 @@ function edgeOk(ax, ay, bx, by) {
   if (a === c) return true;
   const inB = a >= 0 ? a : c, ix = a >= 0 ? ax : bx, iy = a >= 0 ? ay : by, ox = a >= 0 ? bx : ax, oy = a >= 0 ? by : ay;
   if (a >= 0 && c >= 0) return false;
-  const b = BUILDINGS[inB];
-  return ix === b.x + doorCol(b) && iy === b.y + b.h - 1 && ox === ix && oy === iy + 1;
+  const b = BUILDINGS[inB], [dtx, dty] = doorTile(b), v = DOOR_V[b.door || 'S'];
+  return ix === dtx && iy === dty && ox === ix + v[0] && oy === iy + v[1];
 }
 function canStand(x, y, z = 0, r = 0.28) {
   if (z === 0 && wallHit(x, y, r)) return false;
@@ -571,8 +681,8 @@ function bldAt(x, y) { const tx = Math.round(x), ty = Math.round(y); if (!inBoun
 
 // tiles alcançáveis a partir do templo (monstros só nascem nesses)
 const REACH = (() => {
-  const r = new Uint8Array(MAP_W * MAP_H), q = [[TEMPLE_SPAWN.x, TEMPLE_SPAWN.y]];
-  r[TEMPLE_SPAWN.y * MAP_W + TEMPLE_SPAWN.x] = 1;
+  const sx0 = Math.round(TEMPLE_SPAWN.x), sy0 = Math.round(TEMPLE_SPAWN.y), r = new Uint8Array(MAP_W * MAP_H), q = [[sx0, sy0]];
+  r[sy0 * MAP_W + sx0] = 1;
   for (let i = 0; i < q.length; i++) {
     const [x, y] = q[i];
     for (const [dx, dy] of DIRS8) {
