@@ -133,7 +133,7 @@ function buildPose(cls, P) {
   const base = BASE[cls] || BASE.knight;
   const Q = { aA: base.aA.slice(), aB: base.aB.slice(), wp: base.wp, tl: base.tl, tw: 0, lA: [0.04, -0.06], lB: [-0.04, -0.06], kn: 0, drop: 0, ht: 0, hw: 0, mouth: 0, pull: 0, glow: 0 };
   if (P.walk >= 0) {
-    const ph = P.walk / 8 * Math.PI * 2, s = Math.sin(ph), c = Math.cos(ph);
+    const ph = P.walk / 12 * Math.PI * 2, s = Math.sin(ph), c = Math.cos(ph);
     Q.lA = [s * 0.55, -Math.max(0, -c) * 0.9 - 0.08]; Q.lB = [-s * 0.55, -Math.max(0, c) * 0.9 - 0.08];
     Q.aB[0] += -s * 0.45; Q.aA[0] += s * (cls === 'archer' ? 0.35 : 0.18);
     Q.tl += 0.06;
@@ -146,8 +146,8 @@ function buildPose(cls, P) {
       if (v !== undefined) Q[k] = v;
     }
   };
-  if (P.act && ACTS[P.act.k]) apply(ACTS[P.act.k], (P.act.f + 0.5) / 8);
-  else if (P.idle && IDLES[P.idle.k]) apply(IDLES[P.idle.k], (P.idle.f + 0.5) / 8);
+  if (P.act && ACTS[P.act.k]) apply(ACTS[P.act.k], (P.act.f + 0.5) / 12);
+  else if (P.idle && IDLES[P.idle.k]) apply(IDLES[P.idle.k], (P.idle.f + 0.5) / 12);
   if (P.sit) { Q.lA = [1.45, -1.6]; Q.lB = [1.35, -1.5]; Q.drop = 12; Q.aA = [0.5, 0.25, 0.6]; Q.aB = [0.5, 0.25, 0.6]; Q.tl = 0.05; }
   if (P.carry) { Q.aA = [2.75, 0.25, 0.4]; Q.aB = [2.75, 0.25, 0.4]; Q.wp = 0.4; }
   if (Q.kn) { Q.lA = [Q.lA[0] - Q.kn * 0.5, Q.lA[1] + Q.kn]; Q.lB = [Q.lB[0] - Q.kn * 0.5, Q.lB[1] + Q.kn]; }

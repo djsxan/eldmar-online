@@ -133,11 +133,11 @@ function sprite(key, w, h, ax, ay, draw, opts = {}) {
 function whiteOf(s, key) {
   let w = SPR.get(key + '|w');
   if (w) return w;
-  const c = document.createElement('canvas'); c.width = s.w; c.height = s.h;
+  const c = document.createElement('canvas'); c.width = s.c.width; c.height = s.c.height;
   const x = c.getContext('2d');
   x.drawImage(s.c, 0, 0);
   x.globalCompositeOperation = 'source-in'; x.fillStyle = '#fff'; x.fillRect(0, 0, s.w, s.h);
-  w = { c, w: s.w, h: s.h, ax: s.ax, ay: s.ay };
+  w = { c, w: s.w, h: s.h, ax: s.ax, ay: s.ay, painted: s.painted };
   SPR.set(key + '|w', w);
   return w;
 }

@@ -95,7 +95,7 @@ function drawParticles(ctx, ox, oy, now, dt) {
 function tileW(x, y, z = 0) { const p = iso(x, y); return { x: p.sx, y: p.sy - z }; }
 const easeOut = t => 1 - (1 - t) * (1 - t);
 function ring(ctx, cx, cy, r, color, w = 1) { ctx.strokeStyle = color; ctx.lineWidth = w; ctx.beginPath(); ctx.ellipse(cx, cy, Math.max(0.1, r), Math.max(0.1, r / 2), 0, 0, Math.PI * 2); ctx.stroke(); }
-function glowDot(ctx, x, y, r, inner, outer) { const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, inner); g.addColorStop(1, outer); ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2); }
+function glowDot(ctx, x, y, r, inner, outer) { if (!(r > 0.05)) return; const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, inner); g.addColorStop(1, outer); ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2); }
 
 function tileW1(x, y, z = 0) { const p = iso(x, y); return { x: p.sx / ART, y: p.sy / ART - z }; }
 function drawEffects(ctx, ox, oy, now) {
@@ -244,23 +244,34 @@ const DIR_VIEW = ['S', 'E', 'N', 'W']; // 0..3
 function heroPoseFor(e, now) {
   const view0 = DIR_VIEW[e.dir || 0];
   const P = { view: view0 === 'W' ? 'E' : view0, walk: -1, act: null, idle: null, sit: false, carry: !!e.carrying };
-  if (e.walking) P.walk = Math.floor(e.walkDist * 2.6) % 8;
+  P.dir = e.dir || 0;
+  if (e.walking) P.walk = Math.floor(e.walkDist * 3.6) % 12;
   if (e.anim) {
     const ms = ACT_MS[e.anim.a] || 400, t = (now - e.anim.t0) / ms;
-    if (t >= 0 && t < 1 && ACTS[e.anim.a]) P.act = { k: e.anim.a, f: Math.min(7, Math.floor(t * 8)) };
+    if (t >= 0 && t < 1 && ACTS[e.anim.a]) P.act = { k: e.anim.a, f: Math.min(11, Math.floor(t * 12)) };
   }
-  if (e.cast && e.cast.end > now) P.act = { k: 'cast', f: Math.floor(now / 90) % 8 };
+  if (e.cast && e.cast.end > now) P.act = { k: 'cast', f: Math.floor(now / 70) % 12 };
   if (!P.act && !e.walking && e.idleAnim) {
     const t = (now - e.idleAnim.t0) / e.idleAnim.dur;
     if (t < 1) {
       if (e.idleAnim.k === 'sit') P.sit = true;
-      else P.idle = { k: e.idleAnim.k, f: Math.min(7, Math.floor(t * 8)) };
+      else P.idle = { k: e.idleAnim.k, f: Math.min(11, Math.floor(t * 12)) };
     }
   }
   return P;
 }
 
 function drawHeroEntity(ctx, e, sx, sy, now) {
+  if (R3.ok) {
+    if (e.downed && !e.carriedBy) { const s = heroSprite3D(e.cls, e.skin, e.color, { dir: e.dir || 0, walk: -1, down: true }); ctx.imageSmoothingEnabled = true; pblit(ctx, s, sx, sy); return; }
+    const P = heroPoseFor(e, now);
+    const s = e.isNpc ? npcSprite3D(e.kind, P) : heroSprite3D(e.cls, e.skin, e.color, P);
+    ctx.imageSmoothingEnabled = true;
+    softDab(ctx, sx, sy, 16, '#000000', 0.35);
+    pblit(ctx, s, sx, sy);
+    if (e.hitAt && now - e.hitAt < 110) pblit(ctx, whiteOf(s, 'w3|' + e.id + (e.cls || e.kind)), sx, sy, 0.65);
+    return;
+  }
   if (e.downed && !e.carriedBy) { drawLying(ctx, e, sx, sy); return; }
   const P = heroPoseFor(e, now);
   const flip = P.flipSpin != null ? P.flipSpin : DIR_VIEW[e.dir || 0] === 'W';
@@ -281,6 +292,7 @@ function drawLying(ctx, e, sx, sy) {
   if (Math.random() < 0.02) spawnPart('blood', sx - G.view.ox, sy - G.view.oy - 4);
 }
 function drawCarried(ctx, e, sx, sy) {
+  if (R3.ok) { const s = heroSprite3D(e.cls, e.skin, e.color, { dir: 2, walk: -1, down: true }); pblit(ctx, s, sx, sy - 70); return; }
   const spr = heroSprite(e.cls, e.skin, e.color, { view: 'S', walk: -1 });
   ctx.save();
   ctx.translate(Math.round(sx + 2), Math.round(sy - 70));
@@ -288,7 +300,23 @@ function drawCarried(ctx, e, sx, sy) {
   ctx.drawImage(spr.c, -spr.ax, -76);
   ctx.restore();
 }
+const MON_H = { rat: 30, slime: 40, wolf: 58, spider: 52, toad: 44, goblin: 68, skeleton: 92, orc: 104, troll: 150 };
 function drawMonsterEntity(ctx, e, sx, sy, now) {
+  if (R3.ok) {
+    let atk = -1;
+    if (e.anim) { const t = (now - e.anim.t0) / ACT_MS.bite; if (t >= 0 && t < 1) atk = Math.min(7, Math.floor(t * 8)); }
+    const f = e.walking ? Math.floor(e.walkDist * 4) % 8 : -1;
+    const s = monSprite3D(e.type, f, atk, e.dir || 0);
+    let alpha = 1, sink = 0;
+    if (e.dieAt && now > e.dieAt) { const t = Math.min(1, (now - e.dieAt) / 600); alpha = 1 - t; sink = t * 8; }
+    ctx.imageSmoothingEnabled = true;
+    softDab(ctx, sx, sy, MON[e.type].big ? 34 : 18, '#000000', 0.35 * alpha);
+    pblit(ctx, s, sx, sy + sink, alpha);
+    if (e.hitAt && now - e.hitAt < 110) pblit(ctx, whiteOf(s, `wm|${e.type}|${f}|${atk}|${e.dir || 0}`), sx, sy + sink, 0.7 * alpha);
+    if (e.flags & 1 && Math.random() < 0.2) spawnPart('snow', sx - G.view.ox + (Math.random() - 0.5) * 24, sy - G.view.oy - Math.random() * 40);
+    if (e.flags & 2) for (let k = 0; k < 3; k++) { const a = now / 180 + k * 2.1; dab(ctx, sx + Math.cos(a) * 12, sy - MON_H[e.type] - 6 + Math.sin(a) * 4, 2, 2, '#f0d040'); }
+    return;
+  }
   const def = MON[e.type];
   let atk = -1;
   if (e.anim) { const t = (now - e.anim.t0) / ACT_MS.bite; if (t >= 0 && t < 1) atk = Math.min(3, Math.floor(t * 4)); }
@@ -635,8 +663,8 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
       if (it.k === 0 && !it.cliff && CASTS.has(it.o)) { const s = objSprite(it.o, it.x, it.y); if (s) castShadow(s, it.sx, it.sy, sh, k); }
       else if (it.k === 0 && it.o === O.TOWER) { const p = iso(it.x - 0.5, it.y - 0.5); castShadow(towerSprite(Math.floor(hash2(it.x, it.y, 2) * 3)), p.sx + ox, p.sy + oy, sh, k); }
       else if (it.k === 4) castShadow(buildingSprite(it.b, day.night), it.sx, it.sy, sh, k);
-      else if (it.k === 1 && !it.e.dieAt) castShadow(monSprite(it.e.type, 0, -1), it.sx, it.sy, sh, k);
-      else if ((it.k === 2 || it.k === 3) && !it.e.downed) castShadow(it.e.isNpc ? npcSprite(it.e.kind, { view: 'S', walk: -1 }) : heroSprite(it.e.cls, it.e.skin, it.e.color, { view: 'S', walk: -1 }), it.sx, it.sy, sh, k);
+      else if (it.k === 1 && !it.e.dieAt) castShadow(R3.ok ? monSprite3D(it.e.type, -1, -1, 0) : monSprite(it.e.type, 0, -1), it.sx, it.sy, sh, k);
+      else if ((it.k === 2 || it.k === 3) && !it.e.downed) castShadow(R3.ok ? (it.e.isNpc ? npcSprite3D(it.e.kind, { dir: 0, walk: -1 }) : heroSprite3D(it.e.cls, it.e.skin, it.e.color, { dir: 0, walk: -1 })) : (it.e.isNpc ? npcSprite(it.e.kind, { view: 'S', walk: -1 }) : heroSprite(it.e.cls, it.e.skin, it.e.color, { view: 'S', walk: -1 })), it.sx, it.sy, sh, k);
     }
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = shAlpha; ctx.drawImage(shadowC, 0, 0); ctx.restore();
   }
@@ -678,17 +706,17 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     ctx.imageSmoothingEnabled = false;
     if (it.k === 1) {
       drawMonsterEntity(ctx, e, it.sx, it.sy, now);
-      if (!e.dieAt) labels.push({ sx: it.sx, sy: it.sy - monSprite(e.type, 0, -1).ay - 4, name: MON[e.type].name, color: e.id === G.target ? '#f0a8a0' : '#ece4d4', hp: e.hp / e.maxHp, e });
+      if (!e.dieAt) labels.push({ sx: it.sx, sy: it.sy - (R3.ok ? MON_H[e.type] + 8 : monSprite(e.type, 0, -1).ay + 4), name: MON[e.type].name, color: e.id === G.target ? '#f0a8a0' : '#ece4d4', hp: e.hp / e.maxHp, e });
     } else if (it.k === 3) {
       drawHeroEntity(ctx, e, it.sx, it.sy, now);
-      labels.push({ sx: it.sx, sy: it.sy - 78, name: e.name, color: '#b8e0a8', npc: e, e });
+      labels.push({ sx: it.sx, sy: it.sy - (R3.ok ? 96 : 78), name: e.name, color: '#b8e0a8', npc: e, e });
     } else {
       ctx.imageSmoothingEnabled = true; drawAuras(ctx, e, it.sx, it.sy, now); ctx.imageSmoothingEnabled = false;
       drawHeroEntity(ctx, e, it.sx, it.sy, now);
       heroExtras(e, it.sx, it.sy);
       if (e.carrying && G.players[e.carrying]) drawCarried(ctx, G.players[e.carrying], it.sx, it.sy);
       G.lights.push({ x: it.sx, y: it.sy - 30, r: 34, c: '255,240,220', a: 0.4 });
-      labels.push({ sx: it.sx, sy: it.sy - (e.downed && !e.carriedBy ? 24 : 80), name: e.name, color: e.id === G.myId ? '#f4dc8a' : '#b8d0f0', hp: e.hp / e.maxHp, mp: e.id === G.myId ? e.mp / e.maxMp : null, e, player: true });
+      labels.push({ sx: it.sx, sy: it.sy - (e.downed && !e.carriedBy ? 28 : (R3.ok ? 98 : 80)), name: e.name, color: e.id === G.myId ? '#f4dc8a' : '#b8d0f0', hp: e.hp / e.maxHp, mp: e.id === G.myId ? e.mp / e.maxMp : null, e, player: true });
     }
     ctx.imageSmoothingEnabled = true;
   };
@@ -710,7 +738,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     lightX.globalCompositeOperation = 'destination-out';
     for (const L of G.lights) {
       const r = L.r * 2 * (L.flick ? 0.93 + Math.sin(now / 70 + L.x) * 0.05 : 1);
-      if (L.x < -r || L.y < -r || L.x > vw + r || L.y > vh + r) continue;
+      if (!(r > 0.1) || L.x < -r || L.y < -r || L.x > vw + r || L.y > vh + r) continue;
       const g = lightX.createRadialGradient(L.x, L.y, 0, L.x, L.y, r);
       g.addColorStop(0, `rgba(0,0,0,${L.a})`); g.addColorStop(1, 'rgba(0,0,0,0)');
       lightX.fillStyle = g; lightX.fillRect(L.x - r, L.y - r, r * 2, r * 2);
@@ -719,7 +747,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     ctx.globalCompositeOperation = 'lighter';
     for (const L of G.lights) {
       const r = L.r * 2 * 0.7;
-      if (L.x < -r || L.y < -r || L.x > vw + r || L.y > vh + r) continue;
+      if (!(r > 0.1) || L.x < -r || L.y < -r || L.x > vw + r || L.y > vh + r) continue;
       const g = ctx.createRadialGradient(L.x, L.y, 0, L.x, L.y, r);
       g.addColorStop(0, `rgba(${L.c},${0.22 * L.a * day.dark * 1.4})`); g.addColorStop(1, `rgba(${L.c},0)`);
       ctx.fillStyle = g; ctx.fillRect(L.x - r, L.y - r, r * 2, r * 2);

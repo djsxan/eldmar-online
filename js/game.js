@@ -16,11 +16,16 @@ function mkEnt(o) {
 }
 for (const n of NPCS) G.npcs[n.id] = mkEnt({ ...n, isNpc: true, visible: true, dir: 0 });
 
+// 8 direções pelo ângulo na tela: 0 = baixo, 2 = direita, 4 = cima, 6 = esquerda
 function dirFromVec(dx, dy, cur) {
-  const sdx = dx - dy, sdy = dx + dy;
-  if (Math.abs(sdx) < 0.001 && Math.abs(sdy) < 0.001) return cur;
-  if (Math.abs(sdx) > Math.abs(sdy) * 0.9) return sdx > 0 ? 1 : 3;
-  return sdy > 0 ? 0 : 2;
+  const sx = dx - dy, sy = (dx + dy) * 0.5;
+  if (Math.abs(sx) < 0.001 && Math.abs(sy) < 0.001) return cur;
+  return ((Math.round(Math.atan2(sx, sy) / (Math.PI / 4)) % 8) + 8) % 8;
+}
+const VIEW_DIR = { S: 0, E: 2, N: 4, W: 6 };
+function anySprite(cls, skin, color, P, kind) {
+  if (R3.ok) { const Q = { ...P, dir: P.dir != null ? P.dir : (VIEW_DIR[P.view] || 0) }; return kind ? npcSprite3D(kind, Q) : heroSprite3D(cls, skin, color, Q); }
+  return kind ? npcSprite(kind, P) : heroSprite(cls, skin, color, P);
 }
 function later(ms, fn) { if (!ms || ms <= 0) fn(); else G.timers.push({ at: performance.now() + ms, fn }); }
 const IDLE_SETS = {
@@ -445,8 +450,9 @@ function openDialog(id) {
   buildDialogOptions(id);
   const pc = $('dlg-portrait'), pctx = pc.getContext('2d');
   pctx.setTransform(1, 0, 0, 1, 0, 0); pctx.clearRect(0, 0, pc.width, pc.height); pctx.imageSmoothingEnabled = false;
-  const spr = npcSprite(n.kind, { view: 'S', walk: -1 });
-  pctx.drawImage(spr.c, 0, 0, spr.w, spr.h, pc.width / 2 - spr.ax * 1.6, pc.height - spr.ay * 1.6 + 46, spr.w * 1.6, spr.h * 1.6);
+  const spr = anySprite(null, null, null, { view: 'S', dir: 1, walk: -1 }, n.kind), kk = R3.ok ? 1.25 : 1.6;
+  pctx.imageSmoothingEnabled = true;
+  pctx.drawImage(spr.c, pc.width / 2 - spr.ax * kk, pc.height - spr.ay * kk + (R3.ok ? 70 : 46), spr.w * kk, spr.h * kk);
   refreshDialogGold();
   $('dialog').classList.remove('hidden');
 }
@@ -566,6 +572,7 @@ const lobbyCam = { x: CENTER, y: CENTER, z: 0 };
 function frame() {
   const now = performance.now(), dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
   if (G.timers.length) { const due = G.timers.filter(t => t.at <= now); G.timers = G.timers.filter(t => t.at > now); for (const t of due) t.fn(); }
+  R3.budget = G.started ? 3 : 2;
   let cam = lobbyCam;
   if (G.started) {
     updateLocal(now, dt);
@@ -637,8 +644,10 @@ function buildHotbar() {
   $('passive').dataset.tip = `Aptidão: ${p.name}\n${p.desc}`; $('passive').textContent = p.name;
   const pc = $('portrait'), pctx = pc.getContext('2d');
   pctx.setTransform(1, 0, 0, 1, 0, 0); pctx.clearRect(0, 0, pc.width, pc.height); pctx.imageSmoothingEnabled = false;
-  const spr = heroSprite(cls, G.me.skin, G.me.color, { view: 'S', walk: -1 });
-  pctx.drawImage(spr.c, 22, 28, 44, 46, 0, 0, pc.width, pc.height);
+  const spr = anySprite(cls, G.me.skin, G.me.color, { view: 'S', dir: 1, walk: -1 });
+  pctx.imageSmoothingEnabled = true;
+  if (R3.ok) { const f = spr.c.width / spr.w; pctx.drawImage(spr.c, 42 * f, 28 * f, 36 * f, 38 * f, 0, 0, pc.width, pc.height); }
+  else pctx.drawImage(spr.c, 22, 28, 44, 46, 0, 0, pc.width, pc.height);
 }
 function startGame() {
   if (G.started) return;
@@ -720,12 +729,13 @@ function drawClassPreviews(now) {
     const dirs = ['S', 'E', 'N', 'W'], view = sel ? dirs[Math.floor(cyc / 2) % 4] : 'S';
     const atkK = { knight: ['swing', 'bash', 'warcry'], archer: ['shoot', 'pierce', 'rain'], mage: ['bolt', 'fireball', 'meteor'] }[cls][Math.floor(now / 8000) % 3];
     const inAtk = sel && (cyc % 2) > 1.4;
-    const P = { view: view === 'W' ? 'E' : view, walk: sel && !inAtk ? Math.floor(now / 90) % 8 : -1, act: inAtk ? { k: atkK, f: Math.min(7, Math.floor(((cyc % 2) - 1.4) / 0.6 * 8)) } : null };
-    const spr = heroSprite(cls, chosenSkin[cls], chosenColor, P);
-    const k = 1.3;
+    const P = { view: view === 'W' ? 'E' : view, dir: R3.ok ? (sel ? Math.floor(now / 1000) % 8 : 1) : undefined, walk: sel && !inAtk ? Math.floor(now / 70) % 12 : -1, act: inAtk ? { k: atkK, f: Math.min(11, Math.floor(((cyc % 2) - 1.4) / 0.6 * 12)) } : null };
+    const spr = anySprite(cls, chosenSkin[cls], chosenColor, P);
+    const k = R3.ok ? 1.0 : 1.3;
+    pctx.imageSmoothingEnabled = !!R3.ok;
     pctx.save();
     pctx.translate(c.width / 2, c.height - 4);
-    if (view === 'W') pctx.scale(-1, 1);
+    if (view === 'W' && !R3.ok) pctx.scale(-1, 1);
     pctx.drawImage(spr.c, -spr.ax * k, -spr.ay * k, spr.w * k, spr.h * k);
     pctx.restore();
   }
