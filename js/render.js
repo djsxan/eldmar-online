@@ -272,7 +272,7 @@ function drawHeroEntity(ctx, e, sx, sy, now) {
     ctx.imageSmoothingEnabled = true;
     softDab(ctx, sx, sy, 10, '#000000', 0.35);
     const kb = knockOf(e, now); sx += kb.x * 0.6; sy += kb.y * 0.6;
-    pblit(ctx, s, sx, sy);
+    pblit(ctx, s, sx, sy); e._spr = s; e._sx = sx; e._sy = sy;
     if (e.hitAt && now - e.hitAt < 110) pblit(ctx, whiteOf(s, 'w3|' + e.id + (e.cls || e.kind)), sx, sy, 0.65);
     return;
   }
@@ -651,34 +651,46 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     if ((g === T.GRASS || g === T.FOREST || g === T.SWAMP) && hash2(x, y, 5) < 0.25) visGrass.push({ wx, wy });
     if (WORLD.fl1[i] === 2 && !hideUpper) upper.push({ d: x + y, k: 5, x, y, sx, sy });
   }
+  const inB0 = me && (me.z || 0) < 0.5 ? bldAt(me.rx, me.ry) : -1;
   const addEnt = (e, kind) => {
     if (!e.visible) return;
     const p = iso(e.rx, e.ry), sx = p.sx + ox, sy = p.sy + oy - (e.z || 0) * FLOOR_PX;
     if (sx < -100 || sx > vw + 100 || sy < -40 || sy > vh + 200) return;
     const it = { d: e.rx + e.ry, k: kind, e, sx, sy, tx: e.rx, ty: e.ry };
+    if ((e.z || 0) < 0.5 && inB0 >= 0 && bldAt(e.rx, e.ry) === inB0) it.inside = true;
     if ((e.z || 0) >= 0.5) { if (!hideUpper) upper.push(it); } else items.push(it);
   };
   for (const id in G.monsters) addEnt(G.monsters[id], 1);
   for (const n of NPCS) addEnt(G.npcs[n.id], 3);
   for (const id in G.players) { const e = G.players[id]; if (!e.carriedBy) addEnt(e, 2); }
-  const inB = me && (me.z || 0) < 0.5 ? bldAt(me.rx, me.ry) : -1;
-  G.bA = G.bA || {};
+  const inB = inB0;
+  let inside = null;
+  // pontos dos jogadores (para saber quem fica escondido atrás de algo)
+  const PL = [];
+  for (const id in G.players) { const e = G.players[id]; if (!e.visible || e.carriedBy || (e.z || 0) >= 0.5) continue; const p = iso(e.rx, e.ry); PL.push({ e, x: p.sx + ox, y: p.sy + oy - 20, d: e.rx + e.ry, me: id === G.myId }); e._hid = false; }
+  const meP = PL.find(q => q.me);
+  // a imagem cobre o ponto? (usa a transparência da própria imagem)
+  const covers = (sp, x, y, px, py) => { const lx = px - (x - sp.ax), ly = py - (y - sp.ay); if (lx < 0 || ly < 0 || lx >= sp.w || ly >= sp.h) return false; const m = maskOf(sp); return m.a[Math.floor(ly / 2) * m.w + Math.floor(lx / 2)] > 60; };
+  // testa quem está escondido por uma imagem desenhada com profundidade d; devolve true se esconde VOCÊ
+  const occTest = (sp, x, y, d, cx0, cx1) => { let mine = false; for (const q of PL) { if (q.d >= d || (cx0 != null && (q.x < cx0 || q.x > cx1))) continue; if (covers(sp, x, y, q.x, q.y)) { q.e._hid = true; if (q.me) mine = true; } } return mine; };
+  G.bldDrawn = 0;
   BUILDINGS.forEach((b, bi) => {
-    const D = b.x + b.w - 1 + b.y + b.h - 1, p = iso(b.x - 0.5, b.y - 0.5);
-    if (p.sx + ox < -900 || p.sx + ox > vw + 900 || p.sy + oy < -900 || p.sy + oy > vh + 600) return;
-    let a = G.bA[bi] ?? 1; const tg = bi === inB ? 0 : 1; a += (tg - a) * Math.min(1, dt / 110); if (Math.abs(a - tg) < 0.03) a = tg; G.bA[bi] = a;
-    if (a < 1) items.push({ d: D - 0.02, k: 6, b, sx: p.sx + ox, sy: p.sy + oy });
-    if (a > 0) items.push({ d: D, k: 4, b, bi, a, sx: p.sx + ox, sy: p.sy + oy });
-    for (const it of items) {
-      if (it.k === 4 || it.k === 6) continue;
-      const ix = it.k === 0 ? it.x : it.tx, iy = it.k === 0 ? it.y : it.ty;
-      if (ix < b.x - 5 || iy < b.y - 5 || ix > b.x + b.w + 2.5 || iy > b.y + b.h + 2.5) continue;
-      const behind = ix < b.x + b.w - 0.5 && iy < b.y + b.h - 0.5;
-      const inside = ix > b.x - 0.5 && ix < b.x + b.w - 0.5 && iy > b.y - 0.5 && iy < b.y + b.h - 0.5;
-      if (a < 1 && inside) it.d = D + 0.01 + (ix + iy - b.x - b.y) * 0.001;   // dentro da construção aberta: depois do piso
-      else it.d = behind ? Math.min(it.d, D - 0.5) : Math.max(it.d, D + 0.5);
-    }
+    const p = iso(b.x - 0.5, b.y - 0.5), bx = p.sx + ox, by = p.sy + oy;
+    if (bx < -1100 || bx > vw + 1100 || by < -1400 || by > vh + 700) return;
+    if (bi === inB) { inside = { b, bi, sx: bx, sy: by }; return; }
+    const sp = buildingSprite(b, false); if (!sp) return;
+    G.bldDrawn++;
+    const cA = Math.floor(-sp.ax / 32), cB = Math.ceil((sp.w - sp.ax) / 32) - 1;
+    const depthOf = c => { let best = -1e9; for (const m of [c, c + 1]) { const jmax = Math.min(b.h - 1, b.w - 1 - m), jmin = Math.max(0, -m); if (jmax >= jmin) best = Math.max(best, 2 * jmax + m); } if (best < -1e8) best = c < 0 ? -c - 1 + 0 : 0; return b.x + b.y + best + 0.55; };
+    const dl = depthOf(-b.h), dr = depthOf(b.w - 1);
+    // você está atrás deste prédio? então ele fica translúcido (só ele)
+    let al = null;
+    if (meP) { const c = Math.floor((meP.x - bx) / 32), d = c < -b.h ? dl : c > b.w - 1 ? dr : depthOf(c); if (meP.d < d && covers(sp, bx, by, meP.x, meP.y)) { al = 0.38; meP.e._hid = true; } }
+    for (const q of PL) { if (q.me) continue; const c = Math.floor((q.x - bx) / 32), d = c < -b.h ? dl : c > b.w - 1 ? dr : depthOf(c); if (q.d < d && covers(sp, bx, by, q.x, q.y)) q.e._hid = true; }
+    for (let c = cA; c <= cB; c++) items.push({ d: c < -b.h ? dl : c > b.w - 1 ? dr : depthOf(c), k: 4, b, bi, sp, col: c, al, first: c === cA, sx: bx, sy: by });
   });
+  // perto de uma porta: já prepara o interior (sem engasgo ao entrar)
+  if (me && (me.z || 0) < 0.5 && inB < 0) for (const b of BUILDINGS) { const d0 = doorOf(b); if (Math.abs(d0.x - me.rx) + Math.abs(d0.y - me.ry) < 3) { const t = S3.budget; S3.budget = Math.max(1, S3.budget); interiorSprite(b); S3.budget = t; break; } }
   items.sort((a, b) => a.d - b.d || a.k - b.k);
   upper.sort((a, b) => a.d - b.d || a.k - b.k);
 
@@ -690,7 +702,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     for (const it of items) {
       if (it.k === 0 && !it.cliff && CASTS.has(it.o)) { const s = objSprite(it.o, it.x, it.y); if (s) castShadow(s, it.sx, it.sy, sh, k); }
       else if (it.k === 0 && it.o === O.TOWER) { const p = iso(it.x - 0.5, it.y - 0.5); castShadow(towerSprite(WORLD.tvar[it.y * MAP_W + it.x], WORLD.toff[it.y * MAP_W + it.x]), p.sx + ox, p.sy + oy, sh, k); }
-      else if (it.k === 4) castShadow(buildingSprite(it.b, day.night), it.sx, it.sy, sh, k);
+      else if (it.k === 4 && it.first) castShadow(it.sp, it.sx, it.sy, sh, k);
       else if (it.k === 1 && !it.e.dieAt) castShadow(R3.ok ? monSprite3D(it.e.type, -1, -1, 0) : monSprite(it.e.type, 0, -1), it.sx, it.sy, sh, k);
       else if ((it.k === 2 || it.k === 3) && !it.e.downed) castShadow(R3.ok ? (it.e.isNpc ? npcSprite3D(it.e.kind, { dir: 0, walk: -1 }) : heroSprite3D(it.e.cls, it.e.skin, it.e.color, { dir: 0, walk: -1 })) : (it.e.isNpc ? npcSprite(it.e.kind, { view: 'S', walk: -1 }) : heroSprite(it.e.cls, it.e.skin, it.e.color, { view: 'S', walk: -1 })), it.sx, it.sy, sh, k);
     }
@@ -720,7 +732,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     holeX.globalCompositeOperation = 'source-over';
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(holeC, px0, py0, px1 - px0, py1 - py0, px0, py0, px1 - px0, py1 - py0); ctx.restore();
   };
-  const blitV = (s, x, y, d, yf, alpha) => { if (holeOf(s, x, y, d, yf)) drawHole(s, x, y, alpha); else pblit(ctx, s, x, y, alpha); };
+  const blitV = (s, x, y, d, yf, alpha) => { const mine = s.h > 60 && occTest(s, x, y, d); pblit(ctx, s, x, y, mine ? 0.42 : alpha); };
   const fadeA = (s, x, y, d, yf) => {
     const l = x - s.ax, t = y - s.ay;
     return d > meD && meX > l + 6 && meX < l + s.w - 6 && meY > t && meY < t + s.h - 10 && (yf ?? y) > meY + 18 ? (yf != null && inB >= 0 ? 0.22 : 0.42) : null;
@@ -735,15 +747,15 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
       }
       if (it.o === O.TOWER) { const p = iso(it.x - 0.5, it.y - 0.5), s = towerSprite(WORLD.tvar[it.y * MAP_W + it.x], WORLD.toff[it.y * MAP_W + it.x]); blitV(s, p.sx + ox, p.sy + oy, it.d); return; }
       const s = objSprite(it.o, it.x, it.y);
-      if (s) { const sw = SWAY[it.o] ? wind(it.x, it.y, now) * SWAY[it.o] * (0.7 + ATM.wind * 0.6) : 0; if (s.h > 60 && holeOf(s, it.sx, it.sy, it.d)) drawHole(s, it.sx, it.sy); else drawSway(ctx, s, it.sx, it.sy, sw); }
+      if (s) { const sw = SWAY[it.o] ? wind(it.x, it.y, now) * SWAY[it.o] * (0.7 + ATM.wind * 0.6) : 0; if (s.h > 60 && occTest(s, it.sx, it.sy, it.d)) pblit(ctx, s, it.sx, it.sy, 0.42); else drawSway(ctx, s, it.sx, it.sy, sw); }
       liveParts(ctx, it.o, it.sx, it.sy, it.x, it.y, now);
       if (it.o === O.MUSHROOM) { const z = zoneAt(it.x, it.y); if (z === Z.SWAMP || (z === Z.FOREST && hash2(it.x, it.y, 17) < 0.3)) G.lights.push({ x: it.sx, y: it.sy - 8, r: 16, c: '90,200,240', a: 0.6 }); }
       return;
     }
-    if (it.k === 6) { const s = interiorSprite(it.b); if (s) pblit(ctx, s, it.sx, it.sy); return; }
     if (it.k === 4) {
-      const s = buildingSprite(it.b, day.night);
-      blitV(s, it.sx, it.sy, it.d, it.sy + (it.b.w + it.b.h) * HTH, it.a < 1 ? it.a : null);
+      const s = it.sp, kp = s.c.width / s.w, sx0 = (s.ax + it.col * 32) * kp, x0 = Math.max(0, sx0), x1 = Math.min(s.c.width, sx0 + 32.6 * kp);
+      if (x1 > x0) { if (it.al) ctx.globalAlpha = it.al; ctx.drawImage(s.c, x0, 0, x1 - x0, s.c.height, it.sx - s.ax + x0 / kp, it.sy - s.ay, (x1 - x0) / kp, s.h); ctx.globalAlpha = 1; }
+      if (!it.first) return;
       if (day.night) for (const [wx, wy, wz] of buildingWindows(it.b)) { const p = iso(wx, wy); G.lights.push({ x: p.sx + ox, y: p.sy + oy - wz, r: 28, c: it.b.kind === 'temple' ? '190,210,255' : '255,190,100', a: 0.85 }); }
       if ((it.b.kind === 'tavern' || it.b.kind === 'house' || it.b.kind === 'smith') && Math.random() < (it.b.kind !== 'house' ? 0.14 : 0.05)) { const p = iso(it.b.x - 0.5 + it.b.w * 0.3, it.b.y - 0.5 + it.b.h * 0.35); spawnPart('smoke', p.sx, p.sy - (bldTopArt(it.b) * 0.9 + 30)); }
       if (it.b.kind === 'smith') { const p = iso(it.b.x - 0.5 + it.b.w * 0.5, it.b.y - 0.5 + it.b.h); G.lights.push({ x: p.sx + ox, y: p.sy + oy - 16, r: 62, c: '255,130,50', a: 1, flick: 1 }); if (Math.random() < 0.1) spawnPart('ember', p.sx, p.sy - 20); }
@@ -767,8 +779,17 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     }
     ctx.imageSmoothingEnabled = true;
   };
-  for (const it of items) drawItem(it);
+  for (const it of items) if (!it.inside) drawItem(it);
   for (const it of upper) drawItem(it);
+  // dentro de uma construção: a cidade escurece e o cômodo aparece cortado, com quem está dentro
+  if (inside) {
+    ctx.fillStyle = 'rgba(8,5,2,0.6)'; ctx.fillRect(-20, -20, vw + 40, vh + 40);
+    const s = interiorSprite(inside.b) || buildingSprite(inside.b, false);
+    if (s) pblit(ctx, s, inside.sx, inside.sy);
+    for (const it of items) if (it.inside) drawItem(it);
+  }
+  // silhuetas: você (dourado) e amigos (azul) quando algo os esconde
+  for (const q of PL) { const e = q.e; if (!e._hid || !e._spr || inside) continue; pblit(ctx, tintOf(e._spr, q.me ? '#ffd060' : '#5aa8ff'), e._sx, e._sy, 0.62); }
 
   drawEffects(ctx, ox, oy, now);
   ambient(visTrees, visFlowers, visGrass, day.night);
@@ -941,4 +962,22 @@ function renderMinimap(ctx, size) {
   ctx.fillStyle = '#7ad87a';
   for (const n of NPCS) ctx.fillRect(n.x - 0.8, n.y - 0.8, 1.6, 1.6);
   ctx.restore();
+}
+
+// máscara de transparência de uma imagem (meia resolução), para saber se ela cobre um ponto
+const MASKS = new WeakMap();
+function maskOf(s) {
+  let m = MASKS.get(s); if (m) return m;
+  const w = Math.max(1, Math.ceil(s.w / 2)), h = Math.max(1, Math.ceil(s.h / 2)), c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(s.c, 0, 0, w, h);
+  const d = x.getImageData(0, 0, w, h).data, a = new Uint8Array(w * h); for (let i = 0; i < w * h; i++) a[i] = d[i * 4 + 3];
+  m = { w, h, a }; MASKS.set(s, m); return m;
+}
+// versão colorida de uma imagem (silhueta)
+const TINTS = new WeakMap();
+function tintOf(s, col) {
+  let t = TINTS.get(s); if (t && t.col === col) return t.s;
+  const c = document.createElement('canvas'); c.width = s.c.width; c.height = s.c.height;
+  const x = c.getContext('2d'); x.drawImage(s.c, 0, 0); x.globalCompositeOperation = 'source-in'; x.fillStyle = col; x.fillRect(0, 0, c.width, c.height);
+  const o = { c, w: s.w, h: s.h, ax: s.ax, ay: s.ay }; TINTS.set(s, { col, s: o }); return o;
 }

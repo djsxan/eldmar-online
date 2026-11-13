@@ -6,7 +6,7 @@
 //  ângulo do mapa. As fotos viram sprites 2D guardados em cache.
 //  Unidades: 1 tile = 1 unidade; X = x do mapa, Z = y do mapa.
 // ============================================================
-const S3 = { ok: false, budget: 4 };
+const S3 = { ok: false, budget: 4, pin: new Set(), px: 0, pinPx: 0 };
 const A3 = 32 * Math.SQRT2;                 // unidades de arte por unidade 3D (na horizontal da tela)
 const HV = A3 * Math.cos(Math.PI / 6);      // unidades de arte por unidade de altura
 const SRS = 3.4;                            // pixels da foto por unidade de arte
@@ -80,13 +80,15 @@ const SC3 = new Map();
 function scen3(key, make) {
   if (!S3.ok) return null;
   let s = SC3.get(key);
-  if (s !== undefined) { SC3.delete(key); SC3.set(key, s); return s; }
+  if (s !== undefined) { SC3.delete(key); SC3.set(key, s); if (S3.pinning && !S3.pin.has(key)) { S3.pin.add(key); if (s) { S3.px -= s.c.width * s.c.height; S3.pinPx += s.c.width * s.c.height; } } return s; }
   if (S3.budget <= 0) return null;
   S3.budget--;
+  if (S3.pinning) S3.pin.add(key);
   try { s = shootScene(make()); } catch (e) { console.warn('cena3d', key, e); s = null; }
   SC3.set(key, s);
-  if (s) S3.px = (S3.px || 0) + s.c.width * s.c.height;
-  while (S3.px > 130e6 && SC3.size > 40) { const [k0, s0] = SC3.entries().next().value; SC3.delete(k0); if (s0) S3.px -= s0.c.width * s0.c.height; }
+  if (s && !S3.pin.has(key)) S3.px = (S3.px || 0) + s.c.width * s.c.height;
+  if (s && S3.pin.has(key)) S3.pinPx = (S3.pinPx || 0) + s.c.width * s.c.height;
+  if (S3.px > 90e6) for (const [k0, s0] of SC3) { if (S3.px <= 70e6) break; if (S3.pin.has(k0)) continue; SC3.delete(k0); if (s0) S3.px -= s0.c.width * s0.c.height; }
   return s;
 }
 
@@ -808,6 +810,46 @@ function gateHouseSprite(gi) {
   const gt = WORLD.gates[gi], f = (G.gateF && G.gateF[gi]) || 0, q = Math.round(f * 4);
   return scen3('gh|' + gi + '|' + q, () => mGateHouse(gt, q / 4)) || (q ? null : gateSprite(true));
 }
+// ---------- torre-escada (3x3): por fora uma torre de pedra; cortada mostra a escada em espiral ----------
+function mStairTower(b, cut) {
+  const o = grp(), H = WALL_H, cx = 1.5, cz = 1.5, t = 0.22, wallM = smat('brick', '#a29c90', { bump: 1.4 }), capM = smat('stoneblock', '#b0a998', { bump: 1 });
+  const hw = 0.35, dc = 1.5, dw = 0.7, dh = 1.15;
+  // piso e chão do alto (passarela)
+  o.add(wbox(3, 0.06, 3, cx, 0.03, cz, smat('stoneblock', '#8e887c', { bump: 1 }), 1));
+  if (!cut) o.add(wbox(3, 0.12, 3, cx, H - 0.06, cz, smat('stoneblock', '#9a948a', { bump: 1 }), 1));
+  // paredes: as do fundo (lado oposto à câmera) sempre inteiras; as da frente cortadas quando você está dentro
+  const knee = cut ? { S: ['front', 'right'], N: ['back', 'left'], E: ['front', 'left'], W: ['back', 'right'] }[b.realDoor || 'S'] : [];
+  const fh = f => knee.includes(f) ? hw : H;
+  o.add(gwall(t, fh('left'), 3, t / 2, fh('left') / 2, cz, 'brick', '#a29c90', H, 2.1, 1, 1.4));
+  o.add(gwall(3, fh('back'), t, cx, fh('back') / 2, t / 2, 'brick', '#a29c90', H, 2.2, 1, 1.4));
+  o.add(gwall(t, fh('right'), 3, 3 - t / 2, fh('right') / 2, cz, 'brick', '#a29c90', H, 2.3, 1, 1.4));
+  const fr = knee.includes('front') ? hw : dh;
+  if (dc - dw / 2 > 0) o.add(gwall(dc - dw / 2, fh('front'), t, (dc - dw / 2) / 2, fh('front') / 2, 3 - t / 2, 'brick', '#a29c90', H, 2.4, 1, 1.4));
+  o.add(gwall(3 - dc - dw / 2, fh('front'), t, (dc + dw / 2 + 3) / 2, fh('front') / 2, 3 - t / 2, 'brick', '#a29c90', H, 2.5, 1, 1.4));
+  if (!knee.includes('front')) o.add(gwall(dw, H - dh, t, dc, dh + (H - dh) / 2, 3 - t / 2, 'brick', '#a29c90', H, 2.6, 1, 1.4));
+  if (!cut) {
+    // porta em arco, seteiras e ameias
+    const doorM = smat('wood', '#5a3a1e', { bump: 1.5 });
+    o.add(mk(new THREE.BoxGeometry(dw - 0.06, dh - 0.04, 0.05).translate(dc, (dh - 0.04) / 2, 3 + 0.01), doorM));
+    o.add(mk(new THREE.CylinderGeometry(dw / 2, dw / 2, 0.06, 14, 1, false, 0, Math.PI).rotateX(Math.PI / 2).rotateZ(Math.PI / 2).translate(dc, dh, 3 + 0.01), capM));
+    for (const [x, y, z, ry] of [[3.02, H * 0.45, 1.5, Math.PI / 2], [3.02, H * 0.75, 1.0, Math.PI / 2], [1.0, H * 0.6, 3.02, 0]]) { const a = mk(new THREE.BoxGeometry(0.1, 0.42, 0.05), smat(null, '#141210')); a.position.set(x, y, z); a.rotation.y = ry; o.add(a); }
+    for (let k = 0; k < 6; k++) for (const [x, z, w2, d2] of [[0.25 + k * 0.5, 2.9, 0.3, 0.2], [2.9, 0.25 + k * 0.5, 0.2, 0.3], [0.25 + k * 0.5, 0.1, 0.3, 0.2], [0.1, 0.25 + k * 0.5, 0.2, 0.3]]) if (k % 2 === 0) o.add(mk(wuv(new THREE.BoxGeometry(w2, 0.42, d2).translate(x, H + 0.21, z), 1.5), capM));
+    o.add(wbox(3.12, 0.12, 3.12, cx, H - 0.02, cz, capM, 1));
+    // alçapão no alto (por onde se desce)
+    o.add(mk(new THREE.BoxGeometry(0.7, 0.03, 0.7).translate(cx, H + 0.02, cz), smat('wood', '#4a2f17', { bump: 1.2 })));
+  }
+  // escada em espiral: degraus em leque subindo em volta de um pilar central
+  const pillarM = smat('stoneblock', '#9a948a', { bump: 1.2 }), stepM = smat('stoneblock', '#b4ae9f', { bump: 1.2 });
+  o.add(mk(new THREE.CylinderGeometry(0.16, 0.18, H, 12).translate(cx, H / 2, cz), pillarM));
+  const N = 20;
+  for (let k = 0; k < N; k++) {
+    const a = k / N * Math.PI * 2.4 + Math.PI * 0.5, y = (k + 1) / N * H;
+    const st = mk(new THREE.BoxGeometry(1.1, 0.1, 0.42).translate(0.7, 0, 0), stepM);
+    st.position.set(cx, y - 0.05, cz); st.rotation.y = -a; o.add(st);
+  }
+  if (cut) { const lp = new THREE.PointLight(0xffc070, 0.9, 3.5); lp.position.set(cx + 0.8, 1.2, cz + 0.8); o.add(lp); }
+  return o;
+}
 // ---------- construções do vilarejo ----------
 const BSTYLE = {
   temple: { wall: '#d8d0bc', roof: '#46587a', tex: 'brick', roofTex: 'slate', trim: '#c9a24a' },
@@ -906,8 +948,19 @@ function mCastle(b, night) {
     g.position.set(dc, 0, h); o.add(g); }
   return o;
 }
+// monta o prédio no quadro local (porta virada para +z) e gira para o lado certo;
+// a origem fica no canto da área do prédio (igual ao desenho antigo)
+function localB(b) { const [A, D] = bDims(b); return { ...b, w: A, h: D, door: 'S', x: b.arch != null ? 40 + b.arch * 7 : b.x, y: b.arch != null ? 40 + b.arch * 13 : b.y }; }
+function placeRot(b, inner) {
+  const [A, D] = bDims(b), root = grp(), mid = grp(inner);
+  inner.position.set(-A / 2, 0, -D / 2);
+  mid.rotation.y = DOOR_ROT[b.door || 'S']; mid.position.set(b.w / 2, 0, b.h / 2); root.add(mid);
+  return root;
+}
+function mBuildingRot(b, night) { return placeRot(b, mBuilding(localB(b), night)); }
 function mBuilding(b, night) {
   if (b.kind === 'castle') return mCastle(b, night);
+  if (b.kind === 'stairtower') return mStairTower(b, false);
   const w = b.w, h = b.h, { H, RH } = bldDims(b), o = grp(), R = rng(b.x * 31 + b.y * 7), seed = b.x * 0.37 + b.y;
   const st = styleOf(b);
   const trimM = smat('wood', st.trim, { bump: 1 }), stoneM = '#8e887c';
@@ -1078,18 +1131,22 @@ function mInterior(b) {
   const wallM = stoneK ? smat('brick', b.kind === 'castle' ? '#b4ad9c' : '#a29c90', { bump: 1.2 }) : smat('plaster', '#e2d6bc', { bump: 0.7 });
   const trimM = smat('wood', '#4a2f17'), hw = Math.min(H, b.kind === 'castle' || b.kind === 'temple' ? 5 : 2.3), t = 0.16;
   o.add(mk(wuv(new THREE.BoxGeometry(w, 0.06, h).translate(w / 2, 0.03, h / 2), 1), floorM));
-  // paredes do fundo (inteiras) e da frente (só a base, com a porta)
-  o.add(mk(wuv(new THREE.BoxGeometry(t, hw, h).translate(t / 2, hw / 2, h / 2), 0.7), wallM));
-  o.add(mk(wuv(new THREE.BoxGeometry(w, hw, t).translate(w / 2, hw / 2, t / 2), 0.7), wallM));
-  const dx = doorCol(b) + 0.5;
-  o.add(wbox(t, 0.32, h, w - t / 2, 0.16, h / 2, wallM, 0.7));
-  if (dx - 0.6 > 0) o.add(wbox(dx - 0.6, 0.32, t, (dx - 0.6) / 2, 0.16, h - t / 2, wallM, 0.7));
-  if (w - dx - 0.6 > 0) o.add(wbox(w - dx - 0.6, 0.32, t, (dx + 0.6 + w) / 2, 0.16, h - t / 2, wallM, 0.7));
-  o.add(mk(new THREE.BoxGeometry(w, 0.12, 0.06).translate(w / 2, hw - 0.06, t + 0.03), trimM)); o.add(mk(new THREE.BoxGeometry(0.06, 0.12, h).translate(t + 0.03, hw - 0.06, h / 2), trimM));
-  // janelas nas paredes do fundo, com luz entrando
-  const lightWin = smat(null, '#ffe2a8', { emissive: '#ffcc80', ei: 0.7, rough: 0.3 });
-  for (let k = 0; k < Math.floor(w / 2); k++) o.add(mk(new THREE.BoxGeometry(0.42, 0.6, 0.03).translate(1 + k * 2, hw * 0.6, t + 0.02), lightWin));
-  for (let k = 0; k < Math.floor(h / 2); k++) o.add(mk(new THREE.BoxGeometry(0.03, 0.6, 0.42).translate(t + 0.02, hw * 0.6, 1 + k * 2), lightWin));
+  // quais paredes (no quadro local) ficam viradas para a câmera depende do lado da porta
+  const knee = { S: ['front', 'right'], N: ['back', 'left'], E: ['front', 'left'], W: ['back', 'right'] }[b.realDoor || 'S'];
+  const KH = 0.34, wallH = f => knee.includes(f) ? KH : hw, dx = doorCol(b) + 0.5;
+  const lightWin = smat(null, '#ffe2a8', { emissive: '#ffcc80', ei: 0.7, rough: 0.3 }), capM = smat('stoneblock', '#b0a998', { bump: 1 });
+  const wallSeg = (f, w2, d2, x, z) => { const hh = wallH(f); o.add(mk(wuv(new THREE.BoxGeometry(w2, hh, d2).translate(x, hh / 2, z), 0.7), wallM)); if (hh === KH) o.add(mk(new THREE.BoxGeometry(w2 + 0.02, 0.05, d2 + 0.04).translate(x, KH + 0.025, z), capM)); };
+  wallSeg('back', w, t, w / 2, t / 2); wallSeg('left', t, h, t / 2, h / 2); wallSeg('right', t, h, w - t / 2, h / 2);
+  if (dx - 0.6 > 0) wallSeg('front', dx - 0.6, t, (dx - 0.6) / 2, h - t / 2);
+  if (w - dx - 0.6 > 0) wallSeg('front', w - dx - 0.6, t, (dx + 0.6 + w) / 2, h - t / 2);
+  if (!knee.includes('front')) o.add(mk(wuv(new THREE.BoxGeometry(1.2, hw - 1.3, t).translate(dx, 1.3 + (hw - 1.3) / 2, h - t / 2), 0.7), wallM));
+  // janelas com luz entrando, só nas paredes inteiras
+  if (!knee.includes('back')) for (let k = 0; k < Math.floor(w / 2); k++) o.add(mk(new THREE.BoxGeometry(0.42, 0.6, 0.03).translate(1 + k * 2, hw * 0.6, t + 0.02), lightWin));
+  if (!knee.includes('left')) for (let k = 0; k < Math.floor(h / 2); k++) o.add(mk(new THREE.BoxGeometry(0.03, 0.6, 0.42).translate(t + 0.02, hw * 0.6, 1 + k * 2), lightWin));
+  if (!knee.includes('right')) for (let k = 0; k < Math.floor(h / 2); k++) o.add(mk(new THREE.BoxGeometry(0.03, 0.6, 0.42).translate(w - t - 0.02, hw * 0.6, 1 + k * 2), lightWin));
+  if (!knee.includes('front')) for (let k = 0; k < Math.floor(w / 2); k++) if (Math.abs(1 + k * 2 - dx) > 0.9) o.add(mk(new THREE.BoxGeometry(0.42, 0.6, 0.03).translate(1 + k * 2, hw * 0.6, h - t - 0.02), lightWin));
+  // luz quente no meio do cômodo
+  { const pl = new THREE.PointLight(0xffd09a, 0.7, Math.max(w, h) * 1.2); pl.position.set(w / 2, 1.6, h / 2); o.add(pl); }
   // móveis
   const W_ = () => smat('wood', '#7a5434', { bump: 1 }), DW = () => smat('wood', '#4e3420', { bump: 1 });
   const cloth = c => smat('cloth', c, { bump: 0.5 });
@@ -1129,7 +1186,10 @@ function mInterior(b) {
   }
   return o;
 }
-function interiorSprite(b) { const bi = BUILDINGS.indexOf(b); return scen3('in|' + bi, () => mInterior(b)); }
+function interiorSprite(b) {
+  const key = 'in|' + archKey(b) + '|' + (b.door || 'S');
+  return scen3(key, () => b.kind === 'stairtower' ? placeRot(b, mStairTower({ ...localB(b), realDoor: b.door || 'S' }, true)) : placeRot(b, mInterior({ ...localB(b), realDoor: b.door || 'S' })));
+}
 // ============================================================
 //  LIGAÇÃO: troca os desenhos pintados pelas fotos 3D (quando
 //  prontas). Enquanto a foto não fica pronta, usa o pintado.
@@ -1162,11 +1222,13 @@ function interiorSprite(b) { const bi = BUILDINGS.indexOf(b); return scen3('in|'
   wrap('stairsSprite', (d, k) => `st|${d}|${k | 0}`, (d, k) => mStairs(d, k | 0));
   wrap('slabSprite', v => `sl|${v}`, v => mSlab(v));
   wrap('cliffSprite', (h, v, s) => `cl|${h}|${v}|${s}`, (h, v, s) => mCliff(h, v, s));
-  wrap('buildingSprite', (b, n) => `bd|${b.x}|${b.y}|${n ? 1 : 0}`, (b, n) => mBuilding(b, n));
+  wrap('buildingSprite', (b, n) => `bd|${archKey(b)}|${b.door || 'S'}`, (b, n) => mBuildingRot(b, false));
   // luzes das janelas na altura nova das paredes
   window.buildingWindows = function (b) {
-    const w = b.w, h = b.h, zc = b.wall * 2 * BLD_K * 0.55;
-    return bldWinList(b).map(([f, u]) => f === 'L' ? [b.x - 0.5 + u * w, b.y - 0.5 + h, zc] : [b.x - 0.5 + w, b.y - 0.5 + h - u * h, zc]);
+    if (b.kind === 'stairtower') return [];
+    const [A, D] = bDims(b), H = bldDims(b).H, out = [], fl = Math.max(1, Math.round(H / 1.5)), fh = H / fl;
+    for (let f = 0; f < fl; f++) { const zc = (f * fh + fh * 0.55) * HV; for (let k = 0; k < Math.floor(A / 1.5); k++) { const [x, y] = localToWorld(b, (k + 0.5) * A / Math.floor(A / 1.5), D); out.push([x, y, zc]); } for (let k = 0; k < Math.floor(D / 1.5); k++) for (const u of [0, A]) { const [x, y] = localToWorld(b, u, (k + 0.5) * D / Math.floor(D / 1.5)); out.push([x, y, zc]); } }
+    return out;
   };
 })();
 // altura de uma construção na tela (para nomes e fumaça)

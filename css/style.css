@@ -125,6 +125,12 @@ input[type=text]:focus { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(2
 #pause .pz-keys { margin: 10px 0; font-size: 14px; line-height: 1.6; }
 #pause .pz-keys summary { cursor: pointer; font: 700 13px 'Cinzel', serif; color: #d8b870; }
 #pause .pz-keys b { color: #f0d890; }
+#prebake { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, #2a1e12, #0a0604); transition: opacity .4s; }
+#prebake .pb-box { width: min(420px, 86vw); text-align: center; }
+#prebake .pb-title { font: 700 26px 'Cinzel Decorative', serif; color: #f0d890; margin-bottom: 18px; }
+#prebake .pb-bar { height: 12px; border-radius: 6px; background: #140e08; box-shadow: 0 0 0 1px #000, 0 0 0 3px #8a6a2a; overflow: hidden; }
+#prebake #pb-fill { height: 100%; width: 0; background: linear-gradient(#e8c870, #a8843a); transition: width .15s; }
+#prebake .pb-txt { margin-top: 10px; font: italic 14px 'Alegreya', serif; color: #c8b090; }
 #worldmap { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; background: rgba(10,6,2,0.6); }
 #worldmap.hidden { display: none; }
 #worldmap .wm-frame { position: relative; padding: 18px; border-radius: 10px; background: radial-gradient(ellipse at center, #e8d6aa, #c4a66e 80%, #8a6a3a); box-shadow: 0 0 0 3px #3a2410, 0 0 0 6px #b08a4a, 0 20px 60px rgba(0,0,0,0.7); }

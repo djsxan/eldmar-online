@@ -55,6 +55,7 @@ function clientOnServer(m) {
       G.me = G.players[G.myId];
       Object.assign(G.me, { x: m.x, y: m.y, rx: m.x, ry: m.y, z: 0, visible: true, mp: 0, maxMp: 1, hp: 1, maxHp: 1, quests: {}, qdone: {}, pots: { hp: 0, mp: 0 }, gold: 0, buffs: {}, lastTile: tileAt(m.x, m.y), sendT: 0 });
       startGame();
+      if (!G.prebaked) { G.prebaked = true; prebakeCity(); }
       break;
     case 'pinfo': { const e = G.players[m.p.id]; if (e) Object.assign(e, m.p); else G.players[m.p.id] = mkEnt({ ...m.p }); break; }
     case 'pleave': delete G.players[m.id]; break;
@@ -70,7 +71,7 @@ function clientOnServer(m) {
       if (oldLvl && m.lvl > oldLvl) showBanner(`Nível ${m.lvl}`, 'Sua força cresce.');
       break;
     }
-    case 'tp': if (G.me) { Object.assign(G.me, { x: m.x, y: m.y, rx: m.x, ry: m.y, z: +m.z || 0 }); G.path = null; G.pathGoal = null; } break;
+    case 'tp': if (G.me) { Object.assign(G.me, { x: m.x, y: m.y, rx: m.x, ry: m.y, z: +m.z || 0 }); G.path = null; G.pathGoal = null; if (m.climb) G.climbArm = m.climb - 1; } break;
     case 'hit':
       later(m.d, () => {
         const t = performance.now();
@@ -250,6 +251,18 @@ function updateLocal(now, dt) {
   me.walking = moved > 0.0005;
   me.walkDist += moved;
   if (me.walking && Math.random() < 0.08) { const w = tileW(me.x, me.y, me.z * FLOOR_PX); spawnPart('dust', w.x, w.y); }
+  // torres-escada: pisar na escada em espiral sobe; pisar no alçapão lá em cima desce
+  for (let bi = 0; bi < BUILDINGS.length; bi++) {
+    const b = BUILDINGS[bi]; if (b.kind !== 'stairtower') continue;
+    const cx = b.x + 1, cy = b.y + 1, d = Math.hypot(me.x - cx, me.y - cy);
+    if (d > 0.9) { if (G.climbArm === bi) G.climbArm = null; continue; }
+    if (G.climbArm === bi || d > 0.42 || now < (G.climbT || 0)) continue;
+    const up = (me.z || 0) < 0.5;
+    if (up && bldAt(me.x, me.y) !== bi) continue;
+    G.climbT = now + 900; G.climbArm = bi; G.path = null; G.pathGoal = null;
+    fadeFlash(); Net.send({ t: 'climb', b: bi, up: up ? 1 : 0 });
+    break;
+  }
   // rampas: a altura acompanha a posição (sem teletransporte)
   me.z = heightAt(me.x, me.y, me.z);
   // na rampa, centraliza suavemente no degrau
@@ -1012,3 +1025,37 @@ $('pz-zoom').addEventListener('input', e => { SET.zoom = +e.target.value; saveSe
 $('pz-full').addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen(); else (document.documentElement.requestFullscreen || (() => { })).call(document.documentElement); });
 $('pz-quit').addEventListener('click', () => { try { saveChar(); saveFog && G.fog && saveFog(); } catch (e) { } location.reload(); });
 applySettings();
+
+// escurece a tela rapidinho (subir/descer a torre)
+function fadeFlash() {
+  let f = document.getElementById('fade'); if (!f) { f = document.createElement('div'); f.id = 'fade'; f.style.cssText = 'position:fixed;inset:0;z-index:20;background:#000;opacity:0;pointer-events:none;transition:opacity .25s'; document.body.appendChild(f); }
+  f.style.opacity = 1; setTimeout(() => { f.style.opacity = 0; }, 330);
+}
+// ============================================================
+//  PREPARAR A CIDADE (tela de carregamento): fotografa todos os
+//  prédios, muralhas e torres uma vez só; depois nada trava.
+// ============================================================
+function prebakeCity(done) {
+  if (typeof S3 === 'undefined' || !S3.ok) { done && done(); return; }
+  const jobs = [], seen = new Set(), X0 = CASTLE.x0 - 6, X1 = CASTLE.x1 + 6, Y0 = CASTLE.y0 - 6, Y1 = CASTLE.y1 + 6;
+  for (const b of BUILDINGS) { const k = archKey(b) + (b.door || 'S'); if (!seen.has(k)) { seen.add(k); jobs.push(() => { const sp = buildingSprite(b, false); if (sp) { maskOf(sp); silhouette(sp); } }); } }
+  for (let y = Y0; y <= Y1; y++) for (let x = X0; x <= X1; x++) {
+    if (!inBounds(x, y)) continue;
+    const i = y * MAP_W + x, o = WORLD.obj[i];
+    if (o === O.TOWER) jobs.push(() => { const sp = towerSprite(WORLD.tvar[i], WORLD.toff[i]); if (sp) { maskOf(sp); silhouette(sp); } });
+    else if (o !== O.NONE && o !== O.PART && !FLAT.has(o)) jobs.push(() => { const sp = objSprite(o, x, y); if (sp && sp.h > 60) { maskOf(sp); silhouette(sp); } });
+  }
+  WORLD.gates.forEach((gt, gi) => { for (let q = 0; q <= 4; q++) jobs.push(() => scen3('gh|' + gi + '|' + q, () => mGateHouse(gt, q / 4))); });
+  const ov = document.createElement('div'); ov.id = 'prebake';
+  ov.innerHTML = '<div class="pb-box"><div class="pb-title">Preparando Eldmar</div><div class="pb-bar"><div id="pb-fill"></div></div><div class="pb-txt" id="pb-txt">0%</div></div>';
+  document.body.appendChild(ov);
+  const total = jobs.length; let k = 0;
+  S3.pinning = true;
+  (function step() {
+    const t0 = performance.now();
+    while (k < total && performance.now() - t0 < 30) { S3.budget = 1e9; try { jobs[k](); } catch (e) { console.warn(e); } k++; }
+    const pc = Math.round(k / total * 100); document.getElementById('pb-fill').style.width = pc + '%'; document.getElementById('pb-txt').textContent = pc + '%';
+    if (k < total) requestAnimationFrame(step);
+    else { S3.pinning = false; ov.style.opacity = 0; setTimeout(() => ov.remove(), 400); done && done(); }
+  })();
+}

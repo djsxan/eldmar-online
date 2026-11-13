@@ -123,6 +123,16 @@ function hostOnClient(from, m) {
       break;
     }
     case 'giveup': if (p.downed) respawnTemple(p); break;
+    case 'climb': {
+      const b = BUILDINGS[m.b | 0]; if (!b || b.kind !== 'stairtower' || p.downed || p.carriedBy) break;
+      const cx = b.x + 1, cy = b.y + 1; if (dist(p.x, p.y, cx, cy) > 1.3) break;
+      if (m.up) { p.x = cx; p.y = cy; p.z = 1; }
+      else { const [dx, dy] = doorTile(b); p.x = (dx + cx) / 2; p.y = (dy + cy) / 2; p.z = 0; }
+      p.lastMv = now_(); p.sit = null;
+      if (p.carrying) { const t = S.players[p.carrying]; if (t) { t.x = p.x; t.y = p.y; t.z = p.z; } }
+      Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: p.z, climb: (m.b | 0) + 1 });
+      break;
+    }
     case 'sit': {
       if (!m.on || p.downed || p.carrying || p.carriedBy) { p.sit = null; break; }
       const st = m.s != null ? WORLD.seats[m.s | 0] : null;
