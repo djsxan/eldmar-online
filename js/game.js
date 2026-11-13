@@ -71,7 +71,7 @@ function clientOnServer(m) {
       if (oldLvl && m.lvl > oldLvl) showBanner(`Nível ${m.lvl}`, 'Sua força cresce.');
       break;
     }
-    case 'tp': if (G.me) { Object.assign(G.me, { x: m.x, y: m.y, rx: m.x, ry: m.y, z: +m.z || 0 }); G.path = null; G.pathGoal = null; if (m.climb) G.climbArm = m.climb - 1; } break;
+    case 'tp': if (G.me) { Object.assign(G.me, { x: m.x, y: m.y, rx: m.x, ry: m.y, z: +m.z || 0, fl: m.fl | 0, fb: m.fb ?? -1 }); G.path = null; G.pathGoal = null; if (m.climb) G.climbArm = m.climb - 1; } break;
     case 'hit':
       later(m.d, () => {
         const t = performance.now();
@@ -92,10 +92,13 @@ function clientOnServer(m) {
       });
       break;
     case 'fx': if (false) later(m.d, () => { const p = tileW(m.x, m.y); G.nums.push({ wx: p.x, wy: p.y - 24, text: m.text, color: m.color, small: !m.big, big: m.big, t0: performance.now(), vx: 0 }); }); break;
+    case 'proj': later(m.delay || 0, () => { const e = G.players[m.id]; if (!e) return; const t = performance.now(), from = tileW(e.rx, e.ry, 20 + (e.z || 0) * FLOOR_PX); G.effects.push({ a: 'proj', kind: m.kind, from, tx: m.tx, ty: m.ty, x: m.tx, y: m.ty, t0: t, dur: Math.max(120, m.d) }); }); break;
+    case 'emote': { const e = G.players[m.id]; if (e) { e.emote = { k: m.k, t0: now }; e.anim = null; } break; }
     case 'anim': {
       const e = (m.w === 'p' ? G.players : G.monsters)[m.id];
       if (!e) break;
-      e.anim = { a: m.a, t0: now, tx: m.tx, ty: m.ty };
+      e.anim = { a: m.a, t0: now, tx: m.tx, ty: m.ty }; e.emote = null;
+      if (m.a === 'execute' && m.id === G.myId) later(380, () => { G.shake = Math.max(G.shake, 6); });
       if (m.tx != null && m.w === 'p' && m.a !== 'spin') e.dir = dirFromVec(m.tx - e.rx, m.ty - e.ry, e.dir);
 
       if (m.proj) {
@@ -147,7 +150,7 @@ function applySnapshot(m, now) {
       continue;
     }
     e.hp = hpPct; e.maxHp = 100; e.z = z;
-    e.srvDir = dir; e.srvWalk = !!(fl & 1); if (e !== G.me) { e.running = !!(fl & 256); e.sit = fl & 512 ? { chair: fl & 1024 ? 1 : 0 } : null; }
+    e.srvDir = dir; e.srvWalk = !!(fl & 1); if (e !== G.me) { e.running = !!(fl & 256); e.fl = (fl >> 11) & 3; e.sit = fl & 512 ? { chair: fl & 1024 ? 1 : 0 } : null; }
     e.buf.push({ t: now, x, y });
     if (e.buf.length > 6) e.buf.shift();
   }
@@ -189,7 +192,7 @@ function monsterNear(x, y, r = 0.5) {
   for (const id in G.monsters) { const m = G.monsters[id]; if (!m.dieAt && dist(m.rx, m.ry, x, y) < r) return true; }
   return false;
 }
-function freeAt(x, y, z) { return canStandZ(x, y, z, 0.22) && (z >= 0.5 || !monsterNear(x, y)); }
+function freeAt(x, y, z) { const me = G.me; if (me && me.fl > 0) return canStandFloor(x, y, me.fb, me.fl, 0.22); return canStandZ(x, y, z, 0.22) && (z >= 0.5 || !monsterNear(x, y)); }
 
 function myInput() {
   const k = G.keys;
@@ -251,7 +254,19 @@ function updateLocal(now, dt) {
   me.walking = moved > 0.0005;
   me.walkDist += moved;
   if (me.walking && Math.random() < 0.08) { const w = tileW(me.x, me.y, me.z * FLOOR_PX); spawnPart('dust', w.x, w.y); }
-  // torres-escada: pisar na escada em espiral sobe; pisar no alçapão lá em cima desce
+  // escadas dentro dos prédios: pisar na escada leva ao andar de cima / de baixo
+  if ((me.z || 0) < 0.5 && now >= (G.climbT || 0)) {
+    const fl = me.fl || 0, bi = fl > 0 ? me.fb : bldAt(me.x, me.y), b = BUILDINGS[bi];
+    if (b && b.kind !== 'stairtower') {
+      const nF = floorsOf(b), opts = [];
+      if (fl < nF - 1) opts.push([fl + 1, stairTile(b, fl)]);
+      if (fl > 0) opts.push([fl - 1, stairTile(b, fl - 1)]);
+      let near = false;
+      for (const [to, [sx, sy]] of opts) { const d = Math.hypot(me.x - sx, me.y - sy); if (d < 0.9) near = true; if (d < 0.4 && G.stairArm !== sx + ',' + sy + fl) { G.climbT = now + 900; G.stairArm = sx + ',' + sy + to; G.path = null; G.pathGoal = null; fadeFlash(); Net.send({ t: 'floor', b: bi, to }); break; } }
+      if (!near) G.stairArm = null;
+    }
+  }
+  // torres-escada: pisar na escada sobe para a muralha; pisar no alçapão lá em cima desce
   for (let bi = 0; bi < BUILDINGS.length; bi++) {
     const b = BUILDINGS[bi]; if (b.kind !== 'stairtower') continue;
     const cx = b.x + 1, cy = b.y + 1, d = Math.hypot(me.x - cx, me.y - cy);
@@ -268,6 +283,13 @@ function updateLocal(now, dt) {
   // na rampa, centraliza suavemente no degrau
   { const t = tileAt(me.x, me.y), d = WORLD.stair[t]; if (d && moved) { const k = Math.min(1, dt * 10); if (d <= 2) me.y += (Math.round(me.y) - me.y) * k; else me.x += (Math.round(me.x) - me.x) * k; } }
   me.rx = me.x; me.ry = me.y;
+  if (me.walking && me.emote) me.emote = null;
+  if (now - (G.autoT || 0) > 250 && !me.downed && !me.carrying && (me.z || 0) < 0.5 && !inSafe(me.x, me.y)) {
+    G.autoT = now;
+    const rng2 = CLASSES[me.cls].range, cur = G.target && G.monsters[G.target];
+    const keep = cur && !cur.dieAt && dist(me.x, me.y, cur.rx, cur.ry) <= rng2 * 1.5;
+    if (!keep) { let best = null, bd = rng2; for (const id in G.monsters) { const q = G.monsters[id]; if (q.dieAt || !q.visible) continue; const d = dist(me.x, me.y, q.rx, q.ry); if (d <= bd) { bd = d; best = q; } } if (best) setTarget(best.id); else if (cur && cur.dieAt) setTarget(null); }
+  }
   if (now - me.sendT > 100 && (moved || me.walking !== me.sentWalk)) {
     me.sendT = now; me.sentWalk = me.walking;
     Net.send({ t: 'mv', x: Math.round(me.x * 100) / 100, y: Math.round(me.y * 100) / 100, z: Math.round(me.z * 100) / 100, d: me.dir, w: me.walking ? 1 : 0, r: running ? 1 : 0 }, true);
@@ -591,6 +613,7 @@ canvas.addEventListener('mousedown', e => {
   const w = screenToWorld(e.clientX, e.clientY), tx = Math.round(w.x), ty = Math.round(w.y);
   if (!walkableTile(tx, ty, me.z)) return;
   G.pendingNpc = null;
+  if (me.fl > 0) { const w2 = screenToWorld(e.clientX, e.clientY); G.path = [[w2.x, w2.y]]; G.pathGoal = { x: Math.round(w2.x), y: Math.round(w2.y) }; return; }
   G.path = findPath(me.x, me.y, w.x, w.y, me.z, 0);
   if (G.path && G.path.length) G.path[G.path.length - 1] = [w.x, w.y];
   G.pathGoal = G.path ? { x: tx, y: ty } : null;
@@ -622,6 +645,7 @@ window.addEventListener('keydown', e => {
   if (k === 'x') { attackNearest(); return; }
   if (k === 'c' && !e.repeat) { if (G.me.sit) standUp(); else if (!G.me.walking) sitDown(null); return; }
   if (k === 'm' && !e.repeat) { toggleWorldMap(); return; }
+  if (k === 't') { if (!e.repeat) openEmoteWheel(); return; }
   if (k === ' ' || k === 'tab') {
     e.preventDefault();
     let best = null, bd = 99;
@@ -636,6 +660,7 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => {
   const k = e.key.toLowerCase();
   G.keys.delete(k);
+  if (k === 't' && G.wheel) closeEmoteWheel(true);
   if (k === 'f' && G.reviving) { Net.send({ t: 'revive', id: G.reviving, on: false }); G.reviving = null; }
 });
 window.addEventListener('blur', () => G.keys.clear());
@@ -735,7 +760,7 @@ function startGame() {
   $('btn-attack').onclick = attackNearest;
   if (matchMedia('(pointer: coarse)').matches) document.body.classList.add('touch');
   addChat('', `Bem-vindo a World of Sxan, ${G.me.name}. Fale com os moradores clicando neles. Enter abre o chat.`);
-  showBanner('Cidadela de Eldmar', 'Zona protegida — os monstros não atravessam o fosso.');
+  showBanner('Cidadela de Sxan', 'Zona protegida — os monstros não atravessam o fosso.');
 }
 
 // tooltips
@@ -818,6 +843,15 @@ function drawClassPreviews(now) {
     pctx.restore();
   }
 }
+// nível do personagem salvo com este nome e vocação (para liberar skins)
+function lobbyLvl(cls) { const nm = ($('name').value || '').trim().toLowerCase(); let l = 1; for (const ch of Object.values(loadChars())) if (ch.cls === cls && (ch.name || '').toLowerCase() === nm) l = Math.max(l, ch.lvl | 0); return l; }
+function refreshSkinLocks() {
+  document.querySelectorAll('.class-card').forEach(card => {
+    const cls = card.dataset.cls, lv = lobbyLvl(cls);
+    card.querySelectorAll('.skin').forEach(el => { const si = +el.dataset.si; el.classList.toggle('locked', lv < SKIN_LVL[si]); });
+    const cur = SKINS[cls].findIndex(s => s.id === chosenSkin[cls]); if (cur > 0 && lv < SKIN_LVL[cur]) { chosenSkin[cls] = SKINS[cls][0].id; card.querySelectorAll('.skin').forEach((el, i) => el.classList.toggle('sel', i === 0)); }
+  });
+}
 function buildLobby() {
   $('version').textContent = `${GAME_NAME} ${VERSION} · ${VERSION_NAME}`;
   const box = $('classes');
@@ -831,8 +865,9 @@ function buildLobby() {
     for (const s of SKINS[cls]) {
       const b = document.createElement('button');
       b.className = 'skin ' + s.rarity.toLowerCase().replace('á', 'a').replace('ê', 'e') + (chosenSkin[cls] === s.id ? ' sel' : '');
-      b.textContent = s.name; b.dataset.tip = `${s.name}\nRaridade: ${s.rarity}`;
-      b.onclick = ev => { ev.stopPropagation(); chosenSkin[cls] = s.id; chosenClass = cls; for (const el of skins.children) el.classList.toggle('sel', el === b); selectClass(cls); };
+      const si = SKINS[cls].indexOf(s); b.dataset.si = si; b.dataset.lvl = 'nv. ' + SKIN_LVL[si];
+      b.textContent = s.name; b.dataset.tip = `${s.name}\nRaridade: ${s.rarity}${si ? `\nLibera no nível ${SKIN_LVL[si]}` : ''}`;
+      b.onclick = ev => { ev.stopPropagation(); if (lobbyLvl(cls) < SKIN_LVL[si]) { showToast(`Esta skin libera no nível ${SKIN_LVL[si]}.`); return; } chosenSkin[cls] = s.id; chosenClass = cls; for (const el of skins.children) el.classList.toggle('sel', el === b); selectClass(cls); };
       skins.appendChild(b);
     }
     const desc = document.createElement('p'); desc.textContent = c.desc;
@@ -874,11 +909,13 @@ function buildLobby() {
       for (const el of $('swatches').children) el.classList.toggle('sel', el.dataset.col === chosenColor);
       selectClass(ch.cls);
       document.querySelectorAll('.class-card').forEach(card => { if (card.dataset.cls === ch.cls) card.querySelectorAll('.skin').forEach((el, i) => el.classList.toggle('sel', SKINS[ch.cls][i].id === chosenSkin[ch.cls])); });
+      refreshSkinLocks();
     };
     sv.appendChild(b);
   }
   if (!chars.length) sv.classList.add('hidden');
-  $('name').addEventListener('input', updateSavedInfo);
+  $('name').addEventListener('input', () => { updateSavedInfo(); refreshSkinLocks(); });
+  refreshSkinLocks();
   const urlCode = new URLSearchParams(location.search).get('sala');
   if (urlCode) $('code').value = urlCode.toUpperCase();
   $('btn-create').onclick = () => createRoom();
@@ -972,7 +1009,7 @@ function drawWorldMap() {
   x.textAlign = 'center'; x.textBaseline = 'middle';
   const label = (t, wx, wy, sz, col) => { const [px, py] = P(wx, wy); x.font = '700 ' + sz + 'px "Cinzel", serif'; x.lineWidth = 3; x.strokeStyle = 'rgba(240,226,190,0.85)'; x.strokeText(t, px, py); x.fillStyle = col; x.fillText(t, px, py); };
   for (const L of ZONE_LABELS) if (seen(L.x, L.y)) label(ZONES[L.z].name + (ZONES[L.z].stars ? ' ' + '★'.repeat(ZONES[L.z].stars) : ''), L.x, L.y, 13, '#4a2e14');
-  if (seen(C, C)) label('Eldmar', C, C + 2, 20, '#5a1a10');
+  if (seen(C, C)) label('Sxan', C, C + 2, 20, '#5a1a10');
   // marcos: lojas e NPCs já vistos
   const icons = { priest: '✚', merchant: '⚖', innkeeper: '🍺', smith: '⚒', captain: '!' };
   for (const n of NPCS) if (icons[n.kind] && seen(n.x, n.y)) { const [px, py] = P(n.x, n.y); x.font = '700 12px serif'; x.fillStyle = '#2a1a0a'; x.fillText(icons[n.kind], px, py); }
@@ -1047,7 +1084,7 @@ function prebakeCity(done) {
   }
   WORLD.gates.forEach((gt, gi) => { for (let q = 0; q <= 4; q++) jobs.push(() => scen3('gh|' + gi + '|' + q, () => mGateHouse(gt, q / 4))); });
   const ov = document.createElement('div'); ov.id = 'prebake';
-  ov.innerHTML = '<div class="pb-box"><div class="pb-title">Preparando Eldmar</div><div class="pb-bar"><div id="pb-fill"></div></div><div class="pb-txt" id="pb-txt">0%</div></div>';
+  ov.innerHTML = '<div class="pb-box"><div class="pb-title">Preparando Sxan</div><div class="pb-bar"><div id="pb-fill"></div></div><div class="pb-txt" id="pb-txt">0%</div></div>';
   document.body.appendChild(ov);
   const total = jobs.length; let k = 0;
   S3.pinning = true;
@@ -1058,4 +1095,32 @@ function prebakeCity(done) {
     if (k < total) requestAnimationFrame(step);
     else { S3.pinning = false; ov.style.opacity = 0; setTimeout(() => ov.remove(), 400); done && done(); }
   })();
+}
+
+// ============================================================
+//  RODA DE EMOJIS (segurar T, soltar sobre um): saudar, dançar, apontar
+// ============================================================
+const EMOTES = [{ k: 'salute', n: 'Saudar', i: '✋' }, { k: 'dance', n: 'Dançar', i: '💃' }, { k: 'point', n: 'Apontar', i: '👉' }];
+(function () {
+  const w = document.createElement('div'); w.id = 'emote-wheel'; w.className = 'hidden';
+  w.innerHTML = EMOTES.map((e, i) => '<div class="ew-opt" data-i="' + i + '" style="--a:' + (i * 120 - 90) + 'deg"><span>' + e.i + '</span><b>' + e.n + '</b></div>').join('') + '<div class="ew-hint">solte sobre um emoji</div>';
+  document.body.appendChild(w);
+  const st = document.createElement('style');
+  st.textContent = '#emote-wheel{position:fixed;left:50%;top:50%;width:0;height:0;z-index:30}#emote-wheel.hidden{display:none}#emote-wheel .ew-opt{position:absolute;width:86px;height:86px;margin:-43px;border-radius:50%;transform:rotate(var(--a)) translate(105px) rotate(calc(-1 * var(--a)));background:radial-gradient(#3a2e22ee,#14100cee);box-shadow:0 0 0 2px #8a6a2a;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#f0d890;font:700 12px Cinzel,serif;cursor:pointer;transition:transform .1s,box-shadow .1s}#emote-wheel .ew-opt span{font-size:30px}#emote-wheel .ew-opt.on{box-shadow:0 0 0 3px #f0d890,0 0 18px #f0c060;transform:rotate(var(--a)) translate(105px) rotate(calc(-1 * var(--a))) scale(1.12)}#emote-wheel .ew-hint{position:absolute;left:-90px;width:180px;top:150px;text-align:center;font:italic 13px Alegreya,serif;color:#e8dcc0;text-shadow:0 1px 3px #000}#btn-emote{position:fixed;top:316px;right:12px;z-index:5;width:36px;height:36px;border-radius:50%;border:0;font-size:18px;cursor:pointer;background:radial-gradient(#3a302a,#141010);box-shadow:0 0 0 1px #000,0 0 0 3px #8a6a2a;display:none}body.touch #btn-emote{display:block}';
+  document.head.appendChild(st);
+  const btn = document.createElement('button'); btn.id = 'btn-emote'; btn.textContent = '☺'; btn.title = 'Emojis (T)'; document.body.appendChild(btn);
+  btn.addEventListener('click', () => { if (G.wheel) closeEmoteWheel(false); else { openEmoteWheel(); G.wheel.tap = true; } });
+  w.querySelectorAll('.ew-opt').forEach(o => o.addEventListener('click', () => { G.wheel && (G.wheel.sel = +o.dataset.i); closeEmoteWheel(true); }));
+  window.addEventListener('mousemove', e => {
+    if (!G.wheel) return;
+    const dx = e.clientX - innerWidth / 2, dy = e.clientY - innerHeight / 2;
+    if (Math.hypot(dx, dy) < 40) { G.wheel.sel = -1; } else { const a = (Math.atan2(dy, dx) * 180 / Math.PI + 90 + 360 + 60) % 360; G.wheel.sel = Math.floor(a / 120); }
+    w.querySelectorAll('.ew-opt').forEach(o => o.classList.toggle('on', +o.dataset.i === G.wheel.sel));
+  });
+})();
+function openEmoteWheel() { if (!G.started || G.me.downed) return; G.wheel = { sel: -1 }; $('emote-wheel').classList.remove('hidden'); }
+function closeEmoteWheel(fire) {
+  const wl = G.wheel; G.wheel = null; $('emote-wheel').classList.add('hidden');
+  document.querySelectorAll('#emote-wheel .ew-opt').forEach(o => o.classList.remove('on'));
+  if (fire && wl && wl.sel >= 0) { const k = EMOTES[wl.sel].k; if (G.me.sit) standUp(); G.me.emote = { k, t0: performance.now() }; Net.send({ t: 'emote', k }); }
 }

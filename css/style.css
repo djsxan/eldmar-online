@@ -261,3 +261,26 @@ kbd { font-family: 'Alegreya Sans SC', sans-serif; font-size: 12px; font-weight:
   #quests { display: none; }
   #combat-pad { transform: scale(.8); transform-origin: bottom right; }
 }
+
+/* ===== HUD minimalista (v1.2) ===== */
+#char.panel { top: 10px; left: 10px; width: 190px; gap: 8px; padding: 6px 8px; background: rgba(10,7,4,0.35); border: 0; box-shadow: none; backdrop-filter: none; }
+#char .portrait-ring { width: 40px; height: 40px; box-shadow: 0 0 0 1px #000, 0 0 0 2px rgba(201,162,74,0.6); }
+#char #portrait { width: 40px; height: 42px; }
+#char #hud-lvl { font-size: 9px; padding: 0 4px; bottom: 0; }
+#char #hud-name { font-size: 11px; line-height: 1.1; opacity: .85; }
+#char #hud-class { display: none; }
+#char .bar { height: 5px; margin-top: 3px; border-radius: 3px; box-shadow: 0 0 0 1px rgba(0,0,0,.7); background: rgba(0,0,0,.45); }
+#char .bar > div { border-radius: 3px; }
+#char .bar span { display: none; }
+#char .bar.st, #char .bar.xp { height: 3px; }
+#char:hover .bar { height: 11px; } #char:hover .bar span { display: block; font-size: 9px; line-height: 11px; }
+#char .char-foot { font-size: 10px; margin-top: 2px; opacity: .75; }
+#char #combat-state { display: none; }
+#chat.panel.parch { background: transparent; border: 0; box-shadow: none; color: #f2e8d2; padding: 4px 6px; }
+#chat #chat-log { text-shadow: 0 1px 2px #000, 0 0 4px #000; font-size: 13px; height: 110px; mask-image: linear-gradient(transparent, #000 30%); -webkit-mask-image: linear-gradient(transparent, #000 30%); }
+#chat #chat-log b { color: #f0c870; }
+#chat #chat-log .sys { color: #d8c8a8; }
+#chat #chat-input { background: rgba(0,0,0,0.3); border: 1px solid rgba(201,162,74,0.25); color: #f2e8d2; font-size: 13px; padding: 4px 8px; }
+#chat #chat-input::placeholder { color: rgba(242,232,210,0.45); }
+.class-card .skin.locked { opacity: .45; cursor: not-allowed; position: relative; }
+.class-card .skin.locked::after { content: '🔒 ' attr(data-lvl); position: absolute; right: 4px; font-size: 10px; }

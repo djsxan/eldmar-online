@@ -324,7 +324,7 @@ function applyPose(R, Q, P, walkPh) {
     if (!R.weapon.bow) R.weapon.obj.rotation.x = (R.weapon.flip ? Math.PI : 0) - rel;
   }
   // quadril balança
-  R.hips.rotation.z = Q.sway || 0;
+  R.hips.rotation.z = Q.sway || 0; R.hips.rotation.y = Q.yaw || 0;
   // arco e escudo seguem a mão, mas ficam "de pé" (orientados pelo tronco)
   if ((R.weapon && R.weapon.bow) || R.shield) {
     R.root.updateMatrixWorld(true);

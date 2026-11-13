@@ -252,6 +252,8 @@ function heroPoseFor(e, now) {
     if (t >= 0 && t < 1 && ACTS[e.anim.a]) P.act = { k: e.anim.a, f: Math.min(11, Math.floor(t * 12)) };
   }
   if (e.cast && e.cast.end > now) P.act = { k: 'cast', f: Math.floor(now / 70) % 12 };
+  if (!P.act && e.emote && !e.walking) { const ms = ACT_MS[e.emote.k], t = (now - e.emote.t0) / ms; if (e.emote.k === 'dance') P.act = { k: 'dance', f: Math.floor(t * 12) % 12 }; else if (t < 1) P.act = { k: e.emote.k, f: Math.min(11, Math.floor(t * 12)) }; else e.emote = null; }
+  else if (e.walking && e.emote) e.emote = null;
   if (e.sit && !P.act) { P.sit = e.sit.chair ? 'c' : 'g'; P.walk = -1; return P; }
   if (!P.act && !e.walking && e.idleAnim) {
     const t = (now - e.idleAnim.t0) / e.idleAnim.dur;
@@ -651,13 +653,16 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     if ((g === T.GRASS || g === T.FOREST || g === T.SWAMP) && hash2(x, y, 5) < 0.25) visGrass.push({ wx, wy });
     if (WORLD.fl1[i] === 2 && !hideUpper) upper.push({ d: x + y, k: 5, x, y, sx, sy });
   }
-  const inB0 = me && (me.z || 0) < 0.5 ? bldAt(me.rx, me.ry) : -1;
+  const myFl = me ? (me.fl || 0) : 0, inB0 = me && (me.z || 0) < 0.5 ? (myFl > 0 ? me.fb : bldAt(me.rx, me.ry)) : -1;
+  const flRaise = (b, f) => f > 0 ? f * (bldDims(b).H / floorsOf(b)) * HV : 0;
   const addEnt = (e, kind) => {
     if (!e.visible) return;
     const p = iso(e.rx, e.ry), sx = p.sx + ox, sy = p.sy + oy - (e.z || 0) * FLOOR_PX;
     if (sx < -100 || sx > vw + 100 || sy < -40 || sy > vh + 200) return;
-    const it = { d: e.rx + e.ry, k: kind, e, sx, sy, tx: e.rx, ty: e.ry };
-    if ((e.z || 0) < 0.5 && inB0 >= 0 && bldAt(e.rx, e.ry) === inB0) it.inside = true;
+    const efl = e.fl || 0, ebi = (e.z || 0) < 0.5 ? (efl > 0 ? (e.fb ?? bldAt(e.rx, e.ry)) : bldAt(e.rx, e.ry)) : -1;
+    if (efl > 0 && !(ebi === inB0 && efl === myFl)) return;       // quem está em outro andar não aparece
+    const it = { d: e.rx + e.ry, k: kind, e, sx, sy: sy - (efl > 0 && ebi >= 0 ? flRaise(BUILDINGS[ebi], efl) : 0), tx: e.rx, ty: e.ry };
+    if ((e.z || 0) < 0.5 && inB0 >= 0 && ebi === inB0 && efl === myFl) it.inside = true;
     if ((e.z || 0) >= 0.5) { if (!hideUpper) upper.push(it); } else items.push(it);
   };
   for (const id in G.monsters) addEnt(G.monsters[id], 1);
@@ -784,8 +789,9 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
   // dentro de uma construção: a cidade escurece e o cômodo aparece cortado, com quem está dentro
   if (inside) {
     ctx.fillStyle = 'rgba(8,5,2,0.6)'; ctx.fillRect(-20, -20, vw + 40, vh + 40);
-    const s = interiorSprite(inside.b) || buildingSprite(inside.b, false);
-    if (s) pblit(ctx, s, inside.sx, inside.sy);
+    if (myFl > 0) { const s0 = interiorSprite(inside.b, myFl - 1); if (s0) pblit(ctx, s0, inside.sx, inside.sy - flRaise(inside.b, myFl - 1), 0.55); }
+    const s = interiorSprite(inside.b, myFl) || buildingSprite(inside.b, false);
+    if (s) pblit(ctx, s, inside.sx, inside.sy - flRaise(inside.b, myFl));
     for (const it of items) if (it.inside) drawItem(it);
   }
   // silhuetas: você (dourado) e amigos (azul) quando algo os esconde

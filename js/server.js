@@ -76,8 +76,8 @@ function hostOnClient(from, m) {
   if (m.t === 'hello') {
     if (p) return;
     const cls = CLASSES[m.cls] ? m.cls : 'knight';
-    const skin = SKINS[cls].some(s => s.id === m.skin) ? m.skin : SKINS[cls][0].id;
     const lvl = clamp(m.lvl | 0 || 1, 1, 300);
+    const si = SKINS[cls].findIndex(s => s.id === m.skin), skin = si >= 0 && lvl >= SKIN_LVL[si] ? m.skin : SKINS[cls][0].id;
     const s = townSpot();
     const np = {
       id: from, name: String(m.name || 'Aventureiro').slice(0, 16), cls, skin,
@@ -96,7 +96,7 @@ function hostOnClient(from, m) {
     Net.toOne(from, { t: 'welcome', you: from, x: np.x, y: np.y, players: Object.values(S.players).map(pinfo) });
     Net.toOthers({ t: 'pinfo', p: pinfo(np) }, from);
     sendStat(np);
-    sys(`${np.name}, ${CLASSES[cls].name}, chegou à Cidadela de Eldmar.`);
+    sys(`${np.name}, ${CLASSES[cls].name}, chegou à Cidadela de Sxan.`);
     return;
   }
   if (!p) return;
@@ -133,6 +133,15 @@ function hostOnClient(from, m) {
       Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: p.z, climb: (m.b | 0) + 1 });
       break;
     }
+    case 'floor': {
+      const b = BUILDINGS[m.b | 0], to = m.to | 0, fl = p.fl || 0; if (!b || p.downed || p.carriedBy || Math.abs(to - fl) !== 1 || to < 0 || to >= floorsOf(b)) break;
+      const st = stairTile(b, Math.min(fl, to)); if (dist(p.x, p.y, st[0], st[1]) > 1.2) break;
+      const [ax, ay] = stairArrive(b, Math.min(fl, to)); p.x = ax; p.y = ay; p.fl = to; p.fb = to > 0 ? (m.b | 0) : -1; p.lastMv = now_(); p.sit = null;
+      if (p.carrying) { const t = S.players[p.carrying]; if (t) { t.x = p.x; t.y = p.y; t.fl = p.fl; t.fb = p.fb; } }
+      Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: 0, fl: p.fl, fb: p.fb });
+      break;
+    }
+    case 'emote': { const k = ['salute', 'dance', 'point'].includes(m.k) ? m.k : null; if (k && !p.downed) near(p.x, p.y, { t: 'emote', id: p.id, k }); break; }
     case 'sit': {
       if (!m.on || p.downed || p.carrying || p.carriedBy) { p.sit = null; break; }
       const st = m.s != null ? WORLD.seats[m.s | 0] : null;
@@ -152,8 +161,8 @@ function handleMove(p, m) {
   const z = heightAt(x, y, p.z);
   const dt = Math.min(1, (now - p.lastMv) / 1000);
   const maxStep = PLAYER_SPEED * (m.r ? RUN_MUL * 1.5 : 1.7) * (dt + 0.25) + 0.4;
-  const ok = dist(p.x, p.y, x, y) <= maxStep && canStandZ(x, y, z, 0.18) && Math.abs(z - (+m.z || 0)) < 0.45;
-  if (!ok) { Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: p.z }); return; }
+  const ok = dist(p.x, p.y, x, y) <= maxStep && canStandZ(x, y, z, 0.18, p.fl || 0, p.fb ?? -1) && Math.abs(z - (+m.z || 0)) < 0.45;
+  if (!ok) { Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: p.z, fl: p.fl || 0, fb: p.fb ?? -1 }); return; }
   if (p.sit && dist(p.x, p.y, x, y) > 0.05) p.sit = null;
   p.x = x; p.y = y; p.z = z; p.dir = m.d | 0; p.walking = !!m.w; p.running = !!m.r; p.lastMv = now;
   if (p.casting && dist(p.x, p.y, p.castX, p.castY) > 0.3) { p.casting = null; near(p.x, p.y, { t: 'castend', id: p.id }); }
@@ -168,7 +177,8 @@ function dropCarried(p) {
   for (const [dx, dy] of [[0.6, 0], [-0.6, 0], [0, 0.6], [0, -0.6], [0, 0]]) if (canStandZ(p.x + dx, p.y + dy, p.z)) { t.x = p.x + dx; t.y = p.y + dy; break; }
   t.z = p.z;
   near(p.x, p.y, { t: 'carry', by: p.id, id: null });
-  Net.toOne(t.id, { t: 'tp', x: t.x, y: t.y, z: t.z });
+  t.fl = p.fl || 0; t.fb = p.fb ?? -1;
+  Net.toOne(t.id, { t: 'tp', x: t.x, y: t.y, z: t.z, fl: t.fl, fb: t.fb });
 }
 
 function hostOnLeave(id) {
@@ -192,6 +202,13 @@ function roll(p, mult = 1) {
   return { dmg: Math.max(1, Math.round(dmg)), crit };
 }
 
+function hitRolled(p, m, dmg, crit, delay, hv) {
+  if (!S.monsters[m.id]) return;
+  m.hp -= dmg; m.aggro = p.id; m.returning = false;
+  p.lastCombat = now_();
+  near(m.x, m.y, { t: 'hit', k: 'm', id: m.id, x: m.x, y: m.y, dmg, crit, d: delay, by: p.id, ax: p.x, ay: p.y, hv });
+  if (m.hp <= 0) killMonster(m, p, delay);
+}
 function hitMonster(p, m, mult, delay = 0) {
   if (!S.monsters[m.id]) return;
   const { dmg, crit } = roll(p, mult);
@@ -279,7 +296,7 @@ function revivePlayer(p, frac, by) {
   near(p.x, p.y, { t: 'up', id: p.id });
   aoe('heal', p.x, p.y, { id: p.id });
   sys(by ? `${by} reanimou ${p.name}.` : `${p.name} foi reanimado.`);
-  Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: p.z });
+  Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: p.z, fl: p.fl || 0, fb: p.fb ?? -1 });
   sendStat(p);
 }
 function respawnTemple(p) {
@@ -287,7 +304,7 @@ function respawnTemple(p) {
   p.carriedBy = null; p.downed = null; p.revive = null;
   p.xp = Math.floor(p.xp / 2);
   p.hp = p.maxHp; p.mp = p.maxMp; p.lastCombat = 0;
-  const s = townSpot(); p.x = s.x; p.y = s.y; p.z = 0;
+  const s = townSpot(); p.x = s.x; p.y = s.y; p.z = 0; p.fl = 0; p.fb = -1;
   Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: 0 });
   Net.toOne(p.id, { t: 'respawned' });
   near(p.x, p.y, { t: 'up', id: p.id });
@@ -296,12 +313,46 @@ function respawnTemple(p) {
 
 const flight = (ax, ay, bx, by) => 120 + Math.hypot(ax - bx, ay - by) * 55;
 
+// monstro atrás do jogador (para os giros de 180°)
+function monBehind(p, m, range) {
+  const fx = m.x - p.x, fy = m.y - p.y, fl = Math.hypot(fx, fy) || 1;
+  let best = null, bd = 1e9;
+  for (const id in S.monsters) { const q = S.monsters[id]; if (q === m) continue; const dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy); if (d > range || d < 0.3) continue; if ((dx * fx + dy * fy) / (d * fl) > -0.5) continue; if (d < bd) { bd = d; best = q; } }
+  return best;
+}
+function shot(p, kind, tx, ty, d, delay) { near(p.x, p.y, { t: 'proj', id: p.id, kind, tx, ty, d, delay }); }
 function basicAttack(p, m, now) {
-  const c = CLASSES[p.cls];
+  const c = CLASSES[p.cls], r = Math.random();
   p.nextAtk = now + c.atkMs * (buffOn(p, 'agile') ? 0.5 : 1);
-  if (p.cls === 'knight') { anim('p', p, 'swing', m.x, m.y); hitMonster(p, m, 1, 180); }
-  else if (p.cls === 'archer') { const d = flight(p.x, p.y, m.x, m.y) + 200; anim('p', p, 'shoot', m.x, m.y, { proj: 'arrow', d }); hitMonster(p, m, 1, d); }
-  else { const d = flight(p.x, p.y, m.x, m.y) + 150; anim('p', p, 'bolt', m.x, m.y, { proj: 'bolt', d }); hitMonster(p, m, 1, d); }
+  if (p.cls === 'knight') {
+    const { dmg, crit } = roll(p, 1);
+    if (dmg >= m.hp && r < 0.6) { anim('p', p, 'execute', m.x, m.y); hitRolled(p, m, Math.max(dmg, m.hp), true, 380, 1); return; }   // golpe na cabeça: termina o inimigo
+    if (r < 0.25 && dist(p.x, p.y, m.x, m.y) < 1.25) {                                                                              // chute: empurra 1 tile
+      anim('p', p, 'kick', m.x, m.y); hitRolled(p, m, dmg, crit, 260, 0);
+      const dx = m.x - p.x, dy = m.y - p.y, l = Math.hypot(dx, dy) || 1, nx = m.x + dx / l, ny = m.y + dy / l;
+      if (S.monsters[m.id] && monStand(nx, ny, m)) { m.x = nx; m.y = ny; m.stunUntil = Math.max(m.stunUntil, now + 500); }
+      return;
+    }
+    anim('p', p, 'swing', m.x, m.y); hitRolled(p, m, dmg, crit, 180, 0); return;
+  }
+  const kind = p.cls === 'archer' ? 'arrow' : 'bolt', base = p.cls === 'archer' ? 'shoot' : 'bolt', d = flight(p.x, p.y, m.x, m.y) + (p.cls === 'archer' ? 200 : 150);
+  if (r < 0.25) {
+    if (p.cls === 'archer') { anim('p', p, 'quiver', m.x, m.y, { proj: kind, d: d + 260 }); hitMonster(p, m, 1.25, d + 260); return; }     // flecha do quiver: +25%
+    const n = Object.values(S.monsters).filter(q => q !== m && dist(q.x, q.y, m.x, m.y) <= 1.8).sort((a, b) => dist(a.x, a.y, m.x, m.y) - dist(b.x, b.y, m.x, m.y))[0];
+    anim('p', p, 'dualcast', m.x, m.y, { proj: kind, d }); hitMonster(p, m, 1, d);                                                          // duas mãos: acerta um vizinho
+    if (n) { shot(p, kind, n.x, n.y, d, 60); hitMonster(p, n, 0.6, d + 60); }
+    return;
+  }
+  if (r < 0.5) {
+    const back = monBehind(p, m, c.range);
+    if (back) {                                                                                                                            // giro de 180°: segundo alvo atrás
+      const a = p.cls === 'archer' ? 'turnshot' : 'turncast', ms = 950;
+      anim('p', p, a, m.x, m.y, { proj: kind, d }); hitMonster(p, m, 1, d);
+      const d2 = flight(p.x, p.y, back.x, back.y) + 120; shot(p, kind, back.x, back.y, d2, ms * 0.62); hitMonster(p, back, 0.8, ms * 0.62 + d2);
+      return;
+    }
+  }
+  anim('p', p, base, m.x, m.y, { proj: kind, d }); hitMonster(p, m, 1, d);
 }
 
 // ---------------- habilidades ----------------
@@ -571,7 +622,7 @@ function hostTick() {
     const pl = [], ml = [];
     for (const p of players) {
       if (dist(p.x, p.y, r.x, r.y) > VIEW_RADIUS) continue;
-      let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0) | (p.running && p.walking ? 256 : 0) | (p.sit ? 512 : 0) | (p.sit === 'c' ? 1024 : 0);
+      let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0) | (p.running && p.walking ? 256 : 0) | (p.sit ? 512 : 0) | (p.sit === 'c' ? 1024 : 0) | ((p.fl || 0) << 11);
       for (const b in BUFF_BITS) if (buffOn(p, b)) fl |= BUFF_BITS[b];
       pl.push([p.id, Math.round(p.x * 100), Math.round(p.y * 100), Math.round(p.z * 100), p.dir | 0, fl, Math.round(p.hp / p.maxHp * 100), p.carrying || 0]);
     }

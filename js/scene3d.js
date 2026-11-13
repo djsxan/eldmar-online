@@ -840,13 +840,8 @@ function mStairTower(b, cut) {
   }
   // escada em espiral: degraus em leque subindo em volta de um pilar central
   const pillarM = smat('stoneblock', '#9a948a', { bump: 1.2 }), stepM = smat('stoneblock', '#b4ae9f', { bump: 1.2 });
-  o.add(mk(new THREE.CylinderGeometry(0.16, 0.18, H, 12).translate(cx, H / 2, cz), pillarM));
-  const N = 20;
-  for (let k = 0; k < N; k++) {
-    const a = k / N * Math.PI * 2.4 + Math.PI * 0.5, y = (k + 1) / N * H;
-    const st = mk(new THREE.BoxGeometry(1.1, 0.1, 0.42).translate(0.7, 0, 0), stepM);
-    st.position.set(cx, y - 0.05, cz); st.rotation.y = -a; o.add(st);
-  }
+  // escada reta de 1 tile no centro, subindo para o fundo, com uma abertura escura no alto
+  { const n = 8; for (let k = 0; k < n; k++) o.add(wbox(0.8, (k + 1) * 0.32, 0.9 / n, cx, (k + 1) * 0.16, cz + 0.45 - (k + 0.5) * 0.9 / n, stepM, 2)); for (const x of [cx - 0.44, cx + 0.44]) o.add(wbox(0.06, 2.6, 0.9, x, 1.3, cz, pillarM, 2)); o.add(mk(new THREE.BoxGeometry(0.8, 0.02, 0.9).translate(cx, 0.07, cz), smat(null, '#c8a050', { emissive: '#6a4a10', ei: 0.25, transparent: true, opacity: 0.3 }), false)); }
   if (cut) { const lp = new THREE.PointLight(0xffc070, 0.9, 3.5); lp.position.set(cx + 0.8, 1.2, cz + 0.8); o.add(lp); }
   return o;
 }
@@ -964,7 +959,7 @@ function mBuilding(b, night) {
   const w = b.w, h = b.h, { H, RH } = bldDims(b), o = grp(), R = rng(b.x * 31 + b.y * 7), seed = b.x * 0.37 + b.y;
   const st = styleOf(b);
   const trimM = smat('wood', st.trim, { bump: 1 }), stoneM = '#8e887c';
-  const floors = Math.max(1, Math.round(H / 1.5)), fh = H / floors;
+  const floors = b.floors || Math.max(1, Math.round(H / 1.5)), fh = H / floors;
   const timber = st.tex === 'plaster';
   // térreo de pedra nas casas de 2+ andares; andares de cima em enxaimel avançando sobre a rua
   const jet = timber && floors >= 2 ? 0.22 : 0;
@@ -1124,12 +1119,12 @@ function mBuilding(b, night) {
 // ============================================================
 //  INTERIORES (aparecem quando o telhado some)
 // ============================================================
-function mInterior(b) {
-  const [w, h] = bDims(b), { H } = bldDims(b), o = grp(), L = interiorLayout(b), R = rng(b.x * 13 + b.y);
+function mInterior(b, fl = 0) {
+  const [w, h] = bDims(b), { H } = bldDims(b), o = grp(), L = interiorLayout(b, fl), R = rng(b.x * 13 + b.y), nF = floorsOf(b);
   const stoneK = b.kind === 'temple' || b.kind === 'castle' || b.kind === 'smith' || b.kind === 'barracks';
   const floorM = stoneK ? smat('stoneblock', b.kind === 'castle' ? '#a8a092' : '#8e887c', { bump: 1 }) : smat('wood', b.kind === 'stable' ? '#8a6a3e' : '#7a5232', { bump: 1.2 });
   const wallM = stoneK ? smat('brick', b.kind === 'castle' ? '#b4ad9c' : '#a29c90', { bump: 1.2 }) : smat('plaster', '#e2d6bc', { bump: 0.7 });
-  const trimM = smat('wood', '#4a2f17'), hw = Math.min(H, b.kind === 'castle' || b.kind === 'temple' ? 5 : 2.3), t = 0.16;
+  const trimM = smat('wood', '#4a2f17'), hw = Math.min(H / nF, b.kind === 'castle' || b.kind === 'temple' ? 5 : 2.3), t = 0.16;
   o.add(mk(wuv(new THREE.BoxGeometry(w, 0.06, h).translate(w / 2, 0.03, h / 2), 1), floorM));
   // quais paredes (no quadro local) ficam viradas para a câmera depende do lado da porta
   const knee = { S: ['front', 'right'], N: ['back', 'left'], E: ['front', 'left'], W: ['back', 'right'] }[b.realDoor || 'S'];
@@ -1140,6 +1135,8 @@ function mInterior(b) {
   if (dx - 0.6 > 0) wallSeg('front', dx - 0.6, t, (dx - 0.6) / 2, h - t / 2);
   if (w - dx - 0.6 > 0) wallSeg('front', w - dx - 0.6, t, (dx + 0.6 + w) / 2, h - t / 2);
   if (!knee.includes('front')) o.add(mk(wuv(new THREE.BoxGeometry(1.2, hw - 1.3, t).translate(dx, 1.3 + (hw - 1.3) / 2, h - t / 2), 0.7), wallM));
+  if (fl > 0 && !knee.includes('front')) o.add(mk(wuv(new THREE.BoxGeometry(1.2, 1.3, t).translate(dx, 0.65, h - t / 2), 0.7), wallM));
+  if (fl > 0) o.add(mk(wuv(new THREE.BoxGeometry(w, 0.18, h).translate(w / 2, -0.09, h / 2), 1), smat('wood', '#4e3420', { bump: 1 })));
   // janelas com luz entrando, só nas paredes inteiras
   if (!knee.includes('back')) for (let k = 0; k < Math.floor(w / 2); k++) o.add(mk(new THREE.BoxGeometry(0.42, 0.6, 0.03).translate(1 + k * 2, hw * 0.6, t + 0.02), lightWin));
   if (!knee.includes('left')) for (let k = 0; k < Math.floor(h / 2); k++) o.add(mk(new THREE.BoxGeometry(0.03, 0.6, 0.42).translate(t + 0.02, hw * 0.6, 1 + k * 2), lightWin));
@@ -1171,6 +1168,8 @@ function mInterior(b) {
       case 'cauldron': g.add(mk(new THREE.SphereGeometry(0.32, 14, 10, 0, 6.28, Math.PI * 0.3, Math.PI * 0.7).translate(0, 0.42, 0), smat(null, '#1e1e22', { metal: 0.6, rough: 0.5, side: THREE.DoubleSide }))); g.add(mk(new THREE.CylinderGeometry(0.26, 0.26, 0.02, 14).translate(0, 0.6, 0), smat(null, '#3ad878', { emissive: '#1a9a4a', ei: 1.3 }))); break;
       case 'forge': g.add(wbox(1.8, 0.8, 0.85, 0, 0.4, -0.05, smat('brick', '#6a665e', { bump: 1.4 }), 1.5)); g.add(mk(new THREE.BoxGeometry(1.2, 0.05, 0.55).translate(0, 0.82, 0), smat(null, '#3a1208', { emissive: '#ff5a10', ei: 2 }))); g.add(mk(new THREE.ConeGeometry(0.8, 0.9, 4).rotateY(Math.PI / 4).translate(0, 1.9, -0.15), smat('brick', '#5a564e'))); g.add(wbox(0.4, 1.0, 0.4, 0, 2.6, -0.25, smat('brick', '#5a564e'), 1.5)); { const pl = new THREE.PointLight(0xff7a30, 1.8, 5); pl.position.set(0, 1.1, 0.4); g.add(pl); } break;
       case 'anvil': g.add(mAnvil()); break;
+      case 'stairup': { const sm = smat('wood', '#6a4a2c', { bump: 1.2 }), n = 7; for (let s2 = 0; s2 < n; s2++) g.add(wbox(0.8, (s2 + 1) * 0.3, 0.86 / n, 0, (s2 + 1) * 0.15, 0.43 - (s2 + 0.5) * 0.86 / n, sm, 2)); for (const x of [-0.42, 0.42]) { g.add(limb(V3(x, 0.55, 0.45), V3(x, 2.4, -0.4), 0.025, 0.025, DW(), 5)); g.add(wbox(0.05, 0.6, 0.05, x, 0.3, 0.45, DW(), 2)); } g.add(mk(new THREE.BoxGeometry(0.9, 0.04, 0.9).translate(0, 0.075, 0), smat(null, '#c8a050', { emissive: '#6a4a10', ei: 0.25, transparent: true, opacity: 0.35 }), false)); break; }
+      case 'stairdown': { g.add(mk(new THREE.BoxGeometry(0.8, 0.02, 0.86).translate(0, 0.07, 0), smat(null, '#120c06'))); const sm = smat('wood', '#6a4a2c', { bump: 1.2 }); for (let s2 = 0; s2 < 3; s2++) g.add(wbox(0.78, 0.06, 0.2, 0, 0.04 - s2 * 0.0, 0.32 - s2 * 0.22, sm, 2)); for (const x of [-0.44, 0.44]) { g.add(wbox(0.05, 0.75, 0.9, x, 0.38, 0, DW(), 2)); } g.add(wbox(0.9, 0.75, 0.05, 0, 0.38, -0.45, DW(), 2)); g.add(mk(new THREE.BoxGeometry(0.9, 0.04, 0.9).translate(0, 0.08, 0), smat(null, '#c8a050', { emissive: '#6a4a10', ei: 0.25, transparent: true, opacity: 0.3 }), false)); break; }
       case 'rack': g.add(mWeaponRack().rotateY(backZ ? 0 : Math.PI / 2)); break;
       case 'trough': g.add(wbox(f.w - 0.2, 0.4, 0.5, 0, 0.2, 0, W_(), 2)); g.add(mk(new THREE.BoxGeometry(f.w - 0.35, 0.02, 0.36).translate(0, 0.36, 0), smat(null, '#3a5a6a', { rough: 0.1 }))); break;
       case 'hay': g.add(mHay()); break;
@@ -1181,14 +1180,14 @@ function mInterior(b) {
       case 'rug': g.add(mk(new THREE.BoxGeometry(Math.min(3, w - 1.4), 0.015, Math.min(h - 1.4, b.kind === 'castle' ? h - 3 : 2)).translate(0, 0.07, b.kind === 'castle' ? (h - 3) / 2 - 0.5 : 0.5), cloth(b.kind === 'castle' ? '#8a1a1c' : ['#7a3a2a', '#3a4a6a', '#5a6a3a'][f.i % 3]))); break;
     }
     g.position.set(cx, 0, cz); g.userData.furn = 1;
-    { const sx = f.w > 1 || f.h > 1 || f.t === 'rug' ? 1 : 0.62; g.scale.set(sx, 0.55, sx); if (sx < 1) g.position.set(cx + (backX ? -0.15 : 0), 0, cz + (backZ ? -0.15 : 0)); }
+    { const sx = f.w > 1 || f.h > 1 || f.t === 'rug' || f.t === 'stairup' || f.t === 'stairdown' ? 1 : 0.62; if (f.t === 'stairup' || f.t === 'stairdown') { o.add(g); continue; } g.scale.set(sx, 0.55, sx); if (sx < 1) g.position.set(cx + (backX ? -0.15 : 0), 0, cz + (backZ ? -0.15 : 0)); }
     o.add(g);
   }
   return o;
 }
-function interiorSprite(b) {
-  const key = 'in|' + archKey(b) + '|' + (b.door || 'S');
-  return scen3(key, () => b.kind === 'stairtower' ? placeRot(b, mStairTower({ ...localB(b), realDoor: b.door || 'S' }, true)) : placeRot(b, mInterior({ ...localB(b), realDoor: b.door || 'S' })));
+function interiorSprite(b, fl = 0) {
+  const key = 'in|' + archKey(b) + '|' + (b.door || 'S') + '|' + fl;
+  return scen3(key, () => b.kind === 'stairtower' ? placeRot(b, mStairTower({ ...localB(b), realDoor: b.door || 'S' }, true)) : placeRot(b, mInterior({ ...localB(b), realDoor: b.door || 'S' }, fl)));
 }
 // ============================================================
 //  LIGAÇÃO: troca os desenhos pintados pelas fotos 3D (quando
@@ -1226,7 +1225,7 @@ function interiorSprite(b) {
   // luzes das janelas na altura nova das paredes
   window.buildingWindows = function (b) {
     if (b.kind === 'stairtower') return [];
-    const [A, D] = bDims(b), H = bldDims(b).H, out = [], fl = Math.max(1, Math.round(H / 1.5)), fh = H / fl;
+    const [A, D] = bDims(b), H = bldDims(b).H, out = [], fl = b.floors || 1, fh = H / fl;
     for (let f = 0; f < fl; f++) { const zc = (f * fh + fh * 0.55) * HV; for (let k = 0; k < Math.floor(A / 1.5); k++) { const [x, y] = localToWorld(b, (k + 0.5) * A / Math.floor(A / 1.5), D); out.push([x, y, zc]); } for (let k = 0; k < Math.floor(D / 1.5); k++) for (const u of [0, A]) { const [x, y] = localToWorld(b, u, (k + 0.5) * D / Math.floor(D / 1.5)); out.push([x, y, zc]); } }
     return out;
   };

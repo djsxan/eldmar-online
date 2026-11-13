@@ -23,14 +23,14 @@ const DIRS8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, 
 
 const Z = { VILLAGE: 0, FIELDS: 1, FOREST: 2, SWAMP: 3, BONES: 4, ORCS: 5, WILD: 6, OUTSKIRTS: 7 };
 const ZONES = [
-  { name: 'Cidadela de Eldmar', stars: 0, mons: [] },
-  { name: 'Campos de Eldmar', stars: 1, mons: ['rat', 'rat', 'slime'] },
+  { name: 'Cidadela de Sxan', stars: 0, mons: [] },
+  { name: 'Campos de Sxan', stars: 1, mons: ['rat', 'rat', 'slime'] },
   { name: 'Bosque Sombrio', stars: 2, mons: ['wolf', 'wolf', 'spider'] },
   { name: 'Pântano Pútrido', stars: 2, mons: ['toad', 'toad', 'slime'] },
   { name: 'Colinas de Ossos', stars: 3, mons: ['skeleton', 'skeleton', 'spider'] },
   { name: 'Acampamento Orc', stars: 3, mons: ['goblin', 'goblin', 'orc'] },
   { name: 'Terras Selvagens', stars: 4, mons: ['orc', 'troll', 'skeleton', 'orc'] },
-  { name: 'Arredores de Eldmar', stars: 0, mons: [] },
+  { name: 'Arredores de Sxan', stars: 0, mons: [] },
 ];
 
 function hash2(x, y, s) {
@@ -69,23 +69,23 @@ function zoneOf(x, y) {
   return Z.ORCS;
 }
 
-// ---------- cidade de Eldmar (coordenadas relativas ao centro) ----------
+// ---------- cidade de Sxan (coordenadas relativas ao centro) ----------
 const CASTLE = { x0: C - 32, y0: C - 32, x1: C + 33, y1: C + 33 };   // muralha externa
 const KEEP = { x0: C - 9, y0: C - 22, x1: C + 10, y1: C - 3 };       // castelo central
 const WALL_UNITS = 176 / (32 * Math.SQRT2 * Math.cos(Math.PI / 6));   // altura da muralha em tiles
-const BH = (kind, w, h, H, RH, name, extra) => ({ kind, w, h, H, RH, name: name || '', wall: Math.round(H * 19.6), roof: Math.round(RH * 19.6), ...extra });
+const BH = (kind, w, h, H, RH, name, extra) => ({ kind, w, h, H, RH, floors: Math.max(1, Math.min(3, Math.round(H / 1.75))), name: name || '', wall: Math.round(H * 19.6), roof: Math.round(RH * 19.6), ...extra });
 const BUILDINGS = TEST3D ? [] : [
-  { x: C - 28, y: C - 29, ...BH('temple', 9, 8, 9.0, 6.5, 'Catedral da Aurora') },
-  { x: C + 13, y: C - 7, ...BH('shop', 5, 5, 6.2, 3.6, 'Empório do Borin') },
-  { x: C + 21, y: C + 8, ...BH('smith', 6, 5, 4.6, 3.2, 'Forja de Hrodgar') },
-  { x: C - 16, y: C + 22, ...BH('tavern', 7, 6, 6.4, 4.2, 'Taverna do Javali') },
-  { x: C + 5, y: C + 22, ...BH('barracks', 8, 5, 5.2, 3.4, 'Quartel da Guarda') },
-  { x: C - 28, y: C + 24, ...BH('stable', 5, 4, 3.8, 2.8, 'Estábulo') },
-  { x: C + 13, y: C + 0, ...BH('shop', 5, 4, 6.8, 3.4, 'Boticário de Elva', { v: 1 }) },
-  { x: C + 21, y: C - 8, ...BH('shop', 6, 5, 8.2, 4.0, 'Arcanos & Varinhas', { v: 2 }) },
-  { x: C + 13, y: C + 9, ...BH('shop', 5, 5, 6.4, 3.6, 'Alfaiataria Real', { v: 3 }) },
-  { x: C + 21, y: C + 15, ...BH('shop', 6, 4, 5.8, 3.4, 'Pergaminhos & Mapas', { v: 4 }) },
-  { x: C - 5, y: C - 19, ...BH('castle', 12, 10, 10, 6.5, 'Castelo de Eldmar') },
+  { x: C - 28, y: C - 29, ...BH('temple', 9, 8, 6.5, 5.0, 'Catedral da Aurora', { floors: 1 }) },
+  { x: C + 13, y: C - 7, ...BH('shop', 5, 5, 4.0, 2.8, 'Empório do Borin') },
+  { x: C + 21, y: C + 8, ...BH('smith', 6, 5, 2.6, 2.6, 'Forja de Hrodgar') },
+  { x: C - 16, y: C + 22, ...BH('tavern', 7, 6, 4.2, 3.0, 'Taverna do Javali') },
+  { x: C + 5, y: C + 22, ...BH('barracks', 8, 5, 4.0, 2.6, 'Quartel da Guarda') },
+  { x: C - 28, y: C + 24, ...BH('stable', 5, 4, 2.6, 2.4, 'Estábulo', { floors: 1 }) },
+  { x: C + 13, y: C + 0, ...BH('shop', 5, 4, 4.0, 2.8, 'Boticário de Elva', { v: 1 }) },
+  { x: C + 21, y: C - 8, ...BH('shop', 6, 5, 5.4, 3.4, 'Arcanos & Varinhas', { v: 2 }) },
+  { x: C + 13, y: C + 9, ...BH('shop', 5, 5, 4.0, 2.8, 'Alfaiataria Real', { v: 3 }) },
+  { x: C + 21, y: C + 15, ...BH('shop', 6, 4, 2.6, 2.6, 'Pergaminhos & Mapas', { v: 4 }) },
+  { x: C - 5, y: C - 19, ...BH('castle', 12, 10, 10, 6.5, 'Castelo de Sxan', { floors: 2 }) },
 ];
 // portas: lado S (+y, padrão), N (-y), E (+x) ou W (-x). O layout interno usa um "quadro local":
 // i = posição ao longo da parede da porta (largura A), j = profundidade (0 = fundo, D-1 = linha da porta)
@@ -108,9 +108,9 @@ function bDir(b, d) {
 const doorCol = b => Math.floor((bDims(b)[0] - 1) / 2);
 // 10 modelos de casa (A = largura da fachada com a porta, D = profundidade)
 const HOUSE_TYPES = [
-  { A: 4, D: 4, H: 4.4, RH: 3.2, v: 1 }, { A: 5, D: 4, H: 5.9, RH: 3.4, v: 0 }, { A: 4, D: 5, H: 5.9, RH: 3.8, v: 3 },
-  { A: 5, D: 5, H: 7.4, RH: 3.6, v: 2 }, { A: 6, D: 4, H: 4.4, RH: 3.0, v: 5 }, { A: 6, D: 5, H: 5.9, RH: 4.2, v: 4 },
-  { A: 4, D: 4, H: 7.4, RH: 3.0, v: 0 }, { A: 5, D: 4, H: 4.4, RH: 3.6, v: 3 }, { A: 6, D: 5, H: 7.4, RH: 4.0, v: 1 }, { A: 5, D: 5, H: 5.9, RH: 3.2, v: 5 },
+  { A: 4, D: 4, H: 2.4, RH: 2.4, v: 1, floors: 1 }, { A: 5, D: 4, H: 2.4, RH: 2.6, v: 0, floors: 1 }, { A: 5, D: 5, H: 2.6, RH: 2.8, v: 3, floors: 1 }, { A: 6, D: 4, H: 2.4, RH: 2.6, v: 5, floors: 1 },
+  { A: 4, D: 5, H: 4.0, RH: 2.6, v: 2, floors: 2 }, { A: 5, D: 4, H: 4.0, RH: 2.8, v: 4, floors: 2 }, { A: 6, D: 5, H: 4.0, RH: 3.0, v: 0, floors: 2 }, { A: 5, D: 5, H: 4.0, RH: 2.8, v: 3, floors: 2 },
+  { A: 5, D: 5, H: 5.4, RH: 3.0, v: 1, floors: 3 }, { A: 6, D: 5, H: 5.4, RH: 3.2, v: 5, floors: 3 },
 ];
 // chave do desenho: casas do mesmo modelo e lado de porta compartilham a mesma foto
 function archKey(b) { return b.arch != null ? 'h' + b.arch : 'u' + b.x + '_' + b.y; }
@@ -126,9 +126,18 @@ function doorTile(b) { const [A, D] = bDims(b); return bLocal(b, doorCol(b), D -
 const doorOf = b => { const [x, y] = doorTile(b), v = DOOR_V[b.door || 'S']; return { x: x + v[0] * 1.3, y: y + v[1] * 1.3 }; };
 // mobília dos interiores (coordenadas locais em tiles: i = coluna, j = linha; a porta fica na linha h-1)
 // direções de quem senta: 1 = olha +x, 3 = olha -y, 5 = olha -x, 7 = olha +y
-function interiorLayout(b) {
+// escadas: o andar f sobe pela escada STAIR_AT(b, f) e o andar f+1 desce pela mesma (canto do fundo, alternando)
+function stairAt(b, f) { const [A] = bDims(b); return f % 2 === 0 ? [A - 1, 0] : [0, 0]; }
+function floorsOf(b) { return b.kind === 'stairtower' ? 1 : (b.floors || 1); }
+function interiorLayout(b, fl = 0) {
   const [w, h] = bDims(b), F = [], taken = new Set(), key = (i, j) => i + ',' + j, dc = doorCol(b);
-  const corridor = (i, j) => i === dc && j >= h - 2;
+  const corridor = (i, j) => (fl === 0 && i === dc && j >= h - 2);
+  const nF = floorsOf(b);
+  // escadas deste andar (subir/descer) + o tile de chegada na frente delas ficam livres
+  const stairs = [];
+  if (fl < nF - 1) stairs.push(['stairup', ...stairAt(b, fl)]);
+  if (fl > 0) stairs.push(['stairdown', ...stairAt(b, fl - 1)]);
+  for (const [t, i, j] of stairs) { taken.add(key(i, j)); taken.add(key(i, j + 1)); F.push({ t, i, j, w: 1, h: 1, block: false }); }
   const can = (i, j) => i >= 0 && j >= 0 && i < w && j < h && !taken.has(key(i, j)) && !corridor(i, j);
   const put = (t, i, j, o = {}) => {
     const tw = o.w || 1, th = o.h || 1;
@@ -140,6 +149,16 @@ function interiorLayout(b) {
   let npc = null;
   const npcAt = (i, j) => { taken.add(key(i, j)); npc = { i, j }; };
   const k = b.kind;
+  if (fl > 0) {
+    // andares de cima: quartos, depósitos e aposentos
+    if (k === 'castle') { put('bed', 2, 0, { w: 2, h: 2, v: 1 }); put('chest', 4, 0); put('shelf', 5, 0); put('shelf', 6, 0); put('fireplace', w - 3, 0); if (put('table', 6, 4, { w: 2 })) { put('chair', 5, 4); put('chair', 8, 4); } put('banner', 0, 3); put('banner', 0, 6); put('candles', w - 1, 3); put('rug', 4, 3, { w: 4, h: 3, block: false }); }
+    else if (k === 'tavern') { for (const i of [1, 3, 5]) if (i < w - 1) { put('bed', i, 0, { h: 2 }); } put('chest', 2, 0); put('chest', 4, 0); if (put('table', 2, h - 2)) put('chair', 3, h - 2); put('barrel', w - 1, h - 1); put('rug', 2, 3, { w: 3, block: false }); }
+    else if (k === 'barracks') { for (const i of [1, 2, w - 2]) put('bunk', i, 0, { h: 2 }); put('rack', 3, 0); put('chest', 1, h - 1); put('chest', w - 2, h - 1); }
+    else if (k === 'shop') { for (let i = 1; i < w - 1; i++) put(i % 2 ? 'crate' : 'barrel', i, 0); put('shelf', 0, h - 2); put('shelf', w - 1, h - 2); put('crate', 1, h - 1); put('barrel', w - 2, h - 1); }
+    else if (fl === 1) { put('bed', 1, 0, { h: 2 }); put('chest', 2, 0); put('shelf', 0, h - 1); if (put('table', w - 2, h - 2)) put('chair', w - 3, h - 2); put('rug', 2, 2, { w: Math.max(1, w - 4), block: false }); }
+    else { put('crate', 1, 0); put('barrel', 2, 0); put('bed', 0, h - 2, { h: 2 }); put('crate', w - 1, h - 1); put('rug', 2, 2, { w: Math.max(1, w - 4), block: false }); }
+    return { F, npc: null };
+  }
   if (k === 'house') {
     put('bed', 0, 0, { h: 2 }); put('fireplace', w - 2, 0); put('barrel', w - 1, 0); put('chest', 1, 0);
     if (put('table', w - 2, h - 3)) { put('chair', w - 1, h - 3, { seat: 5 }); put('chair', w - 3, h - 3, { seat: 1 }); }
@@ -487,20 +506,23 @@ function generateWorld() {
   for (const b of BUILDINGS) reserve(b.x - 1, b.y - 1, b.x + b.w, b.y + b.h);
   const houses = [];
   const roadDist = (px, py) => { let best = 99; for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) { const xx = Math.round(px) + dx, yy = Math.round(py) + dy; if (inb(xx, yy) && rdir[idx(xx, yy)] && bld[idx(xx, yy)] < 0) best = Math.min(best, Math.abs(dx) + Math.abs(dy)); } return best; };
-  for (let k = 0; k < 12000 && houses.length < 46; k++) {
-    const ai = Math.floor(R(k, 1, 700) * HOUSE_TYPES.length), T0 = HOUSE_TYPES[ai];
+  for (let k = 0; k < 12000 && houses.length < 28; k++) {
     const x = x0 + 3 + Math.floor(R(k, 3, 700) * (x1 - x0 - 10)), y = y0 + 3 + Math.floor(R(k, 4, 700) * (y1 - y0 - 10));
+    const nearKeep = x > KEEP.x0 - 12 && x < KEEP.x1 + 10 && y > KEEP.y0 - 12 && y < KEEP.y1 + 12, rr = R(k, 1, 700);
+    const ai = nearKeep || rr < 0.5 ? Math.floor(R(k, 8, 700) * 4) : rr < 0.85 ? 4 + Math.floor(R(k, 8, 700) * 4) : 8 + Math.floor(R(k, 8, 700) * 2), T0 = HOUSE_TYPES[ai];
     let bestHb = null, bestD = 99;
     for (const door of ['S', 'N', 'E', 'W']) {
       const w = door === 'S' || door === 'N' ? T0.A : T0.D, h = door === 'S' || door === 'N' ? T0.D : T0.A;
       if (!free(x, y, w, h)) continue;
-      const hb = { x, y, ...BH('house', w, h, T0.H, T0.RH, '', { v: T0.v, arch: ai, door }) };
+      const hb = { x, y, ...BH('house', w, h, T0.H, T0.RH, '', { v: T0.v, arch: ai, door, floors: T0.floors }) };
+      { const [dtx, dty] = doorTile(hb), v = DOOR_V[door]; let okF = true; for (let q = 1; q <= 2; q++) { const fx = dtx + v[0] * q, fy = dty + v[1] * q; if (!inb(fx, fy) || bld[idx(fx, fy)] !== -1 || fx <= x0 + 1 || fx >= x1 - 1 || fy <= y0 + 1 || fy >= y1 - 1) okF = false; } if (!okF) continue; }
       const d0 = doorOf(hb), dd = roadDist(d0.x, d0.y);
       if (dd < bestD) { bestD = dd; bestHb = hb; }
     }
     if (!bestHb || bestD > 9) continue;
     const hb = bestHb, w = hb.w, h = hb.h;
     houses.push(hb);
+    { const [dtx, dty] = doorTile(hb), v = DOOR_V[hb.door]; for (let q = 1; q <= 2; q++) used[idx(dtx + v[0] * q, dty + v[1] * q)] = 1; }
     for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) bld[idx(xx, yy)] = -2; // marcador temporário
   }
   BUILDINGS.push(...houses);
@@ -591,6 +613,7 @@ function generateWorld() {
 
 // mobília -> obstáculos (PART) e assentos, no quadro do mundo
 function placeFurniture(b, bi, f, obj, seats, idx) {
+  if (f.t === 'stairup' || f.t === 'stairdown') return;
   for (let a = 0; a < f.w; a++) for (let c = 0; c < f.h; c++) { const [x, y] = bLocal(b, f.i + a, f.j + c); if (f.block) obj[idx(x, y)] = O.PART; }
   if (!f.seat) return;
   const dir = bDir(b, f.seat);
@@ -697,6 +720,25 @@ function edgeOk(ax, ay, bx, by) {
   const b = BUILDINGS[inB], [dtx, dty] = doorTile(b), v = DOOR_V[b.door || 'S'];
   return ix === dtx && iy === dty && ox === ix + v[0] && oy === iy + v[1];
 }
+// andares de cima: só dentro do prédio, sem móveis, paredes fechadas (sem porta)
+const FLOOR_BLOCK = new Map();
+function floorBlocked(bi, fl) {
+  const k = bi * 4 + fl; let s = FLOOR_BLOCK.get(k); if (s) return s;
+  s = new Set(); const b = BUILDINGS[bi];
+  for (const f of interiorLayout(b, fl).F) if (f.block) for (let a = 0; a < f.w; a++) for (let c = 0; c < f.h; c++) { const [x, y] = bLocal(b, f.i + a, f.j + c); s.add(y * MAP_W + x); }
+  FLOOR_BLOCK.set(k, s); return s;
+}
+function canStandFloor(x, y, bi, fl, r = 0.24) {
+  const b = BUILDINGS[bi]; if (!b) return false;
+  const t = 0.14, X0 = b.x - 0.5 + t + r, X1 = b.x - 0.5 + b.w - t - r, Y0 = b.y - 0.5 + t + r, Y1 = b.y - 0.5 + b.h - t - r;
+  if (x < X0 || x > X1 || y < Y0 || y > Y1) return false;
+  const bl = floorBlocked(bi, fl);
+  for (const [ox, oy] of [[-r, -r], [r, -r], [-r, r], [r, r]]) if (bl.has(Math.round(y + oy) * MAP_W + Math.round(x + ox))) return false;
+  return true;
+}
+// tile da escada (mundo) e chegada (na frente dela)
+function stairTile(b, f) { const [i, j] = stairAt(b, f); return bLocal(b, i, j); }
+function stairArrive(b, f) { const [i, j] = stairAt(b, f); return bLocal(b, i, j + 1); }
 function canStand(x, y, z = 0, r = 0.28) {
   if (z === 0 && wallHit(x, y, r)) return false;
   return walkableTile(Math.round(x - r), Math.round(y - r), z) && walkableTile(Math.round(x + r), Math.round(y - r), z) &&
@@ -734,7 +776,8 @@ function stairH(x, y) {
   return clamp((WORLD.stairK[ty * MAP_W + tx] + 0.5 + along) / STAIR_N, 0, 1);
 }
 // posição livre para quem está na altura z (contínua, 0..1)
-function canStandZ(x, y, z, r = 0.24) {
+function canStandZ(x, y, z, r = 0.24, fl = 0, fb = -1) {
+  if (fl > 0 && fb >= 0) return canStandFloor(x, y, fb, fl, r);
   const h0 = stairH(x, y);
   if (h0 >= 0) return Math.abs(h0 - z) <= 0.4; // em cima da rampa só importa a altura
   const L = z >= 0.5 ? 1 : 0;
