@@ -109,7 +109,7 @@ function buildHumanoid(L, opts = {}) {
   if (robe) {
     const pts = []; for (let i = 0; i <= 10; i++) { const t = i / 10; pts.push(new THREE.Vector2(0.17 + t * t * 0.17 + t * 0.05, -t * 0.82)); }
     const rg = geo('robe' + S, () => new THREE.LatheGeometry(pts.map(p => new THREE.Vector2(p.x * S, p.y * S)), 20));
-    const rb = mesh(rg, mat(hx(L.body), 'cloth'), 0, -0.04 * S, 0); rb.scale.set(1, 1, 0.82); spine.add(rb);
+    const rb = mesh(rg, mat(hx(L.body), 'cloth', { side: THREE.DoubleSide }), 0, -0.04 * S, 0); rb.scale.set(1, 1, 0.82); spine.add(rb);   // torno gerado de cima para baixo: normais para dentro, então desenha os dois lados
     const hem = mesh(torG(0.38 * S, 0.018 * S), trimM, 0, -0.86 * S, 0); hem.rotation.x = Math.PI / 2; hem.scale.set(1, 0.82, 1); spine.add(hem);
     R.robe = rb;
   }
@@ -183,6 +183,7 @@ function buildHead(head, L, S, skinM, accM, trimM) {
   if (L.hair && !helm && !hood) {
     const cap = mesh(sphG(0.112 * S), hairM, 0, 0.02 * S, -0.01 * S); cap.scale.set(0.95, 0.9, 1.02); head.add(cap);
     cap.geometry = geo('hairCap' + S, () => new THREE.SphereGeometry(0.112 * S, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.55));
+    cap.rotation.x = -0.42;   // inclina para trás: a franja sobe acima dos olhos e a nuca fica coberta
     if (L.hairStyle === 'long') { const back = mesh(capG(0.09 * S, 0.22 * S), hairM, 0, -0.12 * S, -0.05 * S); back.scale.set(1.1, 1, 0.6); head.add(back); }
   }
   if (L.beard) { const b = mesh(coneG(0.075 * S, 0.16 * S, 12), mat(hx(L.beard), 'hair'), 0, -0.12 * S, 0.05 * S); b.rotation.x = Math.PI; head.add(b); }
