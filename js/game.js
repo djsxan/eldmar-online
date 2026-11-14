@@ -65,6 +65,7 @@ function clientOnServer(m) {
       const e = G.me; if (!e || m.id !== G.myId) break;
       const oldLvl = e.lvl;
       if (m.slow) G.slowUntil = now + m.slow;
+      G.cst = m.cst ?? CST_MAX; G.stunUntil = now + (m.stun || 0); G.ripUntil = now + (m.rip || 0);
       Object.assign(e, { hp: m.hp, maxHp: m.maxHp, mp: m.mp, maxMp: m.maxMp, lvl: m.lvl, xp: m.xp, gold: m.gold, pots: m.pots, body: m.body, bleed: m.bleed, inv: m.inv || {}, combat: m.combat, quests: m.quests, qdone: m.qdone });
       setBuffs(e, m.buffs);
       G.cdEnd = m.cds.map(r => now + r);
@@ -100,7 +101,7 @@ function clientOnServer(m) {
     case 'anim': {
       const e = (m.w === 'p' ? G.players : G.monsters)[m.id];
       if (!e) break;
-      e.anim = { a: m.a, t0: now, tx: m.tx, ty: m.ty }; e.emote = null;
+      e.anim = { a: m.a, t0: now, tx: m.tx, ty: m.ty, ms: m.ms, W: m.W, ang: m.ang, reach: m.reach, arc: m.arc }; e.emote = null;
       if (m.a === 'execute' && m.id === G.myId) later(380, () => { G.shake = Math.max(G.shake, 6); });
       if (m.tx != null && m.w === 'p' && m.a !== 'spin') e.dir = dirFromVec(m.tx - e.rx, m.ty - e.ry, e.dir);
 
@@ -148,6 +149,8 @@ function clientOnServer(m) {
     case 'throwfx': G.throws.push({ ...m, t0: now }); break;
     case 'wound': showToast(BODY_NAMES[m.part] + ': ' + PART_STATE_NAMES[m.st] + (m.st >= 2 ? ' — está sangrando' : '')); flashDamage(); break;
     case 'banding': G.banding = performance.now() + m.ms; break;
+    case 'clang': { const w = tileW(m.x, m.y, 26); for (let k = 0; k < (m.perfect ? 26 : 12); k++) spawnPart('spark', w.x, w.y, { color: m.perfect ? 'rgba(255,230,120,A)' : 'rgba(255,240,200,A)' }); G.shake = Math.max(G.shake, m.perfect ? 5 : 2.5); if (m.blockBy) { const q = G.monsters[m.blockBy]; if (q) q.blockAt = now; } break; }
+    case 'whiff': case 'swoosh': break;
     case 'miss': { const e = G.monsters[m.id]; if (e) { const w = tileW(e.rx, e.ry, 30); for (let k = 0; k < 5; k++) spawnPart('dust', w.x, w.y); } break; }
     case 'lootgold': showToast('+ ' + m.g + ' de ouro'); break;
     case 'loot': { const it = LOOT[m.k]; if (it) { showToast('+ ' + it.name); G.newLoot = m.k; } break; }
@@ -165,7 +168,7 @@ function applySnapshot(m, now) {
     let e = G.players[id];
     if (!e) e = G.players[id] = mkEnt({ id, name: '...', cls: 'knight', skin: 'iron', color: '#888888', lvl: 1 });
     const x = x100 / 100, y = y100 / 100;
-    e.flags = fl; e.visible = true; e.carrying = carrying || null; e.lifted = lifted || 0; e.limp = (bb || 0) & 3; e.armWeak = !!((bb || 0) & 4); e.dizzy = !!((bb || 0) & 8); e.bleeding = !!((bb || 0) & 16); e.carriedBy = !!(fl & 4); z = z / 100;
+    e.flags = fl; e.visible = true; e.carrying = carrying || null; e.lifted = lifted || 0; e.parrying = !!((bb || 0) & 32); e.stunned = !!((bb || 0) & 64); e.limp = (bb || 0) & 3; e.armWeak = !!((bb || 0) & 4); e.dizzy = !!((bb || 0) & 8); e.bleeding = !!((bb || 0) & 16); e.carriedBy = !!(fl & 4); z = z / 100;
     const wasDown = e.downed; e.downed = !!(fl & 2);
     if (e.downed && !wasDown && !e.downUntil) e.downUntil = now + DOWNED_MS;
     if (id === G.myId) {
@@ -263,6 +266,8 @@ function updateLocal(now, dt) {
   if (G.slide && now - G.slide.t0 > SLIDE_MS) G.slide = null;
   if (G.slide) v = G.slide.v;
   me.slide = !!G.slide; me.crouch = crouchKey && !G.slide;
+  if (now < (G.stunUntil || 0)) v = null;   // atordoado / guarda quebrada
+  if (G.dodge) { const kd = (now - G.dodge.t0) / DODGE.ms; if (kd >= 1) G.dodge = null; else v = G.dodge.v; }
   const running = !!v && !kneel && !(me.body && Math.max(PART_STATE(me.body.legL), PART_STATE(me.body.legR)) >= 3) && G.keys.has('shift') && !crouchKey && !G.tired && !me.downed && !me.carrying && G.stam > 0;
   if (running) { G.stam = Math.max(0, G.stam - STAM_DRAIN * dt); G.stamT = now; if (G.stam <= 0) G.tired = true; }
   else if (now - G.stamT > STAM_DELAY) G.stam = Math.min(STAM_MAX, G.stam + STAM_REGEN * dt * (v ? 0.6 : me.sit ? 2.5 : 1));
@@ -278,6 +283,9 @@ function updateLocal(now, dt) {
     if (kneel) sp *= KNEEL_MUL;
     if (me.body) { const l1 = PART_STATE(me.body.legL), l2 = PART_STATE(me.body.legR); sp *= LEG_SPEED[Math.max(l1, l2)] * (l1 >= 2 && l2 >= 2 ? 0.8 : 1); }
     if (now < (G.slowUntil || 0)) sp *= 0.5;   // rugido do dragão
+    if (me.anim && /^atk_/.test(me.anim.a) && now - me.anim.t0 < (me.anim.ms || 900)) sp *= 0.45;
+    if (G.parrying) sp *= 0.55;
+    if (G.dodge) sp = DODGE.dist / (DODGE.ms / 1000);
     if (G.dev) sp = PLAYER_SPEED * (G.keys.has('shift') ? 10 : 4);   // Tecelão: voo livre ultrarrápido
     if (G.slide) { const k = (now - G.slide.t0) / SLIDE_MS; sp = PLAYER_SPEED * RUN_MUL * 1.5 * (1 - k * 0.65); if (Math.random() < 0.5) { const w = tileW(me.x, me.y, 0); spawnPart('dust', w.x, w.y); } }
     if (me.carrying || me.lifted) sp *= 0.75;
@@ -290,7 +298,7 @@ function updateLocal(now, dt) {
     else if (freeAt(nx, me.y, me.z)) me.x = nx;
     else if (freeAt(me.x, ny, me.z)) me.y = ny;
     moved = Math.hypot(me.x - ox, me.y - oy);
-    me.dir = dirFromVec(v[0], v[1], me.dir);
+    if (!combatFacing()) me.dir = dirFromVec(v[0], v[1], me.dir);
     if (!moved && G.path) { G.path = null; G.pathGoal = null; }
   }
   me.walking = moved > 0.0005;
@@ -323,14 +331,15 @@ function updateLocal(now, dt) {
   { const t = tileAt(me.x, me.y), d = WORLD.stair[t]; if (d && moved) { const k = Math.min(1, dt * 10); if (d <= 2) me.y += (Math.round(me.y) - me.y) * k; else me.x += (Math.round(me.x) - me.x) * k; } }
   me.rx = me.x; me.ry = me.y;
   if (me.walking && me.emote) me.emote = null;
-  if (now - (G.autoT || 0) > 250 && !me.downed && !me.carrying && (me.z || 0) < 0.5 && !inSafe(me.x, me.y)) {
+  if (me.cls !== 'knight' && now - (G.autoT || 0) > 250 && !me.downed && !me.carrying && (me.z || 0) < 0.5 && !inSafe(me.x, me.y)) {
     G.autoT = now;
     const rng2 = CLASSES[me.cls].range, cur = G.target && G.monsters[G.target];
     const keep = cur && !cur.dieAt && dist(me.x, me.y, cur.rx, cur.ry) <= rng2 * 1.5;
     if (!keep) { let best = null, bd = rng2; for (const id in G.monsters) { const q = G.monsters[id]; if (q.dieAt || !q.visible || MON[q.type].beh) continue; const d = dist(me.x, me.y, q.rx, q.ry); if (d <= bd) { bd = d; best = q; } } if (best) setTarget(best.id); else if (cur && cur.dieAt) setTarget(null); }
   }
   const stF = (me.crouch ? 1 : 0) | (me.slide ? 2 : 0);
-  if (now - me.sendT > 100 && (moved || me.walking !== me.sentWalk || stF !== me.sentSt)) {
+  if (combatFacing() && G.mouseW) { const a = Math.atan2(G.mouseW.y - me.y, G.mouseW.x - me.x); me.fa = a; me.dir = dirFromVec(Math.cos(a), Math.sin(a), me.dir); if (G.parrying && now - (G.parryAT || 0) > 150) { G.parryAT = now; Net.send({ t: 'parrya', a }); } }
+  if (now - me.sendT > 100 && (moved || me.walking !== me.sentWalk || stF !== me.sentSt || me.dir !== me.sentDir)) { me.sentDir = me.dir;
     me.sendT = now; me.sentWalk = me.walking; me.sentSt = stF;
     Net.send({ t: 'mv', x: Math.round(me.x * 100) / 100, y: Math.round(me.y * 100) / 100, z: Math.round(me.z * 100) / 100, d: me.dir, w: me.walking ? 1 : 0, r: running ? 1 : 0, c: me.crouch ? 1 : 0, sl: me.slide ? 1 : 0, ti: G.tired || (G.stam ?? STAM_MAX) < STAM_MAX * 0.3 ? 1 : 0 }, true);
   }
@@ -700,6 +709,16 @@ function standUp() {
 }
 canvas.addEventListener('mousedown', e => {
   if (!G.started) return;
+  if (inCombatZone() && !(G.dev && G.devPlace)) {
+    const me = G.me; $('chat-input').blur();
+    if (e.button === 3 || e.button === 4) { e.preventDefault(); strike('under'); return; }
+    if (e.button === 2) { G.parrying = true; Net.send({ t: 'parry', on: 1, a: me.fa ?? 0 }); return; }
+    if (e.button === 0) {
+      const mon = monsterUnderMouse(e.clientX, e.clientY); if (mon) setTarget(mon.id);
+      const h = G.mouseHist || [], dx = h.length > 1 ? h[h.length - 1].x - h[0].x : 0, p = iso(me.rx, me.ry), mx = (p.sx + G.view.ox) * SCALE;
+      strike(dx < -4 ? 'slashL' : dx > 4 ? 'slashR' : e.clientX < mx ? 'slashL' : 'slashR'); return;
+    }
+  }
   if (G.dev && G.devPlace) { if (e.button === 2) { G.devPlace = null; return; } const w = screenToWorld(e.clientX, e.clientY); Net.send({ t: 'dev', a: 'summon', kind: G.devPlace.kind, v: G.devPlace.v, x: w.x, y: w.y }); return; }
   $('chat-input').blur();
   const me = G.me;
@@ -733,9 +752,23 @@ canvas.addEventListener('mousedown', e => {
 });
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
+  if (G.started && inCombatZone()) { if (performance.now() - (G.wheelT || 0) > 220) { G.wheelT = performance.now(); strike(e.deltaY < 0 ? 'over' : 'stab'); } return; }
   SCALE = clamp(SCALE * (e.deltaY < 0 ? 1.1 : 0.9), 1.4, 7);
   G.zoomUser = true;
 }, { passive: false });
+// ---------- combate direcional (estilo Chivalry) ----------
+// clique esquerdo = lateral (lado pelo movimento do mouse) · roda: cima = de cima, baixo = estocada · botão lateral ou Z = de baixo
+// botão direito = aparar · Espaço = esquiva · F (sem nada para interagir) = chute · trocar de golpe na preparação = finta
+function inCombatZone() { const me = G.me; return me && !inSafe(me.x, me.y) && !(me.fl > 0) && !G.paused && !G.dialog && !G.mapOpen; }
+function combatFacing() { return inCombatZone() && !G.me.running && !G.climbing; }
+function strike(k) {
+  const me = G.me; if (!me || me.downed || me.carrying || me.lifted || performance.now() < (G.stunUntil || 0)) return;
+  const a = me.fa ?? 0; Net.send({ t: 'atk', k, a });
+}
+canvas.addEventListener('mousemove', e => { if (G.started) { G.mouseW = screenToWorld(e.clientX, e.clientY); G.mouseHist = (G.mouseHist || []).filter(q => performance.now() - q.t < 180).concat([{ t: performance.now(), x: e.clientX }]); } });
+canvas.addEventListener('mouseup', e => { if (e.button === 3 || e.button === 4) e.preventDefault(); if (e.button === 2 && G.parrying) { G.parrying = false; Net.send({ t: 'parry', on: 0 }); } });
+window.addEventListener('auxclick', e => { if (e.button === 3 || e.button === 4) e.preventDefault(); });
+window.addEventListener('mouseup', e => { if (e.button === 2 && G.parrying) { G.parrying = false; Net.send({ t: 'parry', on: 0 }); } });
 
 window.addEventListener('keydown', e => {
   if (!G.started) return;
@@ -755,6 +788,7 @@ window.addEventListener('keydown', e => {
   if (k === 'r' && G.me.downed) { Net.send({ t: 'giveup' }); return; }
   if (k === 'f' && !e.repeat && openNearChest(1.8)) return;
   if (k === 'f' && !e.repeat && !nearestDowned()) { const c = nearCorpse(); if (c) { G.loot = { id: c.id, t0: performance.now() }; G.keys.add('f'); return; } }
+  if (k === 'f' && !e.repeat && inCombatZone() && !nearestDowned() && !nearCorpse() && !(G.chests || []).some(c => c.mine && !c.open && dist(c.x, c.y, G.me.x, G.me.y) < 1.8)) { Net.send({ t: 'kick', a: G.me.fa ?? 0 }); return; }
   if (k === 'f' && !e.repeat) { const d = nearestDowned(); if (d) { G.reviving = d.id; Net.send({ t: 'revive', id: d.id, on: true }); } return; }
   if (k === 'g' && !e.repeat) { liftOrThrow(); return; }
   if (k === 'x') { attackNearest(); return; }
@@ -766,7 +800,11 @@ window.addEventListener('keydown', e => {
   if (k === 'j' && !e.repeat) { togglePanel('journal'); return; }
   if (k === 'm' && !e.repeat) { toggleWorldMap(); return; }
   if (k === 't') { if (!e.repeat) openEmoteWheel(); return; }
-  if (k === ' ' || k === 'tab') {
+  if (k === ' ' && inCombatZone()) { e.preventDefault(); if (!e.repeat) { const me = G.me, iv = myInput(); const v = iv || (me.fa != null ? [-Math.cos(me.fa), -Math.sin(me.fa)] : [0, 1]); G.dodge = { t0: performance.now(), v }; Net.send({ t: 'dodge' }); } return; }
+  if (k === 'z' && !e.repeat && inCombatZone()) { strike('under'); return; }
+  if ((k === '+' || k === '=') ) { SCALE = clamp(SCALE * 1.1, 1.4, 7); G.zoomUser = true; return; }
+  if (k === '-') { SCALE = clamp(SCALE * 0.9, 1.4, 7); G.zoomUser = true; return; }
+  if (k === 'tab') {
     e.preventDefault();
     let best = null, bd = 99;
     for (const id in G.monsters) { const m = G.monsters[id]; if (m.dieAt) continue; const d = dist(m.rx, m.ry, G.me.x, G.me.y); if (d < bd && m.id !== G.target) { bd = d; best = m; } }

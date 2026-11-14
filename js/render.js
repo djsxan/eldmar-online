@@ -271,15 +271,16 @@ function woundOf(s, lv) {
   return (m[lv] = { ...s, c });
 }
 function objSprite(o) { return o === O.BARREL ? smallSprite('barrel') : o === O.CRATE ? smallSprite('crate') : o === O.ROCK ? rockSprite(0, 0) : null; }
+// progresso (0..1) de uma ação; golpes com preparação W ocupam os primeiros 40% da animação
+function actProg(an, now) { const ms = an.ms || ACT_MS[an.a] || 400, tt = now - an.t0; if (tt < 0 || tt >= ms) return -1; if (an.W) return tt < an.W ? 0.4 * tt / an.W : 0.4 + 0.6 * (tt - an.W) / Math.max(1, ms - an.W); return tt / ms; }
 function heroPoseFor(e, now) {
   const view0 = DIR_VIEW[e.dir || 0];
   const P = { view: view0 === 'W' ? 'E' : view0, walk: -1, act: null, idle: null, sit: false, carry: !!(e.carrying || e.lifted) };
   P.dir = e.dir || 0;
   if (e.walking) { P.walk = Math.floor(e.walkDist * (e.cls === 'knight' ? 8.5 : 9.5) / (e.running ? 1.45 : 1)) % 12; if (e.running) P.run = 1; }
-  if (e.anim) {
-    const ms = ACT_MS[e.anim.a] || 400, t = (now - e.anim.t0) / ms;
-    if (t >= 0 && t < 1 && ACTS[e.anim.a]) P.act = { k: e.anim.a, f: Math.min(11, Math.floor(t * 12)) };
-  }
+  if (e.anim) { const t = actProg(e.anim, now); if (t >= 0 && ACTS[e.anim.a]) P.act = { k: e.anim.a, f: Math.min(11, Math.floor(t * 12)) }; }
+  if (!P.act && (e === G.me ? G.parrying : e.parrying)) { P.act = { k: 'parry', f: 6 }; P.run = 0; }
+  if (!P.act && (e === G.me ? performance.now() < (G.stunUntil || 0) : e.stunned)) P.act = { k: 'hurt', f: 5 };
   if (e.cast && e.cast.end > now) P.act = { k: 'cast', f: Math.floor(now / 70) % 12 };
   if (!P.act && e.emote && !e.walking) { const ms = ACT_MS[e.emote.k], t = (now - e.emote.t0) / ms; if (e.emote.k === 'dance') P.act = { k: 'dance', f: Math.floor(t * 12) % 12 }; else if (t < 1) P.act = { k: e.emote.k + (e.cls === 'knight' && ACTS[e.emote.k + '_k'] ? '_k' : ''), f: Math.min(11, Math.floor(t * 12)) }; else e.emote = null; }
   else if (e.walking && e.emote) e.emote = null;
@@ -371,15 +372,25 @@ function fallAngle(ms) {
 }
 const PAINT_AS = { dragon: 'troll', deer: 'wolf', boar: 'wolf', bandit: 'goblin', deserter: 'goblin', deserterchief: 'goblin', orcchief: 'orc', cryptlord: 'skeleton', elderslime: 'slime', wisp: 'slime' };
 const MON_H = { dragon: 260, bandit: 84, deserter: 90, wisp: 70, orcchief: 140, cryptlord: 120, deserterchief: 104, elderslime: 70, deer: 70, boar: 46, rat: 30, slime: 40, wolf: 58, spider: 52, toad: 44, goblin: 68, skeleton: 92, orc: 104, troll: 150 };
+// aviso do golpe inimigo: arco vermelho no chão que enche durante a preparação (dá tempo de aparar ou esquivar)
+function drawTelegraph(ctx, e, sx, sy, now) {
+  const an = e.anim, k = Math.min(1, (now - an.t0) / an.W), seg = 10, pts = [[sx, sy]];
+  for (let q = -seg; q <= seg; q++) { const a = an.ang + an.arc * q / seg, wx = e.rx + Math.cos(a) * an.reach, wy = e.ry + Math.sin(a) * an.reach, p = iso(wx, wy); pts.push([p.sx + G.view.ox, p.sy + G.view.oy - (e.z || 0) * FLOOR_PX]); }
+  ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
+  const flash = k >= 1; ctx.fillStyle = flash ? 'rgba(255,240,220,0.35)' : 'rgba(210,30,15,' + (0.08 + k * 0.22).toFixed(2) + ')'; ctx.fill();
+  ctx.strokeStyle = flash ? 'rgba(255,255,255,0.8)' : 'rgba(255,80,40,' + (0.3 + k * 0.5).toFixed(2) + ')'; ctx.lineWidth = 1.2; ctx.stroke();
+}
 function drawMonsterEntity(ctx, e, sx, sy, now) {
   if (FALLS['m' + e.id]) return;
   if (R3.ok && e.type === 'dragon') { drawDragon(ctx, e, sx, sy, now); return; }
   if (R3.ok) {
-    let atk = -1;
-    if (e.anim) { const t = (now - e.anim.t0) / ACT_MS.bite; if (t >= 0 && t < 1) atk = Math.min(7, Math.floor(t * 8)); }
+    let atk = -1, ak = null;
+    if (e.anim) { const t = actProg(e.anim, now); if (t >= 0) { if (/^atk_/.test(e.anim.a)) { ak = e.anim.a; atk = Math.min(11, Math.floor(t * 12)); } else atk = Math.min(7, Math.floor(t * 8)); } }
+    if (e.anim && e.anim.W && e.anim.reach && now - e.anim.t0 < e.anim.W + 120) drawTelegraph(ctx, e, sx, sy, now);
+    if (!ak && e.blockAt && now - e.blockAt < 350) { ak = 'parry'; atk = 6; }
     const f = e.walking ? Math.floor(e.walkDist * 4) % 8 : -1;
     const hurtF = e.hitAt && now - e.hitAt < 300 && atk < 0 && MON_LOOK[e.type] ? Math.min(11, Math.floor((now - e.hitAt) / 300 * 12)) : -1;
-    const s = monSprite3D(e.type, hurtF >= 0 ? -1 : f, atk, e.dir || 0, hurtF);
+    const s = monSprite3D(e.type, hurtF >= 0 ? -1 : f, atk, e.dir || 0, hurtF, ak);
     let alpha = 1, sink = 0;
     const kb = knockOf(e, now); sx += kb.x; sy += kb.y;
     if (e.dieAt && now > e.dieAt) { const t = Math.min(1, (now - e.dieAt) / 600); alpha = 1 - t; sink = t * 8; }

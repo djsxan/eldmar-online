@@ -556,11 +556,11 @@ function buildCreature(type) {
   }
   return R;
 }
-function monSprite3D(type, f, atk, dir, hurt = -1) {
-  return cache3(`m3|${type}|${f}|${atk}|${dir}|${hurt}`, () => {
+function monSprite3D(type, f, atk, dir, hurt = -1, ak = null) {
+  return cache3(`m3|${type}|${f}|${atk}|${dir}|${hurt}|${ak || ''}`, () => {
     if (MON_LOOK[type]) {
       let R = _rigs.get('mon:' + type); if (!R) { R = buildHumanoid(lookFor('mon:' + type, MON_LOOK[type]), { scale: MON_SCALE[type] }); scaryMonster((MON[type] && MON[type].base) || type, R, MON_SCALE[type]); _rigs.set('mon:' + type, R); }
-      const P = { dir, walk: atk >= 0 || hurt >= 0 ? -1 : (f >= 0 ? Math.round(f * 1.5) : -1), act: hurt >= 0 ? { k: 'hurt', f: hurt } : atk >= 0 ? { k: ['troll', 'orc'].includes((MON[type] && MON[type].base) || type) ? 'bash' : 'swing', f: Math.min(11, Math.round(atk * 1.5)) } : null };
+      const P = { dir, walk: atk >= 0 || hurt >= 0 ? -1 : (f >= 0 ? Math.round(f * 1.5) : -1), act: hurt >= 0 ? { k: 'hurt', f: hurt } : atk >= 0 ? (ak ? { k: ak, f: atk } : { k: ['troll', 'orc'].includes((MON[type] && MON[type].base) || type) ? 'bash' : 'swing', f: Math.min(11, Math.round(atk * 1.5)) }) : null };
       const Q = buildPose('knight', P);
       if (type === 'troll') Q.tl += 0.25;
       if (type === 'goblin') Q.tl += 0.15;
