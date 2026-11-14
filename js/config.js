@@ -3,8 +3,8 @@
 //  Mexa aqui para balancear o jogo.
 // ============================================================
 const GAME_NAME = 'World of Sxan';
-const VERSION = 'v1.22.0';
-const VERSION_NAME = 'Lar e Emoções';
+const VERSION = 'v1.23.0';
+const VERSION_NAME = 'Peso Morto';
 
 const PLAYER_SPEED = 2.7;          // tiles por segundo (1 tile ≈ 2 m)
 // configurações do jogador (menu de pausa)

@@ -308,7 +308,7 @@ function hostOnClient(from, m) {
       Net.toOne(p.id, { t: 'chestopen', id: c.id, gold, items }); sendStat(p);
       break;
     }
-    case 'emote': { const k = ['salute', 'dance', 'point'].includes(m.k) ? m.k : null; if (k && !p.downed) near(p.x, p.y, { t: 'emote', id: p.id, k }); break; }
+    case 'emote': { const k = ['salute', 'dance', 'point', 'cheer', 'surprise', 'adore', 'anger', 'fear', 'sad'].includes(m.k) ? m.k : null; if (k && !p.downed) near(p.x, p.y, { t: 'emote', id: p.id, k }); break; }
     case 'exec': {   // entrega o condenado caído ao carrasco: deita na guilhotina, a lâmina cai e a cabeça rola (morte permanente)
       const v = S.players[p.carrying] || (p.drag && p.drag.k === 'p' && p.drag.mode !== 'grip' ? S.players[p.drag.id] : null); if (!v || !v.downed || STAGE.x < 0 || v.execAt || dist(p.x, p.y, STAGE.x, STAGE.y) > 3.4) break;
       if (!npcAlive('executioner')) { tell(p, 'Não há carrasco para executar ninguém.'); break; }
@@ -900,6 +900,7 @@ function monsterThink(m, players, now, dt) {
   const d = MON[m.type];
   if (m.atk) { const A = m.atk; if (!A.done && now >= A.t0 + A.W) { A.done = true; resolveMonStrike(m, A, now); } if (now >= A.t0 + A.W + A.R + A.C) m.atk = null; else return; }
   if (d.dragon) return dragonThink(m, players, now, dt);
+  if (m.gripBy) { const g = S.players[m.gripBy]; if (!g || !g.drag || g.drag.id !== m.id || now > m.escAt) { m.gripBy = null; m.dragBy = null; if (g && g.drag && g.drag.id === m.id) stopDrag(g, MON[m.type].name + ' se soltou!'); m.stunUntil = 0; } else return; }
   if (now < m.stunUntil) return;
   if (m.dragging && wolfDragTick(m, now, dt)) return;
   if ((m.carrying || m.carryWant) && captorTick(m, now, dt)) return;
@@ -1484,14 +1485,23 @@ function arrowBleedTick(now) {
 // peso: 0-1 vai em qualquer forma; 2 (gente, orc, cervo) nas costas só com fôlego; 3 (troll, chefes, dragão) não se move
 const WEIGHT = { rat: 0, toad: 0, slime: 0, spider: 0, wisp: 0, wolf: 1, goblin: 1, boar: 1, deer: 2, skeleton: 2, bandit: 2, deserter: 2, orc: 2, troll: 3, orcchief: 3, cryptlord: 3, deserterchief: 3, elderslime: 3, dragon: 3 };
 const dirVec = d => { const th = (d || 0) * Math.PI / 4, sx = Math.sin(th), sy = Math.cos(th), vx = (sx + 2 * sy) / 2, vy = (2 * sy - sx) / 2, l = Math.hypot(vx, vy) || 1; return [vx / l, vy / l]; };
-const dragTarget = (k, id) => k === 'p' ? S.players[id] : k === 'c' ? (S.corpses || {})[id] : k === 'n' ? (S.npcs || {})[id] : null;
-const weightOf = (k, t) => k === 'c' ? (WEIGHT[t.type] ?? 2) : 2;
+const dragTarget = (k, id) => k === 'p' ? S.players[id] : k === 'c' ? (S.corpses || {})[id] : k === 'n' ? (S.npcs || {})[id] : k === 'm' ? S.monsters[id] : null;
+const weightOf = (k, t) => k === 'c' || k === 'm' ? (WEIGHT[t.type] ?? 2) : 2;
+const GRIP_HUMANOID = new Set(['bandit', 'deserter', 'skeleton', 'orc']);
 function startGrab(p, m) {
   if (p.downed || p.drag || p.carrying || p.lifted || p.carriedBy || p.gripBy || p.dragBy) return;
   const k = m.k, mode = m.mode, t = dragTarget(k, m.id);
   if (!t || t === p || !['arms', 'foot', 'back', 'grip'].includes(mode) || dist(p.x, p.y, t.x, t.y) > 2.1) return;
   const w = weightOf(k, t); if (w >= 3) { tell(p, 'Pesado demais para mover.'); return; }
   const now = now_();
+  if (mode === 'grip' && (k === 'm' || k === 'n')) {   // agarrar bicho pequeno, humanoide atordoado ou NPC em pé
+    if (t.gripBy || t.dragBy || t.dead || t.downed || t.carrying) return;
+    if (k === 'm') { const small = (WEIGHT[t.type] ?? 2) <= 1, weak = now < (t.stunUntil || 0) || t.sleep; if (!(small && !t.atk) && !(GRIP_HUMANOID.has(t.type) && weak)) { tell(p, small ? 'Ele está atacando: espere a brecha.' : 'Só dá para agarrar esse inimigo atordoado.'); return; } }
+    if ((p.cst ?? 0) < 30) { tell(p, 'Sem fôlego para agarrar.'); return; }
+    p.cst -= 20; t.gripBy = p.id; t.dragBy = p.id; t.atk = null; t.escAt = now + (k === 'm' ? ((WEIGHT[t.type] ?? 2) <= 1 ? 2600 : 3600) : 5000);
+    p.drag = { k, id: t.id, mode, w, a: Math.atan2(t.y - p.y, t.x - p.x) };
+    near(p.x, p.y, { t: 'drag', by: p.id, k, id: t.id, mode }); if (k === 'n') witnessCrime(p, p.x, p.y); sendStat(p); return;
+  }
   if (mode === 'grip') {   // agarrão em quem está de pé: só pelas costas ou em quem está atordoado/sem fôlego
     if (k !== 'p' || t.downed || t.dev || t.gripBy || t.carriedBy) return;
     const [fx, fy] = dirVec(t.dir), behind = (fx * (p.x - t.x) + fy * (p.y - t.y)) / (dist(p.x, p.y, t.x, t.y) || 1) < -0.25;
@@ -1518,7 +1528,7 @@ function stopDrag(p, why) {
   const t = dragTarget(d.k, d.id);
   if (t) {
     t.dragBy = null; t.dragMode = null;
-    if (d.mode === 'grip') { t.gripBy = null; t.esc = 0; sendStat(t); }
+    if (d.mode === 'grip') { t.gripBy = null; t.esc = 0; if (d.k === 'p') sendStat(t); }
     if ((d.k === 'c' || d.k === 'n') && d.mode === 'back') { t.onBack = null; for (const [dx, dy] of [[0.7, 0], [-0.7, 0], [0, 0.7], [0, -0.7], [0, 0]]) if (canStand(p.x + dx, p.y + dy, p.z || 0, 0.2)) { t.x = p.x + dx; t.y = p.y + dy; break; } }
   }
   near(p.x, p.y, { t: 'drag', by: p.id, k: d.k, id: d.id, mode: null });
@@ -1634,6 +1644,7 @@ function npcTick(now, dt) {
   for (const n of Object.values(S.npcs)) {
     if (n.dead) continue;
     if (n.downed) { if (now > n.downed.until && !n.dragBy) { n.downed = null; n.hp = Math.round(n.maxHp * 0.3); sys(n.name + ' se levantou, ferido.'); } continue; }
+    if (n.gripBy && !n.downed) { const g = S.players[n.gripBy]; if (!g || !g.drag || g.drag.id !== n.id || now > n.escAt) { n.gripBy = null; n.dragBy = null; if (g && g.drag && g.drag.id === n.id) stopDrag(g, n.name + ' se soltou!'); } continue; }
     if (n.dragBy) continue;
     if (n.kind === 'guard') { guardThink(n, now, dt); continue; }
     if (n.id === 'fruit' && typeof G !== 'undefined' && G.npcs && G.npcs.fruit) { n.x = G.npcs.fruit.x; n.y = G.npcs.fruit.y; }
@@ -1845,7 +1856,7 @@ function hostTick() {
       if (p.devHidden && p.id !== r.id) continue;
       let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0) | (p.running && p.walking ? 256 : 0) | (p.sit ? 512 : 0) | (p.sit === 'c' ? 1024 : 0) | (p.sleep != null ? 32768 : 0) | (p.drawT ? 65536 : 0) | (p.dragBy ? 131072 : 0) | (p.dragMode === 'foot' ? 262144 : 0) | (p.drag && p.drag.mode === 'arms' ? 524288 : 0) | (p.drag && p.drag.mode === 'foot' ? 1048576 : 0) | (p.drag && p.drag.mode === 'back' ? 2097152 : 0) | (p.drag && p.drag.mode === 'grip' ? 4194304 : 0) | (p.gripBy ? 8388608 : 0) | (p.tied ? 16777216 : 0) | ((p.fl || 0) << 11) | (p.crouch ? 8192 : 0) | (p.slide ? 16384 : 0);
       for (const b in BUFF_BITS) if (buffOn(p, b)) fl |= BUFF_BITS[b];
-      pl.push([p.id, Math.round(p.x * 100), Math.round(p.y * 100), Math.round(p.z * 100), p.dir | 0, fl, Math.round(p.hp / p.maxHp * 100), p.carrying || 0, p.lifted || 0, bodyBits(p), (p.lost || 0) | ((p.pro || 0) << 5)]);
+      pl.push([p.id, Math.round(p.x * 100), Math.round(p.y * 100), Math.round(p.z * 100), p.dir | 0, fl, Math.round(p.hp / p.maxHp * 100), p.carrying || 0, p.lifted || 0, bodyBits(p), (p.lost || 0) | ((p.pro || 0) << 5), p.drag ? p.drag.k + ':' + p.drag.id : 0]);
     }
     for (const m of mons) {
       if (Math.abs(m.x - r.x) > VIEW_RADIUS || Math.abs(m.y - r.y) > VIEW_RADIUS) continue;

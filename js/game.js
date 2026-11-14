@@ -195,13 +195,13 @@ function applySnapshot(m, now) {
   G.chests = (m.ch || []).map(c => ({ id: c[0], x: c[1] / 100, y: c[2] / 100, open: !!c[3], mine: !!c[4] }));
   G.corpses = (m.co || []).map(c => ({ id: c[0], type: MON_TYPES[c[1]], x: c[2] / 100, y: c[3] / 100, z: c[4], looted: !!c[5], ix: c[6] / 10, iy: c[7] / 10, lost: c[8] || 0, onBack: c[9] || null }));
   const seenP = new Set();
-  for (let [id, x100, y100, z, dir, fl, hpPct, carrying, lifted, bb, lp] of m.p) {
+  for (let [id, x100, y100, z, dir, fl, hpPct, carrying, lifted, bb, lp, tow] of m.p) {
     seenP.add(id);
     let e = G.players[id];
     if (!e) e = G.players[id] = mkEnt({ id, name: '...', cls: 'knight', skin: 'iron', color: '#888888', lvl: 1 });
     const x = x100 / 100, y = y100 / 100;
     e.flags = fl; e.visible = true; e.carrying = carrying || null; e.lifted = lifted || 0; if (id !== G.myId) { e.lost = (lp || 0) & 31; e.pro = ((lp || 0) >> 5) & 31; } e.parrying = !!((bb || 0) & 32); e.stunned = !!((bb || 0) & 64); e.duel = !!((bb || 0) & 128); e.limp = (bb || 0) & 3; e.armWeak = !!((bb || 0) & 4); e.dizzy = !!((bb || 0) & 8); e.bleeding = !!((bb || 0) & 16); e.carriedBy = !!(fl & 4); z = z / 100;
-    e.tied = !!(fl & 16777216); e.dragged = !!(fl & 131072); e.prone = !!(fl & 262144); e.gripped = !!(fl & 8388608);
+    e.tow = tow || null; e.tied = !!(fl & 16777216); e.dragged = !!(fl & 131072); e.prone = !!(fl & 262144); e.gripped = !!(fl & 8388608);
     e.dragMode = fl & 524288 ? 'arms' : fl & 1048576 ? 'foot' : fl & 2097152 ? 'back' : fl & 4194304 ? 'grip' : null;
     if (e === G.me && e.dragged) { e.x = e.rx = x; e.y = e.ry = y; G.path = null; }   // sendo puxado/agarrado: a posição vem do servidor
     const wasDown = e.downed; e.downed = !!(fl & 2);
@@ -930,6 +930,7 @@ function frame() {
     if (G.me.dragMode === 'arms') { let t = null, bd = 2.2; for (const id in G.players) { const q = G.players[id]; if (q !== G.me && q.dragged && q.downed) { const d = dist(q.rx, q.ry, G.me.x, G.me.y); if (d < bd) { bd = d; t = q; } } } for (const id in G.npcs) { const q = G.npcs[id]; if (q.dragged) { const d = dist(q.rx, q.ry, G.me.x, G.me.y); if (d < bd) { bd = d; t = q; } } } if (t) G.me.dir = dirFromVec(t.rx - G.me.x, t.ry - G.me.y, G.me.dir); }   // anda de costas olhando o corpo
     if (typeof updateNpcMotion === 'function') updateNpcMotion(now, dt);
     if (typeof npcReactions === 'function') npcReactions(now);
+    if (typeof updateTows === 'function') updateTows(now);
     if (G.reviveSticky && (G.me.walking || !G.reviving)) { if (G.reviving) Net.send({ t: 'revive', id: G.reviving, on: false }); G.reviving = null; G.reviveSticky = false; }
     if (G.shootHeld && inCombatZone() && now - (G.shootT || 0) > 220) { G.shootT = now; Net.send({ t: 'shoot', a: G.me.fa ?? 0, id: G.target || 0 }); }
     { // luta com o dragão: a câmera se afasta devagar para caber tudo na tela (só se o zoom não foi mudado à mão)
@@ -1336,7 +1337,12 @@ $('pz-quit').addEventListener('click', () => { try { saveChar(); saveFog && G.fo
 applySettings();
 
 // ---------- modo criador: O Tecelão ----------
-if (/[?&]criador\b/.test(location.search)) { const pw = window.prompt('Senha do Tecelão:'); if (pw) { G.devPw = pw; G.devMode = window.confirm('Como você quer entrar?\n\nOK = como O Tecelão (voa, invisível, não se fere)\nCancelar = com a vocação escolhida, normal (toma dano e luta), mas com o painel do criador no F2') ? 'weaver' : 'normal'; } }
+if (/[?&]criador\b/.test(location.search)) { const pw = window.prompt('Senha do Tecelão:'); if (pw) { G.devPw = pw; G.devMode = 'weaver';
+  const box = document.createElement('div'); box.id = 'devmode'; box.style.cssText = 'margin:10px 0;display:flex;gap:8px;align-items:center;justify-content:center';
+  box.innerHTML = '<b>Entrar como:</b><button class="btn gold" data-m="weaver">O Tecelão</button><button class="btn" data-m="normal">Vocação escolhida</button>';
+  const set = m => { G.devMode = m; box.querySelectorAll('button').forEach(b => b.className = 'btn' + (b.dataset.m === m ? ' gold' : '')); };
+  box.querySelectorAll('button').forEach(b => b.onclick = () => set(b.dataset.m));
+  const st = document.getElementById('status'); if (st) st.parentNode.insertBefore(box, st); } }
 function buildDevPanel() {
   if ($('devpanel')) return;
   const d = document.createElement('div'); d.id = 'devpanel'; d.className = 'gpanel';

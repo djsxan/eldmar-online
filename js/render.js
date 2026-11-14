@@ -275,12 +275,13 @@ function objSprite(o) { return o === O.BARREL ? smallSprite('barrel') : o === O.
 function actProg(an, now) { const ms = an.ms || ACT_MS[an.a] || 400, tt = now - an.t0; if (tt < 0 || tt >= ms) return -1; if (an.W) return tt < an.W ? 0.4 * tt / an.W : 0.4 + 0.6 * (tt - an.W) / Math.max(1, ms - an.W); return tt / ms; }
 function heroPoseFor(e, now) {
   const view0 = DIR_VIEW[e.dir || 0];
-  const P = { view: view0 === 'W' ? 'E' : view0, walk: -1, act: null, idle: null, sit: false, carry: !!(e.carrying || e.lifted || e.dragMode === 'back') };
-  if (e.dragMode && e.dragMode !== 'back') P.drag = e.dragMode;
+  const P = { view: view0 === 'W' ? 'E' : view0, walk: -1, act: null, idle: null, sit: false, carry: !!e.lifted };
+  if (e.dragMode) P.drag = e.dragMode; else if (e.carrying && !e.lifted) P.drag = 'back';
+  if (P.drag === 'arms' && e.walking) P.walkRev = 1;
   P.dir = e.dir || 0;
   if (e.custP && !e.walking) { Object.assign(P, e.custP); if (P.sit) P.walk = -1; return P; }
   if (e.custP && e.custP.sweep && e.walking) P.act = e.custP.act;
-  if (e.walking) { P.walk = Math.floor(e.walkDist * (e.cls === 'knight' ? 8.5 : 9.5) / (e.running ? 1.45 : 1)) % 12; if (e.running) P.run = 1; }
+  if (e.walking) { P.walk = Math.floor(e.walkDist * (e.cls === 'knight' ? 8.5 : 9.5) / (e.running ? 1.45 : 1)) % 12; if (e.running) P.run = 1; if (e.dragMode === 'arms') P.walk = (12 - P.walk) % 12; }   // puxando pelos braços anda de costas
   if (e.anim) { const t = actProg(e.anim, now); if (t >= 0 && ACTS[e.anim.a]) P.act = { k: e.anim.a, f: Math.min(11, Math.floor(t * 12)) }; }
   if (!P.act && typeof bowPose === 'function') { const bp = bowPose(e, now); if (bp) P.act = bp; }
   if (!e.isNpc) { P.lost = e.lost || 0; P.pro = e.pro || 0; }
@@ -329,6 +330,14 @@ function drawWeaverAura(ctx, sx, sy, now) {
   ctx.restore();
   G.lights.push({ x: sx, y: sy - 30, r: 80, c: '235,245,255', a: 0.85 });
 }
+let _stoolSpr = null;
+function stoolSprite() {
+  if (_stoolSpr) return _stoolSpr; const K = 4, W = 20, H = 20, c = document.createElement('canvas'); c.width = W * K; c.height = H * K; const x = c.getContext('2d'); x.scale(K, K);
+  const cx = 10, by = 18; x.fillStyle = 'rgba(0,0,0,0.25)'; x.beginPath(); x.ellipse(cx, by, 6, 2.4, 0, 0, 7); x.fill();
+  x.strokeStyle = '#4a3020'; x.lineWidth = 1.3; for (const [dx, dy] of [[-4, 0.6], [4, 0.6], [0, 2]]) { x.beginPath(); x.moveTo(cx + dx, by + dy - 0.5); x.lineTo(cx + dx * 0.55, by - 9); x.stroke(); }
+  x.fillStyle = '#6e4a2a'; x.beginPath(); x.ellipse(cx, by - 9, 5, 2.1, 0, 0, 7); x.fill(); x.fillStyle = '#8f6a40'; x.beginPath(); x.ellipse(cx, by - 9.6, 4.4, 1.7, 0, 0, 7); x.fill();
+  _stoolSpr = { c, w: W, h: H, ax: cx, ay: by }; return _stoolSpr;
+}
 // altura do tablado do cadafalso (com a rampa da escada na frente)
 function stageLift(x, y) {
   if (STAGE.x < 0) return 0; const dx = x - STAGE.x, dy = y - STAGE.y, H = 0.82 * (typeof HV !== 'undefined' ? HV : 25);
@@ -338,6 +347,7 @@ function stageLift(x, y) {
 }
 function drawHeroEntity(ctx, e, sx, sy, now) {
   if (R3.ok && e.tied && !e.isNpc && typeof drawTied === 'function') { drawTied(ctx, e, sx, sy, now); e._spr = null; return; }
+  if (R3.ok && e.downed && !e.isNpc && typeof drawTow === 'function' && TOWS['p:' + e.id] && drawTow(ctx, 'p:' + e.id, now)) { e._spr = null; return; }
   if (R3.ok && e.downed && e.dragged && !e.isNpc && typeof drawDragged === 'function') { drawDragged(ctx, e, sx, sy, now); e._spr = null; return; }
   if (R3.ok && e.exec && now < e.exec.t0 + e.exec.ms + 1500) {   // deitado na guilhotina, com a cabeça na luneta
     const s = heroSprite3D(e.cls, e.skin, e.color, { dir: 6, walk: -1, down: true, lost: e.lost || 0, pro: e.pro || 0 });
@@ -394,6 +404,7 @@ function drawLying(ctx, e, sx, sy) {
   if (Math.random() < 0.02) spawnPart('blood', sx - G.view.ox, sy - G.view.oy - 4);
 }
 function drawCarried(ctx, e, sx, sy) {
+  if (typeof TOWS !== 'undefined' && TOWS['p:' + e.id] && drawTow(ctx, 'p:' + e.id, performance.now())) return;
   if (R3.ok) { const s = heroSprite3D(e.cls, e.skin, e.color, { dir: 2, walk: -1, down: true }); pblit(ctx, s, sx, sy - 70); return; }
   const spr = heroSprite(e.cls, e.skin, e.color, { view: 'S', walk: -1 });
   ctx.save();
@@ -515,7 +526,7 @@ const CASTS = new Set([O.OAK, O.BIRCH, O.WILLOW, O.BOULDER, O.BERRY, O.TREE, O.P
 function objSprite(o, x, y) {
   const h = hash2(x, y, 17), v = Math.floor(h * 3), i = y * MAP_W + x, z = WORLD.zone[i];
   switch (o) {
-    case O.STOOL: return natureSprite('stool', 0) || smallSprite('crate');
+    case O.STOOL: return stoolSprite();
     case O.STAGEFLOOR: return null;
     case O.GUILLOTINE: return natureSprite('guil', G.bladeAt && performance.now() >= G.bladeAt && performance.now() < G.bladeAt + 5000 ? 1 : 0) || smallSprite('cart');
     case O.OAK: return natureSprite('oak', v & 1) || treeSprite(v, 1, 3);
@@ -925,7 +936,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
   const drawItem = it => {
     if (it.gib) { const g = it.gib; ctx.imageSmoothingEnabled = true; if (it.gk >= 1 && !g.landed) { g.landed = 1; addBlood(g.x + g.dx * g.d, g.y + g.dy * g.d, g.z, 0.35, 300000); } ctx.save(); ctx.translate(it.sx, it.sy); ctx.rotate(g.rot + (it.gk < 1 ? g.spin * it.gk : g.spin)); pblit(ctx, g.s, 0, g.s.h * 0.12); ctx.restore(); return; }
     if (it.corpse) {
-      const c = it.corpse; if (c.onBack) return; let f = FALLS['m' + c.id];
+      const c = it.corpse; if (c.onBack) return; if (typeof TOWS !== 'undefined' && TOWS['c:' + c.id]) { drawTow(ctx, 'c:' + c.id, now); return; } let f = FALLS['m' + c.id];
       const live = G.monsters[c.id]; if (!f && live && live.dieAt && now - live.dieAt < 1500) return;   // a queda ao vivo ainda vai começar
       if (!f && R3.ok) { f = startFall({ lost: c.lost || 0, key: 'm' + c.id, type: c.type, x: c.x, y: c.y, dir: c.id % 8, ix: c.ix, iy: c.iy, cls: 'knight', big: MON[c.type].big, force: 1 }); if (f) f.fromCorpse = true; }
       if (f) { if (f.fromCorpse && !f.done && !f.staged) { for (let k = 0; k < 400 && !stepAny(f); k++); } drawFall(ctx, f, it.sx, it.sy, now, 1, c.type !== 'dragon' && MON_LOOK[c.type] ? 2 : 0); }

@@ -178,7 +178,9 @@ function interiorLayout0(b, fl = 0) {
     return { F, npc: null };
   }
   if (k === 'house') {
-    put('bed', 0, 0, { h: 2 }); put('fireplace', w - 2, 0); put('stove', w - 1, 0); put('chest', 1, 0); if (h >= 5) put('barrel', w - 1, 1);
+    put('bed', 0, 0, { h: 2 }); put('fireplace', w - 2, 0);
+    for (const i of [w - 1, w - 3, 2, 3]) if (i >= 1 && i < w && can(i, 0) && can(i, 1)) { put('stove', i, 0); taken.add(key(i, 1)); break; }   // a frente do fogão fica livre para cozinhar
+    put('chest', 1, 0);
     if (put('table', w - 2, h - 3)) { put('chair', w - 1, h - 3, { seat: 5 }); put('chair', w - 3, h - 3, { seat: 1 }); }
     put('shelf', 0, h - 2); if (h >= 5) put('crate', 0, h - 1);
     put('rug', dc, 1, { block: false });
@@ -193,7 +195,7 @@ function interiorLayout0(b, fl = 0) {
     for (let j = 0; j < 3; j++) put('rack', w - 1, j);
     put('trough', 0, 2, { w: 2 });
   } else if (k === 'tavern') {
-    npcAt(1, 0); put('barrel', 0, 0); put('barrel', 2, 0); put('counter', 0, 1, { w: 3 }); put('fireplace', w - 2, 0); put('shelf', 3, 0); put('stove', 4, 0) || put('stove', w - 1, 1);
+    npcAt(1, 0); put('barrel', 0, 0); put('barrel', 2, 0); put('counter', 0, 1, { w: 3 }); put('fireplace', w - 2, 0); put('shelf', 3, 0); for (const [i, j, fi, fj] of [[4, 0, 4, 1], [w - 1, 1, w - 2, 1], [w - 1, 2, w - 2, 2]]) if (can(i, j) && can(fi, fj)) { put('stove', i, j); taken.add(key(fi, fj)); break; }
     for (const [ti, tj] of [[5, 2], [1, 3], [5, 4]]) if (put('table', ti, tj)) { put('chair', ti - 1, tj, { seat: 1 }); put('chair', ti + 1, tj, { seat: 5 }); }
   } else if (k === 'temple') {
     put('altar', dc - 1, 0, { w: 3 }); npcAt(dc, 1); put('candles', 1, 0); put('candles', w - 2, 0);

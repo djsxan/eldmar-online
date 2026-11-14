@@ -25,6 +25,8 @@ function updateNpcMotion(now, dt) {
 function drawNpcState(ctx, e, sx, sy, now) {
   if (e.onBackBy) return true;
   if (!(e.npDown || e.npDead)) return false;
+  if (typeof TOWS !== 'undefined' && TOWS['n:' + e.id] && drawTow(ctx, 'n:' + e.id, now)) return true;
+  if (FALLS['n' + e.id] && e.npDead) { drawFall(ctx, FALLS['n' + e.id], sx, sy, now, 1, 0); return true; }
   const P = { dir: e.dragged && typeof dragDir === 'function' ? dragDir(e) : (e.dir || 0), walk: -1, down: true, prone: !!e.prone };
   const s = npcSprite3D(e.kind, P); ctx.imageSmoothingEnabled = true; pblit(ctx, s, sx, sy);
   if (e.npDead) { ctx.save(); ctx.globalAlpha = 0.5; ctx.fillStyle = '#5a0c0c'; ctx.beginPath(); ctx.ellipse(sx + 6, sy + 2, 14, 5, 0, 0, 7); ctx.fill(); ctx.restore(); }
@@ -32,7 +34,7 @@ function drawNpcState(ctx, e, sx, sy, now) {
 }
 // alguém carregado nas costas de um NPC/monstro, ou NPC nas costas de um jogador
 function drawNpcOnBack(ctx, carrier, sx, sy) {
-  for (const id in G.npcs) { const n = G.npcs[id]; if (n.onBackBy !== carrier.id) continue; const s = npcSprite3D(n.kind, { dir: 2, walk: -1, down: true }); pblit(ctx, s, sx, sy - 70); }
+  for (const id in G.npcs) { const n = G.npcs[id]; if (n.onBackBy !== carrier.id) continue; if (typeof TOWS !== 'undefined' && TOWS['n:' + id] && drawTow(ctx, 'n:' + id, performance.now())) continue; const s = npcSprite3D(n.kind, { dir: 2, walk: -1, down: true }); pblit(ctx, s, sx, sy - 70); }
 }
 // prisioneiro amarrado: poste de madeira com cordas, sentado no chão de costas para ele
 function drawTied(ctx, e, sx, sy, now) {

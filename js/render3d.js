@@ -111,7 +111,7 @@ function buildHumanoid(L, opts = {}) {
     const rg = geo('robe' + S, () => new THREE.LatheGeometry(pts.map(p => new THREE.Vector2(p.x * S, p.y * S)), 20));
     const rb = mesh(rg, mat(hx(L.body), 'cloth', { side: THREE.DoubleSide }), 0, -0.04 * S, 0); rb.scale.set(1, 1, 0.82); spine.add(rb);   // torno gerado de cima para baixo: normais para dentro, então desenha os dois lados
     const hem = mesh(torG(0.38 * S, 0.018 * S), trimM, 0, -0.86 * S, 0); hem.rotation.x = Math.PI / 2; hem.scale.set(1, 0.82, 1); spine.add(hem);
-    R.robe = rb;
+    R.robe = rb; R.hem = hem; R.robeS = S;
   }
   // pescoço e cabeça
   const neckJ = joint(chest, 0, 0.27 * S, 0);
@@ -364,7 +364,7 @@ function applyPose(R, Q, P, walkPh) {
     }
     pos.needsUpdate = true; R.cape.geometry.computeVertexNormals();
   }
-  if (R.robe) R.robe.rotation.z = Math.sin(walkPh) * (P.walk >= 0 ? 0.05 : 0);
+  if (R.robe) { R.robe.rotation.z = Math.sin(walkPh) * (P.walk >= 0 ? 0.05 : 0); const k = P.sit ? 0.48 : 1; R.robe.scale.y = k; R.robe.rotation.x = P.sit ? -0.5 : 0; if (R.hem) { R.hem.position.y = -0.04 * R.robeS - 0.82 * R.robeS * k; R.hem.position.z = P.sit ? 0.18 * R.robeS : 0; } }   // sentado: a saia cobre só até o assento
 }
 
 // ---------- foto do modelo ----------

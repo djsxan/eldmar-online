@@ -108,6 +108,7 @@ function updateLife(now) {
   const e = G.npcs.fruit; if (!e || e.npDown || e.npDead || e.dragged || e.onBackBy) return;
   const s = sellerState(now);
   e.x = e.rx = s.x; e.y = e.ry = s.y; if (!(e.lookUntil > now)) e.dir = s.dir;
+  if (!s.walking && !(s.cust && (s.cust.down || s.cust.act))) { let q = null, bd = 6; for (const id in G.players) { const p = G.players[id]; if (!p.visible) continue; const d = dist(p.rx, p.ry, e.rx, e.ry); if (d < bd) { bd = d; q = p; } } if (q) e.dir = dirFromVec(q.rx - e.rx, q.ry - e.ry, e.dir); }
   e.walking = !!s.walking; if (s.walking) e.walkDist = s.wd || 0;
   e.custP = s.cust || null; e.sleepB = s.cust && s.cust.down ? 1 : null;
   LIFE.atStall = !s.away; LIFE.busyText = s.away || '';
