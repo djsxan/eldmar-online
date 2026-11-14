@@ -329,6 +329,7 @@ function drawWeaverAura(ctx, sx, sy, now) {
   G.lights.push({ x: sx, y: sy - 30, r: 80, c: '235,245,255', a: 0.85 });
 }
 function drawHeroEntity(ctx, e, sx, sy, now) {
+  if (R3.ok && e.tied && !e.isNpc && typeof drawTied === 'function') { drawTied(ctx, e, sx, sy, now); e._spr = null; return; }
   if (R3.ok && e.downed && e.dragged && !e.isNpc && typeof drawDragged === 'function') { drawDragged(ctx, e, sx, sy, now); e._spr = null; return; }
   if (R3.ok && e.exec && now < e.exec.t0 + e.exec.ms + 1500) {   // deitado na guilhotina, com a cabeça na luneta
     const s = heroSprite3D(e.cls, e.skin, e.color, { dir: 6, walk: -1, down: true, lost: e.lost || 0, pro: e.pro || 0 });
@@ -953,14 +954,16 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     const e = it.e;
     ctx.imageSmoothingEnabled = false;
     if (it.k === 1) {
-      drawMonsterEntity(ctx, e, it.sx, it.sy, now); if (e.arrows && !FALLS['m' + e.id]) drawStuck(ctx, e, it.sx, it.sy, now);
+      drawMonsterEntity(ctx, e, it.sx, it.sy, now); if (e.carrying && G.players[e.carrying]) drawCarried(ctx, G.players[e.carrying], it.sx, it.sy - (MON[e.type].big ? 20 : 0)); if (e.arrows && !FALLS['m' + e.id]) drawStuck(ctx, e, it.sx, it.sy, now);
     } else if (it.k === 3) {
-      drawHeroEntity(ctx, e, it.sx, it.sy, now);
+      if (typeof drawNpcState === 'function' && drawNpcState(ctx, e, it.sx, it.sy, now)) return;
+      drawHeroEntity(ctx, e, it.sx, it.sy, now); if (e.arrows) drawStuck(ctx, e, it.sx, it.sy, now);
+      if (e.carrying && G.players[e.carrying]) drawCarried(ctx, G.players[e.carrying], it.sx, it.sy);
       labels.push({ sx: it.sx, sy: it.sy - (R3.ok ? 56 : 78), name: e.name, color: '#b8e0a8', npc: e, e });
     } else {
       ctx.imageSmoothingEnabled = true; drawAuras(ctx, e, it.sx, it.sy, now); ctx.imageSmoothingEnabled = false;
       drawHeroEntity(ctx, e, it.sx, it.sy, now); if (e.arrows) drawStuck(ctx, e, it.sx, it.sy, now);
-      if (e.dragMode === 'back' && typeof drawBackCorpse === 'function') drawBackCorpse(ctx, e, it.sx, it.sy, now);
+      if (e.dragMode === 'back' && typeof drawBackCorpse === 'function') { drawBackCorpse(ctx, e, it.sx, it.sy, now); drawNpcOnBack(ctx, e, it.sx, it.sy); }
       heroExtras(e, it.sx, it.sy);
       if (e.burnUntil > now && typeof drawOnFire === 'function') drawOnFire(ctx, it.sx, it.sy, now, (e.x || 0) * 7.1);
       if (e.carrying && G.players[e.carrying]) drawCarried(ctx, G.players[e.carrying], it.sx, it.sy);

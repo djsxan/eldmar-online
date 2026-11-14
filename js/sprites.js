@@ -243,6 +243,7 @@ function buildPose(cls, P) {
   if (P.armw && !P.act) { Q.aA = [Q.tl * -0.5, 0.18, 0.12]; Q.wp = cls === 'knight' ? Q.aA[0] + Q.aA[2] + 0.2 : Q.wp; }
   if (P.sit === 'g') { Q.lA = [2.45, -2.35]; Q.lB = [2.2, -2.0]; Q.drop = 12; Q.aA = [1.15, 0.35, 1.35]; Q.aB = [1.05, 0.4, 1.25]; Q.tl = -0.22; Q.ht = 0.12; }
   else if (P.sit) { Q.lA = [1.5, -1.55]; Q.lB = [1.45, -1.5]; Q.drop = 12; Q.aA = [0.45, 0.25, 0.7]; Q.aB = [0.45, 0.25, 0.7]; Q.tl = -0.02; }
+  if (P.tied) { Q.aA = [-0.7, 0.35, 0.9]; Q.aB = [-0.7, 0.35, 0.9]; Q.tl = 0.15; Q.ht = 0.35; }
   if (P.smk != null || P.eat != null) {   // fumando cachimbo / comendo: a mão vai à boca de tempos em tempos
     const ph = Math.floor((P.smk ?? P.eat) * 8) / 8, up = ph >= 0.25 && ph < 0.5;
     Q.aA = up ? [1.6, 0.2, 2.45] : [0.75, 0.3, 1.25]; if (up) Q.ht = -0.12; if (P.smk != null) Q.pipe = 1;

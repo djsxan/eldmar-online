@@ -76,7 +76,7 @@ function sellerState(now) {
 }
 function updateLife(now) {
   if (!lifeInit()) return;
-  const e = G.npcs.fruit; if (!e) return;
+  const e = G.npcs.fruit; if (!e || e.npDown || e.npDead || e.dragged || e.onBackBy) return;
   const s = sellerState(now);
   e.x = e.rx = s.x; e.y = e.ry = s.y; e.dir = s.dir;
   e.walking = !!s.walking; if (s.walking) e.walkDist = s.wd || 0;

@@ -104,7 +104,7 @@ function clientOnServer(m) {
     case 'proj': later(m.delay || 0, () => { const e = G.players[m.id]; if (!e) return; const t = performance.now(), from = tileW(e.rx, e.ry, 20 + (e.z || 0) * FLOOR_PX); G.effects.push({ a: 'proj', kind: m.kind, from, tx: m.tx, ty: m.ty, x: m.tx, y: m.ty, t0: t, dur: Math.max(120, m.d) }); }); break;
     case 'emote': { const e = G.players[m.id]; if (e) { e.emote = { k: m.k, t0: now }; e.anim = null; } break; }
     case 'anim': {
-      const e = (m.w === 'p' ? G.players : G.monsters)[m.id];
+      const e = (m.w === 'p' ? G.players : m.w === 'n' ? G.npcs : G.monsters)[m.id];
       if (!e) break;
       e.anim = { a: m.a, t0: now, tx: m.tx, ty: m.ty, ms: m.ms, W: m.W, ang: m.ang, reach: m.reach, arc: m.arc }; e.emote = null;
       if (m.a === 'execute' && m.id === G.myId) later(380, () => { G.shake = Math.max(G.shake, 6); });
@@ -200,7 +200,7 @@ function applySnapshot(m, now) {
     if (!e) e = G.players[id] = mkEnt({ id, name: '...', cls: 'knight', skin: 'iron', color: '#888888', lvl: 1 });
     const x = x100 / 100, y = y100 / 100;
     e.flags = fl; e.visible = true; e.carrying = carrying || null; e.lifted = lifted || 0; if (id !== G.myId) { e.lost = (lp || 0) & 31; e.pro = ((lp || 0) >> 5) & 31; } e.parrying = !!((bb || 0) & 32); e.stunned = !!((bb || 0) & 64); e.duel = !!((bb || 0) & 128); e.limp = (bb || 0) & 3; e.armWeak = !!((bb || 0) & 4); e.dizzy = !!((bb || 0) & 8); e.bleeding = !!((bb || 0) & 16); e.carriedBy = !!(fl & 4); z = z / 100;
-    e.dragged = !!(fl & 131072); e.prone = !!(fl & 262144); e.gripped = !!(fl & 8388608);
+    e.tied = !!(fl & 16777216); e.dragged = !!(fl & 131072); e.prone = !!(fl & 262144); e.gripped = !!(fl & 8388608);
     e.dragMode = fl & 524288 ? 'arms' : fl & 1048576 ? 'foot' : fl & 2097152 ? 'back' : fl & 4194304 ? 'grip' : null;
     if (e === G.me && e.dragged) { e.x = e.rx = x; e.y = e.ry = y; G.path = null; }   // sendo puxado/agarrado: a posição vem do servidor
     const wasDown = e.downed; e.downed = !!(fl & 2);
@@ -216,12 +216,13 @@ function applySnapshot(m, now) {
   }
   for (const id in G.players) if (!seenP.has(id) && id !== G.myId) G.players[id].visible = false;
   const seenM = new Set();
-  for (const [id, ti, x100, y100, hp, flags, face, dg, alt] of m.m) {
+  if (typeof applyNpcRows === 'function') applyNpcRows(m.np, now);
+  for (const [id, ti, x100, y100, hp, flags, face, dg, alt, carrying] of m.m) {
     seenM.add(id);
     const x = x100 / 100, y = y100 / 100;
     let e = G.monsters[id];
     if (!e) { const type = MON_TYPES[ti]; e = G.monsters[id] = mkEnt({ id, type, x, y, rx: x, ry: y, maxHp: MON[type].hp, visible: true }); }
-    e.hp = hp; e.flags = flags; e.face = face; e.lost = (flags >> 5) & 31; if (dg != null && dg >= 0) e.dg = dg; e.altT = (alt || 0) / 10;
+    e.hp = hp; e.flags = flags; e.face = face; e.lost = (flags >> 5) & 31; if (dg != null && dg >= 0) e.dg = dg; e.altT = (alt || 0) / 10; e.carrying = carrying || null;
     { const t = Math.round(y) * MAP_W + Math.round(x); e.z = WORLD.ground[t] === T.CLIFF && WORLD.fl1[t] > 0 ? 1 : 0; }
     e.buf.push({ t: now, x, y });
     if (e.buf.length > 6) e.buf.shift();
@@ -886,7 +887,7 @@ window.addEventListener('keydown', e => {
   if ((k === '5' || k === '6' || k === '7') && !e.repeat) { Net.send({ t: 'tskill', b: +k - 5, a: G.me.fa ?? 0, id: G.target || 0 }); return; }
   if (k === 'm' && !e.repeat) { toggleWorldMap(); return; }
   if (k === 't') { if (!e.repeat) openEmoteWheel(); return; }
-  if (k === ' ' && G.me && G.me.gripped) { e.preventDefault(); Net.send({ t: 'struggle' }); return; }   // agarrado: martelar espaço
+  if (k === ' ' && G.me && (G.me.gripped || G.me.tied)) { e.preventDefault(); Net.send({ t: 'struggle' }); return; }   // agarrado: martelar espaço
   if (k === ' ' && inCombatZone()) { e.preventDefault(); if (!e.repeat) { const me = G.me, iv = myInput(); const v = iv || (me.fa != null ? [-Math.cos(me.fa), -Math.sin(me.fa)] : [0, 1]); G.dodge = { t0: performance.now(), v }; Net.send({ t: 'dodge' }); } return; }
   if (k === 'z' && !e.repeat && inCombatZone()) { strike('under'); return; }
   if ((k === '+' || k === '=') ) { SCALE = clamp(SCALE * 1.1, 1.4, 7); G.zoomUser = true; return; }
@@ -923,6 +924,7 @@ function frame() {
   if (G.started) {
     updateLocal(now, dt); updateFalls(now); updateLooting(now); if (typeof updateLife === 'function') updateLife(now);
     bowUpdate(now);
+    if (typeof updateNpcMotion === 'function') updateNpcMotion(now, dt);
     if (G.reviveSticky && (G.me.walking || !G.reviving)) { if (G.reviving) Net.send({ t: 'revive', id: G.reviving, on: false }); G.reviving = null; G.reviveSticky = false; }
     if (G.shootHeld && inCombatZone() && now - (G.shootT || 0) > 220) { G.shootT = now; Net.send({ t: 'shoot', a: G.me.fa ?? 0, id: G.target || 0 }); }
     { // luta com o dragão: a câmera se afasta devagar para caber tudo na tela (só se o zoom não foi mudado à mão)

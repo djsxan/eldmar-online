@@ -11,6 +11,8 @@ function grabCandidate() {
   let best = null, bd = 1.9;
   for (const id in G.players) { const q = G.players[id]; if (q === me || !q.visible || q.carriedBy || q.isNpc) continue; const d = dist(q.rx, q.ry, me.x, me.y); if (q.downed && d < bd) { bd = d; best = { k: 'p', id, opts: ['revive', 'arms', 'foot', 'back'] }; } }
   if (best) return best;
+  for (const id in G.npcs) { const n = G.npcs[id]; if (!(n.npDown || n.npDead) || n.onBackBy || n.dragged) continue; const d = dist(n.rx, n.ry, me.x, me.y); if (d < bd) { bd = d; best = { k: 'n', id, opts: ['arms', 'foot', 'back'] }; } }
+  if (best) return best;
   for (const c of G.corpses || []) { if (!c.looted || c.onBack) continue; const w = WEIGHT_C[c.type] ?? 3; if (w >= 3) continue; const d = dist(c.x, c.y, me.x, me.y); if (d < bd) { bd = d; best = { k: 'c', id: c.id, opts: w >= 2 ? ['arms', 'foot', 'back'] : ['arms', 'foot', 'back'] }; } }
   if (best) return best;
   bd = 1.4; for (const id in G.players) { const q = G.players[id]; if (q === me || !q.visible || q.downed || q.isNpc || q.carriedBy) continue; const d = dist(q.rx, q.ry, me.x, me.y); if (d < bd) { bd = d; best = { k: 'p', id, opts: ['grip'], standing: true }; } }
@@ -21,6 +23,7 @@ function grabKeyDown() {
   const me = G.me; if (!me || me.downed) return false;
   if (me.dragMode) { Net.send({ t: 'release' }); return true; }
   if (me.carrying) return false;   // o F de entregar ao carrasco / G de largar continuam valendo
+  if (typeof tiedNear === 'function') { const t = tiedNear(); if (t) { Net.send({ t: 'untie', id: t.id }); return true; } }
   const c = grabCandidate(); if (!c) return false;
   G.radial = { t0: performance.now(), ...c, sel: 0 }; return true;
 }

@@ -28,7 +28,7 @@ function fullStat(p) {
     pots: { hp: p.pots.hp, mp: p.pots.mp, band: p.pots.band || 0 }, body: p.body, bleed: p.bleed, food: Math.round(p.food ?? 100), water: Math.round(p.water ?? 100), cold: Math.round(p.cold || 0), infect: p.infect || 0, sick: Math.max(0, (p.sickUntil || 0) - now), hasSkin: !!p.hasSkin, lost: p.lost || 0, pro: p.pro || 0, knock: Math.max(0, (p.knockUntil || 0) - now), inv: { ...p.inv }, quests: { ...p.quests }, qdone: { ...p.qdone },
     buffs: Object.entries(p.buffs).filter(([, u]) => u > now).map(([k, u]) => [k, u - now]),
     cds: [0, 1, 2, 3].map(i => Math.max(0, (p.cds[i] || 0) - now)),
-    combat: now - p.lastCombat < OUT_OF_COMBAT_MS, cst: Math.round(p.cst ?? CST_MAX), cstMax: cstMaxOf(p), esc: p.gripBy ? Math.round(p.esc || 0) : 0, arw: (p.arrows || []).map(a => a.part), tree: p.tree || {}, use: p.use || {}, stun: Math.max(0, (p.stunUntil || 0) - now), rip: Math.max(0, (p.ripUntil || 0) - now), slow: Math.max(0, (p.slowUntil || 0) - now), downed: p.downed ? p.downed.until - now : 0,
+    combat: now - p.lastCombat < OUT_OF_COMBAT_MS, cst: Math.round(p.cst ?? CST_MAX), cstMax: cstMaxOf(p), esc: (p.gripBy || p.tied) ? Math.round(p.esc || 0) : 0, arw: (p.arrows || []).map(a => a.part), tree: p.tree || {}, use: p.use || {}, stun: Math.max(0, (p.stunUntil || 0) - now), rip: Math.max(0, (p.ripUntil || 0) - now), slow: Math.max(0, (p.slowUntil || 0) - now), downed: p.downed ? p.downed.until - now : 0,
   };
 }
 function sendStat(p) { Net.toOne(p.id, fullStat(p)); }
@@ -185,7 +185,8 @@ function hostOnClient(from, m) {
     case 'pullarrow': pullArrow(p); break;
     case 'grab': startGrab(p, m); break;
     case 'release': stopDrag(p); break;
-    case 'struggle': struggle(p); break;
+    case 'struggle': if (!tiedStruggle(p)) struggle(p); break;
+    case 'untie': untie(p, m); break;
     case 'shoot': {
       const now = now_(); if (p.cls === 'knight' || p.downed || p.carrying || p.lifted || p.atk || p.casting || p.grabbed || now < p.nextAtk) break;
       const rng = CLASSES[p.cls].range + treeEff(p, 'range'), a = +m.a || 0, ok = q => q && Math.abs((q.z || 0) - (p.z || 0)) < 0.5 && (q.alt || 0) < 1.2 && dist(p.x, p.y, q.x, q.y) <= rng + (MON[q.type].rad || 0);
@@ -308,7 +309,8 @@ function hostOnClient(from, m) {
     case 'emote': { const k = ['salute', 'dance', 'point'].includes(m.k) ? m.k : null; if (k && !p.downed) near(p.x, p.y, { t: 'emote', id: p.id, k }); break; }
     case 'exec': {   // entrega o condenado caído ao carrasco: deita na guilhotina, a lâmina cai e a cabeça rola (morte permanente)
       const v = S.players[p.carrying] || (p.drag && p.drag.k === 'p' && p.drag.mode !== 'grip' ? S.players[p.drag.id] : null); if (!v || !v.downed || STAGE.x < 0 || v.execAt || dist(p.x, p.y, STAGE.x, STAGE.y) > 3.4) break;
-      if (p.carrying) dropCarried(p); else stopDrag(p); const now = now_(); v.x = STAGE.x; v.y = STAGE.y; v.z = 0; v.execAt = now + 2600; v.downed.until = Math.max(v.downed.until, now + 12000);
+      if (!npcAlive('executioner')) { tell(p, 'Não há carrasco para executar ninguém.'); break; }
+      if (p.carrying) dropCarried(p); else stopDrag(p); startExecution(v, p.name); break; const now = now_(); v.x = STAGE.x; v.y = STAGE.y; v.z = 0; v.execAt = now + 2600; v.downed.until = Math.max(v.downed.until, now + 12000);
       near(STAGE.x, STAGE.y, { t: 'exec', id: v.id, x: STAGE.x, y: STAGE.y, ms: 2600 }); sys(p.name + ' levou ' + v.name + ' ao cadafalso!');
       setTimeout(() => { const q = S.players[v.id]; if (!q) return; q.execAt = 0; if (!q.downed) return; q.downed = null; severPlayer(q, 'head', { x: STAGE.x, y: STAGE.y + 1, name: 'o Carrasco' }); }, 2600);
       break;
@@ -575,6 +577,7 @@ function damagePlayer(p, raw, m, delay = 0, zone = null, exactPart = null) {
   if (p.sleep != null) p.sleep = null;
   if (p.downed) {
     // lobos atacam quem está caído: a pessoa sangra mais rápido
+    if (m && MON[m.type] && MON[m.type].beh === 'pred' && m.id != null && S.monsters[m.id] && !m.dragging && !p.dragBy && !p.carriedBy && !p.tied && Math.random() < 0.3) { m.dragging = p.id; m.dragUntil = now_() + 6000; p.dragBy = 'w:' + m.id; p.dragMode = 'foot'; }
     if (m && MON[m.type] && MON[m.type].beh === 'pred') { p.downed.until -= 2500; near(p.x, p.y, { t: 'hit', k: 'p', id: p.id, x: p.x, y: p.y, dmg: 0, d: delay, ax: m.x, ay: m.y }); }
     return;
   }
@@ -599,6 +602,7 @@ function damagePlayer(p, raw, m, delay = 0, zone = null, exactPart = null) {
 // ---------------- caído (downed) ----------------
 function goDown(p, m) {
   if (p.drag) stopDrag(p);
+  if (m && m.id != null && m.type && CAPTORS.has(m.type) && S.monsters[m.id] && !p.dev && !inSafe(p.x, p.y) && Math.random() < 0.7) setTimeout(() => { if (S.monsters[m.id] && p.downed) S.monsters[m.id].carryWant = p.id; }, 1200);
   p.lifted = null;
   p.hp = 0; p.downed = { until: now_() + DOWNED_MS }; p.target = null; p.casting = null; p.revive = null;
   if (p.carrying) dropCarried(p);
@@ -771,7 +775,8 @@ function usePot(p, k) {
 // ---------------- NPCs ----------------
 function npcAction(p, m) {
   const n = NPCS.find(q => q.id === m.n);
-  if (!n || dist(p.x, p.y, n.x, n.y) > 3.5) { tell(p, 'Chegue mais perto para conversar.'); return; }
+  { const sn = S.npcs && S.npcs[m.n]; if (sn && (sn.dead || sn.downed)) { tell(p, sn.dead ? sn.name + ' está morto.' : sn.name + ' está caído e não responde.'); return; } }
+  if (!n || dist(p.x, p.y, (S.npcs && S.npcs[n.id] ? S.npcs[n.id].x : n.x), (S.npcs && S.npcs[n.id] ? S.npcs[n.id].y : n.y)) > 3.5) { tell(p, 'Chegue mais perto para conversar.'); return; }
   const say = text => Net.toOne(p.id, { t: 'npc', n: n.id, text });
   const pay = cost => { if (p.gold < cost) { say('Você não tem ouro suficiente.'); return false; } p.gold -= cost; return true; };
   const now = now_();
@@ -893,6 +898,8 @@ function monsterThink(m, players, now, dt) {
   if (m.atk) { const A = m.atk; if (!A.done && now >= A.t0 + A.W) { A.done = true; resolveMonStrike(m, A, now); } if (now >= A.t0 + A.W + A.R + A.C) m.atk = null; else return; }
   if (d.dragon) return dragonThink(m, players, now, dt);
   if (now < m.stunUntil) return;
+  if (m.dragging && wolfDragTick(m, now, dt)) return;
+  if ((m.carrying || m.carryWant) && captorTick(m, now, dt)) return;
   const speed = d.speed * (now < m.slowUntil ? 0.5 : 1) * ((m.lost || 0) & 24 ? 0.4 : 1), step = speed * dt;
   const homeDist = dist(m.x, m.y, m.homeX, m.homeY);
   const reach = d.big ? 1.7 : 1.3;
@@ -1028,7 +1035,8 @@ const pvpOk = (a, b) => a !== b && !a.dev && !b.dev && !b.downed && Math.abs((a.
 function sightClear(ax, ay, bx, by) { const n = Math.ceil(dist(ax, ay, bx, by) * 2); for (let i = 1; i < n; i++) { const t = tileAt(ax + (bx - ax) * i / n, ay + (by - ay) * i / n); if (WORLD.bld[t] >= 0 || WORLD.obj[t] === O.WALL || WORLD.obj[t] === O.TOWER || WORLD.ground[t] === T.CLIFF) return false; } return true; }
 function witnessCrime(p, x, y) {
   if (!p || p.dev || !inSafe(x, y)) return false;
-  const seen = NPCS.some(n => n.kind === 'guard' && dist(n.x, n.y, x, y) <= 10 && sightClear(n.x, n.y, x, y)) || (S.guards || []).some(g => dist(g.x, g.y, x, y) <= 10 && sightClear(g.x, g.y, x, y));
+  const guards = S.npcs ? Object.values(S.npcs).filter(n => n.kind === 'guard' && !n.dead && !n.downed) : NPCS.filter(n => n.kind === 'guard');
+  const seen = guards.some(n => dist(n.x, n.y, x, y) <= 10 && sightClear(n.x, n.y, x, y));
   if (!seen) return false;
   const now = now_(), was = now < (p.wanted || 0); p.wanted = now + 300000;
   if (!was) { sys(p.name + ' foi visto cometendo um crime na cidade! As sentinelas estão atrás dele.'); tell(p, 'Uma sentinela viu: você está PROCURADO por 5 minutos (sair da cidade limpa a ficha).'); }
@@ -1052,6 +1060,7 @@ function pvpHit(p, q, A, now) {
 function resolvePlayerStrike(p, A, now) { p._melee = true; try { resolvePlayerStrike0(p, A, now); } finally { p._melee = false; } }
 function resolvePlayerStrike0(p, A, now) {
   { const B0 = STRIKES[A.k]; let n = 0; for (const q of Object.values(S.players)) { if (n >= (B0.multi || 1) || !pvpOk(p, q) || !inArc(p.x, p.y, A.a, q.x, q.y, A.reach, A.arc, 0.3)) continue; pvpHit(p, q, A, now); n++; } if (n) return; }
+  for (const n of Object.values(S.npcs || {})) { if (n.dead || n.onBack || n.carriedBy || !inArc(p.x, p.y, A.a, n.x, n.y, A.reach, A.arc, 0.3)) continue; const B1 = STRIKES[A.k], M1 = MELEE[p.cls] || MELEE.knight; npcDamage(n, roll(p, B1.mult * M1.dmg).dmg, p); break; }
   const B = STRIKES[A.k], M = MELEE[p.cls] || MELEE.knight;
   const targets = Object.values(S.monsters).filter(q => Math.abs((q.z || 0) - (p.z || 0)) < 0.5 && (q.alt || 0) < 1.2 && inArc(p.x, p.y, A.a, q.x, q.y, A.reach, A.arc, MON[q.type].rad || 0.3)).sort((a, b) => dist(a.x, a.y, p.x, p.y) - dist(b.x, b.y, p.x, p.y)).slice(0, B.multi || 1);
   for (const q of targets) {
@@ -1412,6 +1421,7 @@ function arrowTick(now, dt) {
       // corpos: jogadores (inclusive aliados) e monstros
       const tgts = [];
       for (const q of Object.values(S.players)) { if (q.dev || (q.id === A.by && now - A.t0 < 250) || q.fl > 0) continue; tgts.push({ q, k: 'p', r: 0.32, H: q.downed ? 0.45 : 1.8, base: q.z >= 0.5 ? 3.5 : 0 }); }
+      for (const q of Object.values(S.npcs || {})) { if (q.dead || q.onBack) continue; tgts.push({ q, k: 'n', r: 0.32, H: q.downed ? 0.45 : 1.8, base: 0 }); }
       for (const q of Object.values(S.monsters)) { if ((q.alt || 0) > 1.2) continue; tgts.push({ q, k: 'm', r: Math.max(0.3, Math.min(1.6, MON[q.type].rad || 0.35)), H: MON_HT[q.type] || 1.6, base: (q.z || 0) >= 0.5 ? 3.5 : 0 }); }
       for (const T0 of tgts) {
         const q = T0.q, dx = A.x - q.x, dy = A.y - q.y; if (dx * dx + dy * dy > T0.r * T0.r) continue;
@@ -1436,7 +1446,8 @@ function arrowHit(A, p, q, k, part, h, dx, dy, fa) {
   const now = now_(), pow = A.pow, mult = (0.6 + 1.9 * Math.pow(pow, 1.5)) * (part === 'head' ? 2 : part.startsWith('leg') ? 0.75 : part.startsWith('arm') ? 0.85 : 1);
   const src = p || { id: A.by, x: A.x, y: A.y, cls: 'archer', lvl: 1, buffs: {}, body: null };
   const stick = { k, id: q.id, part, h, lx: dx, ly: dy, a: fa };
-  if (k === 'p') {
+  if (k === 'n') { const r = p ? roll(p, mult) : { dmg: Math.round(12 * mult) }; npcDamage(q, r.dmg, p); }
+  else if (k === 'p') {
     if (now < (q.dodgeUntil || 0)) { near(q.x, q.y, { t: 'whiff', id: q.id }); return; }
     if (p && inSafe(q.x, q.y)) witnessCrime(p, p.x, p.y);
     const r = p ? roll(p, mult) : { dmg: Math.round(12 * mult), crit: false };
@@ -1488,13 +1499,15 @@ function startGrab(p, m) {
     p.drag = { k, id: t.id, mode, w, a: Math.atan2(t.y - p.y, t.x - p.x) };
     near(p.x, p.y, { t: 'drag', by: p.id, k, id: t.id, mode }); tell(t, 'Você foi agarrado! Aperte ESPAÇO várias vezes para se soltar.'); witnessCrime(p, p.x, p.y); sendStat(p); sendStat(t); return;
   }
-  if ((k === 'p' || k === 'n') && (!t.downed || t.carriedBy || t.dragBy || t.execAt)) return;
+  if (k === 'p' && (!t.downed || t.carriedBy || t.dragBy || t.execAt || t.tied)) return;
+  if (k === 'n' && ((!t.downed && !t.dead) || t.dragBy)) return;
   if (k === 'c' && t.dragBy) return;
+  if (k === 'n' && (t.dead ? false : !t.downed)) return;
   if (mode === 'back') {
     if (w >= 2 && (p.cst ?? 0) < cstMaxOf(p) * 0.4) { tell(p, 'Sem fôlego para levantar esse peso.'); return; }
     if (k === 'p') { p.carrying = t.id; t.carriedBy = p.id; t.revive = null; near(p.x, p.y, { t: 'carry', by: p.id, id: t.id }); return; }   // gente nas costas: o carregar de sempre
   }
-  p.drag = { k, id: t.id, mode, w }; t.dragBy = p.id; t.dragMode = mode; if (k === 'p') t.revive = null; if (k === 'c' && mode === 'back') t.onBack = p.id;
+  p.drag = { k, id: t.id, mode, w }; t.dragBy = p.id; t.dragMode = mode; if (k === 'p') t.revive = null; if ((k === 'c' || k === 'n') && mode === 'back') t.onBack = p.id;
   near(p.x, p.y, { t: 'drag', by: p.id, k, id: t.id, mode });
 }
 function stopDrag(p, why) {
@@ -1503,7 +1516,7 @@ function stopDrag(p, why) {
   if (t) {
     t.dragBy = null; t.dragMode = null;
     if (d.mode === 'grip') { t.gripBy = null; t.esc = 0; sendStat(t); }
-    if (d.k === 'c' && d.mode === 'back') { t.onBack = null; for (const [dx, dy] of [[0.7, 0], [-0.7, 0], [0, 0.7], [0, -0.7], [0, 0]]) if (canStand(p.x + dx, p.y + dy, p.z || 0, 0.2)) { t.x = p.x + dx; t.y = p.y + dy; break; } }
+    if ((d.k === 'c' || d.k === 'n') && d.mode === 'back') { t.onBack = null; for (const [dx, dy] of [[0.7, 0], [-0.7, 0], [0, 0.7], [0, -0.7], [0, 0]]) if (canStand(p.x + dx, p.y + dy, p.z || 0, 0.2)) { t.x = p.x + dx; t.y = p.y + dy; break; } }
   }
   near(p.x, p.y, { t: 'drag', by: p.id, k: d.k, id: d.id, mode: null });
   if (why) tell(p, why);
@@ -1517,7 +1530,7 @@ function struggle(p) {
 function dragTick(p, now, dt) {
   const d = p.drag; if (!d) return;
   const t = dragTarget(d.k, d.id);
-  if (!t || p.downed || p.carriedBy || (d.k !== 'c' && d.mode !== 'grip' && !t.downed) || (d.mode === 'grip' && t.downed) || (d.k === 'p' && t.carriedBy)) { stopDrag(p); return; }
+  if (!t || p.downed || p.carriedBy || (d.k === 'p' && d.mode !== 'grip' && !t.downed) || (d.k === 'n' && !t.downed && !t.dead) || (d.mode === 'grip' && t.downed) || (d.k === 'p' && t.carriedBy)) { stopDrag(p); return; }
   if (p._lx != null) { const mx = p.x - p._lx, my = p.y - p._ly; if (mx * mx + my * my > 0.0004) p._dragA = Math.atan2(my, mx); } p._lx = p.x; p._ly = p.y;
   const a = p._dragA ?? Math.atan2(t.y - p.y, t.x - p.x) + Math.PI;
   if (d.mode === 'back') { t.x = p.x; t.y = p.y; t.z = p.z; p.cst -= (d.w >= 2 ? 8 : 2) * dt; p.cstT = now; if (p.cst <= 0) { p.cst = 0; stopDrag(p, 'O peso venceu: você largou.'); } return; }
@@ -1533,8 +1546,140 @@ function dragTick(p, now, dt) {
   t.z = p.z; t.lastMv = now;
 }
 function dragCleanup() {
-  for (const q of Object.values(S.players)) if (q.dragBy && (!S.players[q.dragBy] || !S.players[q.dragBy].drag || S.players[q.dragBy].drag.id !== q.id)) { q.dragBy = null; q.gripBy = null; q.dragMode = null; q.esc = 0; }
+  for (const q of Object.values(S.players)) if (q.dragBy && !String(q.dragBy).startsWith('w:') && (!S.players[q.dragBy] || !S.players[q.dragBy].drag || S.players[q.dragBy].drag.id !== q.id)) { q.dragBy = null; q.gripBy = null; q.dragMode = null; q.esc = 0; }
+  for (const c of Object.values(S.npcs || {})) if (c.dragBy && (!S.players[c.dragBy] || !S.players[c.dragBy].drag || S.players[c.dragBy].drag.id !== c.id)) { c.dragBy = null; c.dragMode = null; c.onBack = null; }
   for (const c of Object.values(S.corpses || {})) if (c.dragBy && (!S.players[c.dragBy] || !S.players[c.dragBy].drag || S.players[c.dragBy].drag.id !== c.id)) { c.dragBy = null; c.dragMode = null; c.onBack = null; }
+}
+
+// ---------------- NPCs vulneráveis, sentinelas que agem, prisioneiros e lobos que arrastam ----------------
+const NPC_HP = { guard: 260, executioner: 220, captain: 240 };
+function initNpcs() {
+  if (S.npcs) return; S.npcs = {};
+  for (const n of NPCS) S.npcs[n.id] = { id: n.id, kind: n.kind, name: n.name, x: n.x, y: n.y, z: 0, postX: n.x, postY: n.y, hp: NPC_HP[n.kind] || 90, maxHp: NPC_HP[n.kind] || 90, downed: null, dead: false };
+}
+const npcAlive = id => { const n = S.npcs && S.npcs[id]; return !n || (!n.dead && !n.downed); };
+function npcDamage(n, dmg, p) {
+  if (!n || n.dead) return; const now = now_();
+  if (p) witnessCrime(p, n.x, n.y);
+  if (n.downed) { npcDie(n, p); return; }
+  n.hp -= dmg; sfx(n.x, n.y, '-' + dmg, '#ff8a6a'); near(n.x, n.y, { t: 'anim', w: 'n', id: n.id, a: 'hurt', ms: 300 });
+  if (n.kind === 'guard' && p) { n.aggro = p.id; p.wanted = Math.max(p.wanted || 0, now + 300000); Net.toAll({ t: 'wanted', id: p.id, ms: p.wanted - now }); }
+  if (n.hp <= 0) { n.hp = 0; n.downed = { until: now + 45000 }; n.carrying && npcDropCarried(n); sys(n.name + ' caiu ferido!'); }
+}
+function npcDie(n, p) {
+  n.dead = true; n.downed = null; n.hp = 0; if (n.carrying) npcDropCarried(n);
+  if (n.dragBy && S.players[n.dragBy]) stopDrag(S.players[n.dragBy]);
+  sys(n.name + ' morreu' + (p ? ' pelas mãos de ' + p.name : '') + '. A cidade não o terá de volta tão cedo.');
+}
+// carregar jogador (sentinelas e monstros levam nas costas)
+function entCarry(c, q, tag) { c.carrying = q.id; q.carriedBy = tag; q.revive = null; if (q.dragBy && S.players[q.dragBy]) stopDrag(S.players[q.dragBy]); }
+function npcDropCarried(c) { const q = S.players[c.carrying]; c.carrying = null; if (!q) return; q.carriedBy = null; q.x = c.x + 0.5; q.y = c.y; q.z = 0; return q; }
+// movimento simples de NPC (sem a regra de "monstro não entra na cidade"), seguindo um caminho quando o anfitrião tem o pathfinder
+function npcWalk(n, tx, ty, speed, dt) {
+  if (n.path && n.path.length && (n.pathTo[0] !== Math.round(tx) || n.pathTo[1] !== Math.round(ty))) n.path = null;
+  if (!n.path && typeof findPath === 'function' && dist(n.x, n.y, tx, ty) > 2) { try { n.path = findPath(n.x, n.y, tx, ty, 0, 1) || []; } catch (e) { n.path = []; } n.pathTo = [Math.round(tx), Math.round(ty)]; }
+  let gx = tx, gy = ty; if (n.path && n.path.length) { [gx, gy] = n.path[0]; if (dist(n.x, n.y, gx, gy) < 0.35) n.path.shift(); }
+  const dx = gx - n.x, dy = gy - n.y, d = Math.hypot(dx, dy); if (d < 0.05) return dist(n.x, n.y, tx, ty) < 0.6;
+  const s = Math.min(d, speed * dt), nx = n.x + dx / d * s, ny = n.y + dy / d * s;
+  if (canStand(nx, ny, 0, 0.22)) { n.x = nx; n.y = ny; } else if (canStand(nx, n.y, 0, 0.22)) n.x = nx; else if (canStand(n.x, ny, 0, 0.22)) n.y = ny; else { n.x = nx; n.y = ny; }
+  n.walk = true; return dist(n.x, n.y, tx, ty) < 0.6;
+}
+// execução no cadafalso (usada pelo jogador e pela sentinela)
+function startExecution(v, by) {
+  if (!npcAlive('executioner')) return false;
+  const now = now_(); v.x = STAGE.x; v.y = STAGE.y; v.z = 0; v.execAt = now + 2600; v.downed.until = Math.max(v.downed.until, now + 12000);
+  near(STAGE.x, STAGE.y, { t: 'exec', id: v.id, x: STAGE.x, y: STAGE.y, ms: 2600 }); sys(by + ' levou ' + v.name + ' ao cadafalso!');
+  setTimeout(() => { const q = S.players[v.id]; if (!q) return; q.execAt = 0; if (!q.downed) return; q.downed = null; severPlayer(q, 'head', { x: STAGE.x, y: STAGE.y + 1, name: 'o Carrasco' }); }, 2600);
+  return true;
+}
+function guardThink(n, now, dt) {
+  n.walk = false;
+  // carregando alguém: procurado vai ao cadafalso; ferido inocente vai à sacerdotisa
+  if (n.carrying) {
+    const q = S.players[n.carrying]; if (!q || !q.downed) { if (q) npcDropCarried(n); else n.carrying = null; return; }
+    q.x = n.x; q.y = n.y; q.downed.until = Math.max(q.downed.until, now + 4000);
+    if (n.mission === 'stage' && STAGE.x >= 0) { if (npcWalk(n, STAGE.x + 1.2, STAGE.y + 2.2, 1.7, dt)) { const v = npcDropCarried(n); if (v && !startExecution(v, n.name)) tell(v, 'Sem carrasco, a sentinela te larga no cadafalso.'); n.mission = null; } }
+    else { const tx = TEMPLE_SPAWN.x, ty = TEMPLE_SPAWN.y; if (npcWalk(n, tx, ty, 1.7, dt)) { const v = npcDropCarried(n); n.mission = null; if (v && npcAlive('priest')) { revivePlayer(v, 0.35, 'Irmã Lúmina'); tell(v, 'A sentinela te trouxe até a Irmã Lúmina.'); } } }
+    return;
+  }
+  // procurados à vista: persegue e ataca; caído, carrega
+  let tgt = null, bd = 14;
+  for (const q of Object.values(S.players)) { if (q.dev || q.carriedBy || !(now < (q.wanted || 0) || n.aggro === q.id)) continue; const d = dist(n.x, n.y, q.x, q.y); if (d < bd && (d < 3 || sightClear(n.x, n.y, q.x, q.y))) { bd = d; tgt = q; } }
+  if (tgt) {
+    if (tgt.downed) { if (bd < 1.3) { entCarry(n, tgt, 'n:' + n.id); n.mission = 'stage'; n.aggro = null; sys(n.name + ' prendeu ' + tgt.name + ' e o leva ao cadafalso!'); } else npcWalk(n, tgt.x, tgt.y, 2.3, dt); return; }
+    if (bd > 1.3) { npcWalk(n, tgt.x, tgt.y, 2.3, dt); return; }
+    if (now >= (n.nextAtk || 0)) {
+      n.nextAtk = now + 1400; n.face = Math.atan2(tgt.y - n.y, tgt.x - n.x);
+      near(n.x, n.y, { t: 'anim', w: 'n', id: n.id, a: 'atk_slashR', ms: 900, tx: tgt.x, ty: tgt.y });
+      setTimeout(() => { if (n.dead || n.downed || !S.players[tgt.id] || tgt.downed || dist(n.x, n.y, tgt.x, tgt.y) > 1.8) return; if (now_() < (tgt.dodgeUntil || 0)) { near(tgt.x, tgt.y, { t: 'whiff', id: tgt.id }); return; } if (tgt.parry) { tgt.cst -= 16; near(tgt.x, tgt.y, { t: 'clang', x: (n.x + tgt.x) / 2, y: (n.y + tgt.y) / 2 }); if (tgt.cst <= 0) guardBreak(tgt, now_()); sendStat(tgt); return; } damagePlayer(tgt, rint(16, 26), { x: n.x, y: n.y, name: n.name }, 0, 'torso'); }, 480);
+    }
+    return;
+  }
+  n.aggro = null;
+  // socorro: jogador caído (não procurado) dentro da cidade, sem ninguém cuidando
+  for (const q of Object.values(S.players)) {
+    if (!q.downed || q.carriedBy || q.dragBy || q.tied || q.execAt || !inSafe(q.x, q.y) || now < (q.wanted || 0)) continue;
+    if (Object.values(S.npcs).some(o => o !== n && o.carrying === q.id)) continue;
+    const d = dist(n.x, n.y, q.x, q.y); if (d > 16 || now - (q.downed.until - DOWNED_MS) < 4000) continue;
+    if (d < 1.3) { entCarry(n, q, 'n:' + n.id); n.mission = 'temple'; tell(q, 'Uma sentinela te pegou para levar à sacerdotisa.'); } else npcWalk(n, q.x, q.y, 2.2, dt);
+    return;
+  }
+  if (dist(n.x, n.y, n.postX, n.postY) > 0.5) npcWalk(n, n.postX, n.postY, 1.6, dt);
+}
+function npcTick(now, dt) {
+  initNpcs();
+  for (const n of Object.values(S.npcs)) {
+    if (n.dead) continue;
+    if (n.downed) { if (now > n.downed.until && !n.dragBy) { n.downed = null; n.hp = Math.round(n.maxHp * 0.3); sys(n.name + ' se levantou, ferido.'); } continue; }
+    if (n.dragBy) continue;
+    if (n.kind === 'guard') { guardThink(n, now, dt); continue; }
+    if (n.id === 'fruit' && typeof G !== 'undefined' && G.npcs && G.npcs.fruit) { n.x = G.npcs.fruit.x; n.y = G.npcs.fruit.y; }
+  }
+}
+// ---------- monstros: orcs/bandidos levam prisioneiros, lobos arrastam a presa ----------
+const CAPTORS = new Set(['orc', 'bandit', 'deserter', 'goblin', 'orcchief', 'deserterchief']);
+function captorTick(m, now, dt) {
+  const d = MON[m.type];
+  if (m.carrying) {
+    const q = S.players[m.carrying]; if (!q || !q.downed) { if (q) npcDropCarried(m); else m.carrying = null; return true; }
+    q.x = m.x; q.y = m.y; q.downed.until = Math.max(q.downed.until, now + 4000);
+    const B = BASTIONS.find(b => b.id === m.bs), hx = B ? B.x : m.homeX, hy = B ? B.y : m.homeY;
+    if (dist(m.x, m.y, hx, hy) < 1.5) { const v = npcDropCarried(m); if (v) { v.tied = { until: now + 300000, by: m.type }; v.esc = 0; v.x = hx + 0.8; v.y = hy + 0.3; tell(v, 'Você foi amarrado num poste do acampamento! Martele ESPAÇO para se soltar, ou espere ajuda (F perto solta). Em 5 minutos o chefe vai te executar.'); sys(v.name + ' foi feito prisioneiro.'); } }
+    else moveToward(m, hx, hy, d.speed * 0.75 * dt) || (m.x += (hx - m.x) * 0.02, m.y += (hy - m.y) * 0.02);
+    return true;
+  }
+  if (m.carryWant) {
+    const q = S.players[m.carryWant]; if (!q || !q.downed || q.carriedBy || q.dragBy || q.tied) { m.carryWant = null; return false; }
+    if (dist(m.x, m.y, q.x, q.y) < 1.3) { entCarry(m, q, 'm:' + m.id); m.carryWant = null; tell(q, 'Um ' + MON[m.type].name.toLowerCase() + ' te jogou nas costas e te leva para o acampamento!'); }
+    else chase(m, q.x, q.y, d.speed * dt, now);
+    return true;
+  }
+  return false;
+}
+function wolfDragTick(m, now, dt) {
+  const q = S.players[m.dragging];
+  if (!q || !q.downed || q.carriedBy || now > m.dragUntil) { if (q && q.dragBy === 'w:' + m.id) { q.dragBy = null; q.dragMode = null; } m.dragging = null; return false; }
+  // puxa para longe dos outros jogadores
+  let ax = 0, ay = 0; for (const o of Object.values(S.players)) { if (o === q || o.downed) continue; const dd = dist(o.x, o.y, m.x, m.y); if (dd < 14) { ax += (m.x - o.x) / (dd + 0.5); ay += (m.y - o.y) / (dd + 0.5); } }
+  if (Math.hypot(ax, ay) < 0.05) { m.dragA = m.dragA ?? Math.random() * Math.PI * 2; ax = Math.cos(m.dragA); ay = Math.sin(m.dragA); } const l = Math.hypot(ax, ay) || 1;
+  moveToward(m, m.x + ax / l * 2, m.y + ay / l * 2, MON[m.type].speed * 0.55 * dt);
+  const a = Math.atan2(ay, ax), nx = m.x - Math.cos(a) * 1.0, ny = m.y - Math.sin(a) * 1.0; if (canStand(nx, ny, 0, 0.15)) { q.x = nx; q.y = ny; }
+  return true;
+}
+function tiedTick(p, now) {
+  if (!p.tied) return;
+  if (!p.downed) { p.tied = null; return; }
+  p.downed.until = Math.max(p.downed.until, now + 5000);   // amarrado não sangra até morrer
+  if (now > p.tied.until) { p.tied = null; sys(p.name + ' foi executado pelo chefe do acampamento.'); p.downed = null; severPlayer(p, 'head', { x: p.x + 1, y: p.y, name: 'o chefe' }); }
+}
+function untie(p, m) {
+  const q = S.players[m.id]; if (!q || !q.tied || dist(p.x, p.y, q.x, q.y) > 2) return;
+  q.tied = null; q.esc = 0; q.downed.until = now_() + DOWNED_MS; tell(q, p.name + ' cortou suas cordas!'); tell(p, 'Você soltou ' + q.name + '. Reanime-o!');
+}
+function tiedStruggle(p) {
+  if (!p.tied) return false;
+  p.esc = (p.esc || 0) + 2.5; if (p.esc >= 100) { p.tied = null; p.esc = 0; revivePlayer(p, 0.15, 'você mesmo'); tell(p, 'Você se livrou das cordas! Fuja!'); } else sendStat(p);
+  return true;
 }
 
 // ---------------- progressão por uso e habilidades da árvore ----------------
@@ -1622,11 +1767,11 @@ function hostTick() {
   }
 
   for (const p of players) { if (p.wanted && (now > p.wanted || !inSafe(p.x, p.y))) { p.wanted = 0; Net.toAll({ t: 'wanted', id: p.id, ms: 0 }); }
-    bodyTick(p, now, dt); survivalTick(p, now, dt); combatTick(p, now, dt); bowTick(p, now, dt); dragTick(p, now, dt); if (p.running && p.walking) { const d = dist(p._rx ?? p.x, p._ry ?? p.y, p.x, p.y); if (d < 3) useGain(p, 'run', d); } p._rx = p.x; p._ry = p.y; }
+    bodyTick(p, now, dt); survivalTick(p, now, dt); combatTick(p, now, dt); bowTick(p, now, dt); dragTick(p, now, dt); tiedTick(p, now); if (p.running && p.walking) { const d = dist(p._rx ?? p.x, p._ry ?? p.y, p.x, p.y); if (d < 3) useGain(p, 'run', d); } p._rx = p.x; p._ry = p.y; }
   if (!S.bslots) initBastions();
   tickBastions(now);
   if (S.fires && S.fires.length) { S.fires = S.fires.filter(f => f.until > now); for (const p of players) { if (p.downed || now < (p.burnT || 0)) continue; if (S.fires.some(f => dist(f.x, f.y, p.x, p.y) < f.r)) { p.burnT = now + 500; damagePlayer(p, 6, null, 0); if (Math.random() < 0.25) ignitePlayer(p, now); } } }
-  dragCleanup(); fireTick(now, players); zoneTick(now); arrowTick(now, dt); arrowBleedTick(now);
+  npcTick(now, dt); dragCleanup(); fireTick(now, players); zoneTick(now); arrowTick(now, dt); arrowBleedTick(now);
 
   for (const p of players) {
     if (p.downed) {
@@ -1680,17 +1825,18 @@ function hostTick() {
     for (const p of players) {
       if (dist(p.x, p.y, r.x, r.y) > VIEW_RADIUS) continue;
       if (p.devHidden && p.id !== r.id) continue;
-      let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0) | (p.running && p.walking ? 256 : 0) | (p.sit ? 512 : 0) | (p.sit === 'c' ? 1024 : 0) | (p.sleep != null ? 32768 : 0) | (p.drawT ? 65536 : 0) | (p.dragBy ? 131072 : 0) | (p.dragMode === 'foot' ? 262144 : 0) | (p.drag && p.drag.mode === 'arms' ? 524288 : 0) | (p.drag && p.drag.mode === 'foot' ? 1048576 : 0) | (p.drag && p.drag.mode === 'back' ? 2097152 : 0) | (p.drag && p.drag.mode === 'grip' ? 4194304 : 0) | (p.gripBy ? 8388608 : 0) | ((p.fl || 0) << 11) | (p.crouch ? 8192 : 0) | (p.slide ? 16384 : 0);
+      let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0) | (p.running && p.walking ? 256 : 0) | (p.sit ? 512 : 0) | (p.sit === 'c' ? 1024 : 0) | (p.sleep != null ? 32768 : 0) | (p.drawT ? 65536 : 0) | (p.dragBy ? 131072 : 0) | (p.dragMode === 'foot' ? 262144 : 0) | (p.drag && p.drag.mode === 'arms' ? 524288 : 0) | (p.drag && p.drag.mode === 'foot' ? 1048576 : 0) | (p.drag && p.drag.mode === 'back' ? 2097152 : 0) | (p.drag && p.drag.mode === 'grip' ? 4194304 : 0) | (p.gripBy ? 8388608 : 0) | (p.tied ? 16777216 : 0) | ((p.fl || 0) << 11) | (p.crouch ? 8192 : 0) | (p.slide ? 16384 : 0);
       for (const b in BUFF_BITS) if (buffOn(p, b)) fl |= BUFF_BITS[b];
       pl.push([p.id, Math.round(p.x * 100), Math.round(p.y * 100), Math.round(p.z * 100), p.dir | 0, fl, Math.round(p.hp / p.maxHp * 100), p.carrying || 0, p.lifted || 0, bodyBits(p), (p.lost || 0) | ((p.pro || 0) << 5)]);
     }
     for (const m of mons) {
       if (Math.abs(m.x - r.x) > VIEW_RADIUS || Math.abs(m.y - r.y) > VIEW_RADIUS) continue;
-      ml.push([m.id, MON_TYPES.indexOf(m.type), Math.round(m.x * 100), Math.round(m.y * 100), m.hp, (m.slowUntil > now ? 1 : 0) | (m.stunUntil > now ? 2 : 0) | (m.sleep ? 4 : 0) | (m.fury ? 8 : 0) | ((m.lost || 0) << 5), m.face, MON[m.type].dragon ? dragonDir(m) : -1, Math.round((m.alt || 0) * 10)]);
+      ml.push([m.id, MON_TYPES.indexOf(m.type), Math.round(m.x * 100), Math.round(m.y * 100), m.hp, (m.slowUntil > now ? 1 : 0) | (m.stunUntil > now ? 2 : 0) | (m.sleep ? 4 : 0) | (m.fury ? 8 : 0) | ((m.lost || 0) << 5), m.face, MON[m.type].dragon ? dragonDir(m) : -1, Math.round((m.alt || 0) * 10), m.carrying || 0]);
     }
     const ch = []; for (const id in S.chests) { const c = S.chests[id]; if (Math.abs(c.x - r.x) <= VIEW_RADIUS && Math.abs(c.y - r.y) <= VIEW_RADIUS) ch.push([c.id, Math.round(c.x * 100), Math.round(c.y * 100), c.opened.has(r.id) ? 1 : 0, c.who.has(r.id) ? 1 : 0]); }
     const co = []; for (const id in S.corpses || {}) { const c = S.corpses[id]; if (Math.abs(c.x - r.x) <= VIEW_RADIUS && Math.abs(c.y - r.y) <= VIEW_RADIUS) co.push([c.id, MON_TYPES.indexOf(c.type), Math.round(c.x * 100), Math.round(c.y * 100), c.z, c.looted ? 1 : 0, Math.round(c.ix * 10), Math.round(c.iy * 10), c.lost || 0, c.onBack || 0]); }
-    Net.toOne(r.id, { t: 's', p: pl, m: ml, ch, co }, true);
+    const np = []; for (const n of Object.values(S.npcs || {})) { if (Math.abs(n.x - r.x) > VIEW_RADIUS + 4 || Math.abs(n.y - r.y) > VIEW_RADIUS + 4) continue; np.push([n.id, Math.round(n.x * 100), Math.round(n.y * 100), (n.downed ? 1 : 0) | (n.dead ? 2 : 0) | (n.dragBy && n.dragMode !== 'back' ? 4 : 0) | (n.dragMode === 'foot' ? 8 : 0) | (n.walk ? 32 : 0), n.onBack || 0, n.carrying || 0]); }
+    Net.toOne(r.id, { t: 's', p: pl, m: ml, ch, co, np }, true);
   }
 }
 
