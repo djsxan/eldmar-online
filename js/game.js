@@ -65,7 +65,7 @@ function clientOnServer(m) {
       const e = G.me; if (!e || m.id !== G.myId) break;
       const oldLvl = e.lvl;
       if (m.slow) G.slowUntil = now + m.slow;
-      Object.assign(e, { hp: m.hp, maxHp: m.maxHp, mp: m.mp, maxMp: m.maxMp, lvl: m.lvl, xp: m.xp, gold: m.gold, pots: m.pots, inv: m.inv || {}, combat: m.combat, quests: m.quests, qdone: m.qdone });
+      Object.assign(e, { hp: m.hp, maxHp: m.maxHp, mp: m.mp, maxMp: m.maxMp, lvl: m.lvl, xp: m.xp, gold: m.gold, pots: m.pots, body: m.body, bleed: m.bleed, inv: m.inv || {}, combat: m.combat, quests: m.quests, qdone: m.qdone });
       setBuffs(e, m.buffs);
       G.cdEnd = m.cds.map(r => now + r);
       e.downed = m.downed > 0; e.downUntil = now + m.downed;
@@ -146,6 +146,9 @@ function clientOnServer(m) {
     }
     case 'obj': WORLD.obj[m.i] = m.o; break;
     case 'throwfx': G.throws.push({ ...m, t0: now }); break;
+    case 'wound': showToast(BODY_NAMES[m.part] + ': ' + PART_STATE_NAMES[m.st] + (m.st >= 2 ? ' — está sangrando' : '')); flashDamage(); break;
+    case 'banding': G.banding = performance.now() + m.ms; break;
+    case 'miss': { const e = G.monsters[m.id]; if (e) { const w = tileW(e.rx, e.ry, 30); for (let k = 0; k < 5; k++) spawnPart('dust', w.x, w.y); } break; }
     case 'lootgold': showToast('+ ' + m.g + ' de ouro'); break;
     case 'loot': { const it = LOOT[m.k]; if (it) { showToast('+ ' + it.name); G.newLoot = m.k; } break; }
     case 'qprog': { const q = QUESTS.find(x => x.id === m.id); if (q) showToast(`${q.name}: ${m.n}/${q.count}`); break; }
@@ -157,12 +160,12 @@ function applySnapshot(m, now) {
   G.chests = (m.ch || []).map(c => ({ id: c[0], x: c[1] / 100, y: c[2] / 100, open: !!c[3], mine: !!c[4] }));
   G.corpses = (m.co || []).map(c => ({ id: c[0], type: MON_TYPES[c[1]], x: c[2] / 100, y: c[3] / 100, z: c[4], looted: !!c[5], ix: c[6] / 10, iy: c[7] / 10 }));
   const seenP = new Set();
-  for (let [id, x100, y100, z, dir, fl, hpPct, carrying, lifted] of m.p) {
+  for (let [id, x100, y100, z, dir, fl, hpPct, carrying, lifted, bb] of m.p) {
     seenP.add(id);
     let e = G.players[id];
     if (!e) e = G.players[id] = mkEnt({ id, name: '...', cls: 'knight', skin: 'iron', color: '#888888', lvl: 1 });
     const x = x100 / 100, y = y100 / 100;
-    e.flags = fl; e.visible = true; e.carrying = carrying || null; e.lifted = lifted || 0; e.carriedBy = !!(fl & 4); z = z / 100;
+    e.flags = fl; e.visible = true; e.carrying = carrying || null; e.lifted = lifted || 0; e.limp = (bb || 0) & 3; e.armWeak = !!((bb || 0) & 4); e.dizzy = !!((bb || 0) & 8); e.bleeding = !!((bb || 0) & 16); e.carriedBy = !!(fl & 4); z = z / 100;
     const wasDown = e.downed; e.downed = !!(fl & 2);
     if (e.downed && !wasDown && !e.downUntil) e.downUntil = now + DOWNED_MS;
     if (id === G.myId) {
@@ -260,7 +263,7 @@ function updateLocal(now, dt) {
   if (G.slide && now - G.slide.t0 > SLIDE_MS) G.slide = null;
   if (G.slide) v = G.slide.v;
   me.slide = !!G.slide; me.crouch = crouchKey && !G.slide;
-  const running = !!v && !kneel && G.keys.has('shift') && !crouchKey && !G.tired && !me.downed && !me.carrying && G.stam > 0;
+  const running = !!v && !kneel && !(me.body && Math.max(PART_STATE(me.body.legL), PART_STATE(me.body.legR)) >= 3) && G.keys.has('shift') && !crouchKey && !G.tired && !me.downed && !me.carrying && G.stam > 0;
   if (running) { G.stam = Math.max(0, G.stam - STAM_DRAIN * dt); G.stamT = now; if (G.stam <= 0) G.tired = true; }
   else if (now - G.stamT > STAM_DELAY) G.stam = Math.min(STAM_MAX, G.stam + STAM_REGEN * dt * (v ? 0.6 : me.sit ? 2.5 : 1));
   revealFog(me.x, me.y);
@@ -273,6 +276,7 @@ function updateLocal(now, dt) {
     if (running) sp *= RUN_MUL * (healthState(me) === 1 ? 0.75 : 1);   // cansado corre pesado e mais devagar
     if (me.crouch) sp *= CROUCH_MUL;
     if (kneel) sp *= KNEEL_MUL;
+    if (me.body) { const l1 = PART_STATE(me.body.legL), l2 = PART_STATE(me.body.legR); sp *= LEG_SPEED[Math.max(l1, l2)] * (l1 >= 2 && l2 >= 2 ? 0.8 : 1); }
     if (now < (G.slowUntil || 0)) sp *= 0.5;   // rugido do dragão
     if (G.dev) sp = PLAYER_SPEED * (G.keys.has('shift') ? 10 : 4);   // Tecelão: voo livre ultrarrápido
     if (G.slide) { const k = (now - G.slide.t0) / SLIDE_MS; sp = PLAYER_SPEED * RUN_MUL * 1.5 * (1 - k * 0.65); if (Math.random() < 0.5) { const w = tileW(me.x, me.y, 0); spawnPart('dust', w.x, w.y); } }
@@ -401,7 +405,7 @@ function saveChar() {
   const me = G.me;
   try {
     const all = loadChars();
-    all[charKey(me.name, me.cls)] = { name: me.name, cls: me.cls, skin: me.skin, color: me.color, lvl: me.lvl, xp: me.xp, gold: me.gold, pots: me.pots, inv: me.inv, quests: me.quests, qdone: me.qdone, t: Date.now() };
+    all[charKey(me.name, me.cls)] = { name: me.name, cls: me.cls, skin: me.skin, color: me.color, lvl: me.lvl, xp: me.xp, gold: me.gold, pots: me.pots, body: me.body, bleed: me.bleed, inv: me.inv, quests: me.quests, qdone: me.qdone, t: Date.now() };
     localStorage.setItem(SAVE_KEY, JSON.stringify(all));
   } catch (e) { }
 }
@@ -507,9 +511,19 @@ function checkBastion() {
   else if (!B) G.bastShown = null;
 }
 // estado de saúde na tela: cansado = bordas escuras; à beira da morte = pulso vermelho e cores apagadas
+function updateBodyDoll() {
+  const me = G.me; if (!me || !me.body) return;
+  let hurt = false, bleeding = false; const col = ['#7ab86a', '#d8c050', '#e07a30', '#c02a1a'];
+  for (const k of BODY_PARTS) { const st = PART_STATE(me.body[k]), bl = (me.bleed && me.bleed[k]) > 0; if (st || bl) hurt = true; if (bl) bleeding = true; for (const el of document.querySelectorAll('.bd-' + k)) { el.style.fill = col[st]; el.classList.toggle('bleed', bl); } }
+  $('bodydoll').classList.toggle('hidden', !hurt); $('bodydoll').classList.toggle('bleeding', bleeding);
+  const lines = BODY_PARTS.map(k => '<div><b>' + BODY_NAMES[k] + '</b> ' + PART_STATE_NAMES[PART_STATE(me.body[k])] + ((me.bleed && me.bleed[k]) > 0 ? ' · <span class="bd-bl">sangrando</span>' : '') + '</div>').join('');
+  if ($('pz-body')) $('pz-body').innerHTML = lines + '<div class="gp-note">B: bandagem (' + ((me.pots && me.pots.band) || 0) + ') · sem bandagem, perto do fogo, cauteriza · a sacerdotisa trata tudo</div>';
+  document.body.classList.toggle('dizzy', PART_STATE(me.body.head) >= 2);
+}
 function updateHealthFx() {
+  updateBodyDoll();
   const hs = G.me ? healthState(G.me) : 0;
-  if (hs === G.hsShown) return; G.hsShown = hs;
+  if (hs === G.hsShown) return; G.hsShown = hs;   // (o boneco do corpo atualiza sempre, acima)
   $('hstate').className = hs === 3 ? 'dying kneel' : hs === 2 ? 'dying' : hs === 1 ? 'tired' : '';
   document.body.classList.toggle('dying', hs >= 2); document.body.classList.toggle('tired', hs === 1);
 }
@@ -570,6 +584,7 @@ const NPC_DIALOG = {
   merchant: { greet: 'Bem-vindo ao Empório. Não é muito, mas o que vendo funciona.', opts: [
     ['Poção de Vida — 20 ouro', { a: 'buy', item: 'hp', qty: 1 }], ['5 Poções de Vida — 100 ouro', { a: 'buy', item: 'hp', qty: 5 }],
     ['Poção de Mana — 25 ouro', { a: 'buy', item: 'mp', qty: 1 }], ['5 Poções de Mana — 125 ouro', { a: 'buy', item: 'mp', qty: 5 }],
+    ['Bandagem — 8 ouro', { a: 'buy', item: 'band', qty: 1 }], ['5 Bandagens — 40 ouro', { a: 'buy', item: 'band', qty: 5 }],
     ['Vender todo o saque', { a: 'sell' }]] },
   priest: { greet: 'Paz, viajante. A capela é pequena, mas a Aurora ainda escuta quem pede. Traga aqui os que caírem; eu cuido deles.', opts: [['Receber a bênção (grátis)', { a: 'bless' }]] },
   innkeeper: { greet: 'Sente-se. Tem fogo, comida quente e gente falando demais. Do que precisa?', opts: [
@@ -639,6 +654,14 @@ function monsterUnderMouse(mx, my) {
   return found;
 }
 canvas.addEventListener('mousemove', e => {
+  if (G.started && G.target) {
+    const t = G.monsters[G.target], mon = t && monsterUnderMouse(e.clientX, e.clientY);
+    if (t && mon && mon.id === t.id) {
+      const p = iso(t.rx, t.ry), footY = (p.sy + G.view.oy - (t.z || 0) * FLOOR_PX) * SCALE, hgt = (MON_H[t.type] || 60) * SCALE, rel = (footY - e.clientY) / hgt;
+      const z = rel > 0.74 ? 'head' : rel > 0.36 ? 'torso' : 'legs';
+      if (z !== G.aim) { G.aim = z; Net.send({ t: 'aim', z }); }
+    }
+  }
   if (!G.started) return;
   const w = screenToWorld(e.clientX, e.clientY);
   G.hover = { x: Math.round(w.x), y: Math.round(w.y) };
@@ -737,6 +760,7 @@ window.addEventListener('keydown', e => {
   if (k === 'x') { attackNearest(); return; }
   if (k === 'v' && !e.repeat) { if (G.me.sit) standUp(); else if (!G.me.walking) sitDown(null); return; }
   if (k === 'i' && !e.repeat) { togglePanel('inv'); return; }
+  if (k === 'b' && !e.repeat) { Net.send({ t: 'band' }); return; }
   if (k === 'f2' && G.dev) { e.preventDefault(); $('devpanel').classList.toggle('hidden'); return; }
   if (k === 'escape' && G.devPlace) { G.devPlace = null; showToast('Colocação cancelada.'); return; }
   if (k === 'j' && !e.repeat) { togglePanel('journal'); return; }
@@ -888,7 +912,7 @@ function lockLobby(b) { for (const el of document.querySelectorAll('#lobby butto
 function helloMsg() {
   const name = $('name').value.trim() || 'Aventureiro';
   const saved = loadChars()[charKey(name, chosenClass)] || {};
-  return { t: 'hello', dev: G.devPw || undefined, name, color: chosenColor, cls: chosenClass, skin: chosenSkin[chosenClass], lvl: saved.lvl, xp: saved.xp, gold: saved.gold, pots: saved.pots, inv: saved.inv, quests: saved.quests, qdone: saved.qdone };
+  return { t: 'hello', dev: G.devPw || undefined, name, color: chosenColor, cls: chosenClass, skin: chosenSkin[chosenClass], lvl: saved.lvl, xp: saved.xp, gold: saved.gold, pots: saved.pots, body: saved.body, bleed: saved.bleed, inv: saved.inv, quests: saved.quests, qdone: saved.qdone };
 }
 function showRoom(code) { $('room-code').textContent = Net.offline ? 'offline' : code; }
 function createRoom(code = randomCode(), tries = 0) {
@@ -1250,7 +1274,9 @@ const NO_BLOOD = new Set(['skeleton', 'cryptlord', 'slime', 'elderslime', 'wisp'
 function addBlood(x, y, z, r, ms) { G.blood.push({ x, y, z, r, t0: performance.now(), until: performance.now() + ms, seed: Math.random() * 1000 }); if (G.blood.length > 500) G.blood.shift(); }
 function bleed(e, now) {
   if (!e.visible) return;
-  const hs = e.downed ? 4 : healthState(e); if (hs < 2) { e._bx = e.rx; e._by = e.ry; return; }
+  const bleedingNow = e === G.me ? (e.bleed && BODY_PARTS.some(k => e.bleed[k] > 0)) : e.bleeding;
+  if (bleedingNow && now > (e._bdT || 0)) { e._bdT = now + 1800; addBlood(e.rx + (Math.random() - 0.5) * 0.3, e.ry + (Math.random() - 0.5) * 0.3, e.z || 0, 0.12 + Math.random() * 0.08, 90000); }
+  const hs = e.downed ? 4 : Math.max(healthState(e), bleedingNow ? 2 : 0); if (hs < 2) { e._bx = e.rx; e._by = e.ry; return; }
   if (e._bx == null) { e._bx = e.rx; e._by = e.ry; }
   const d = Math.hypot(e.rx - e._bx, e.ry - e._by), step = hs === 4 ? 0.3 : hs === 3 ? 0.6 : 0.9;
   if (d >= step) { e._bx = e.rx; e._by = e.ry; addBlood(e.rx, e.ry, e.z || 0, hs === 4 ? 0.34 : 0.16 + Math.random() * 0.1, hs === 4 ? 300000 : 90000); }

@@ -335,3 +335,14 @@ body.touch #btn-crouch { display: block; } #btn-crouch.on { background: rgba(140
 #devpanel button, #devpanel select { padding: 4px 8px; font: 600 13px 'Alegreya Sans SC', sans-serif; color: #f0e2c0; background: #2a2016; border: 1px solid #6a5028; border-radius: 4px; cursor: pointer; }
 #devpanel select { flex: 1; }
 #devpanel label { display: flex; gap: 4px; align-items: center; cursor: pointer; }
+
+/* boneco do corpo: só aparece quando há ferida */
+#bodydoll { position: fixed; z-index: 5; left: 12px; top: 44px; opacity: 0.85; pointer-events: none; }
+#bodydoll.hidden { display: none; }
+#bodydoll svg * { fill: #7ab86a; stroke: rgba(0,0,0,0.6); stroke-width: 1; }
+#bodydoll svg .bleed { stroke: #ff2a1a; stroke-width: 2; animation: bdpulse 0.9s infinite; }
+@keyframes bdpulse { 50% { stroke-opacity: 0.2; } }
+#pause .pz-body { font-size: 13px; color: #e8dcc0; line-height: 1.5; } #pause .pz-body b { color: #d8b870; font-weight: 600; } #pause .bd-bl { color: #ff6a5a; }
+/* tontura: cabeça ferida */
+body.dizzy #game { animation: dizzy 3.2s ease-in-out infinite; }
+@keyframes dizzy { 0%, 100% { transform: rotate(0deg) scale(1.01); filter: blur(0.4px); } 25% { transform: rotate(0.6deg) scale(1.015); filter: blur(1.1px); } 75% { transform: rotate(-0.6deg) scale(1.015); filter: blur(0.7px); } }

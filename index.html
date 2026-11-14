@@ -55,6 +55,10 @@
 
   <div id="buffs"></div>
   <div id="hstate"></div>
+  <div id="bodydoll" class="hidden" title="Seu corpo"><svg viewBox="0 0 40 80" width="34" height="68">
+    <circle class="bd-head" cx="20" cy="9" r="7"/><rect class="bd-torso" x="12" y="17" width="16" height="24" rx="4"/>
+    <rect class="bd-armA" x="4" y="18" width="7" height="22" rx="3"/><rect class="bd-armB" x="29" y="18" width="7" height="22" rx="3"/>
+    <rect class="bd-legL" x="12.5" y="42" width="7" height="30" rx="3"/><rect class="bd-legR" x="20.5" y="42" width="7" height="30" rx="3"/></svg></div>
   <div id="topbtns"><button id="btn-inv" title="Inventário (I)">🎒</button><button id="btn-journal" title="Jornada (J)">📜</button><button id="btn-help" title="Ajuda">?</button><button id="btn-menu" title="Menu (Esc)">☰</button></div>
 
   <!-- inventário (I) -->
@@ -122,6 +126,8 @@
           <div class="char-foot"><span class="coin"></span><span id="gold">0</span><span id="combat-state"></span></div>
         </div>
       </div>
+      <div class="pz-sec">Corpo</div>
+      <div id="pz-body" class="pz-body"></div>
       <div class="pz-sec">Sala</div>
       <div class="pz-room">Código <b id="room-code"></b></div>
       <button class="pz-btn" id="btn-copy">Copiar convite</button>
@@ -144,6 +150,7 @@
         <div><b>Poções</b> Q (vida) · E (mana) · <b>Sentar</b> V · <b>Mapa</b> M</div>
         <div><b>Agachar</b> segurar C · <b>Deslizar</b> C + Shift correndo</div>
         <div><b>Inventário</b> I · <b>Jornada</b> J · <b>Emojis</b> segurar T</div>
+        <div><b>Mira</b> cursor na cabeça / tronco / pernas do alvo · <b>Bandagem</b> B · <b>Revistar/esfolar</b> segurar F · <b>Pegar/arremessar</b> G</div>
         <div><b>Reanimar</b> segurar F · <b>Carregar</b> G · <b>Desistir</b> R (caído)</div>
         <div><b>Chat</b> Enter · <b>Zoom</b> roda do mouse · <b>Menu</b> Esc</div>
       </details>

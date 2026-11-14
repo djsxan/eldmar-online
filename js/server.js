@@ -25,7 +25,7 @@ function fullStat(p) {
   const now = now_();
   return {
     t: 'pstat', id: p.id, hp: p.hp, maxHp: p.maxHp, mp: p.mp, maxMp: p.maxMp, lvl: p.lvl, xp: p.xp, gold: p.gold,
-    pots: { hp: p.pots.hp, mp: p.pots.mp }, inv: { ...p.inv }, quests: { ...p.quests }, qdone: { ...p.qdone },
+    pots: { hp: p.pots.hp, mp: p.pots.mp, band: p.pots.band || 0 }, body: p.body, bleed: p.bleed, inv: { ...p.inv }, quests: { ...p.quests }, qdone: { ...p.qdone },
     buffs: Object.entries(p.buffs).filter(([, u]) => u > now).map(([k, u]) => [k, u - now]),
     cds: [0, 1, 2, 3].map(i => Math.max(0, (p.cds[i] || 0) - now)),
     combat: now - p.lastCombat < OUT_OF_COMBAT_MS, slow: Math.max(0, (p.slowUntil || 0) - now), downed: p.downed ? p.downed.until - now : 0,
@@ -105,6 +105,11 @@ function tickBastions(now) {
   if (S.objBack && S.objBack.length) S.objBack = S.objBack.filter(q => { if (now < q.at) return true; const x = q.i % MAP_W, y = Math.floor(q.i / MAP_W); for (const id in S.players) if (dist(S.players[id].x, S.players[id].y, x, y) < 0.9) return true; for (const id in S.monsters) if (dist(S.monsters[id].x, S.monsters[id].y, x, y) < 0.9) return true; setObj(q.i, q.o); return false; });
 }
 // objetos do cenário que mudaram (levantados/quebrados) — todos os clientes recebem
+function bodyBits(p) {
+  if (!p.body) return 0; const leg = Math.max(PART_STATE(p.body.legL), PART_STATE(p.body.legR));
+  let bl = 0; for (const k of BODY_PARTS) bl += p.bleed[k] || 0;
+  return leg | (PART_STATE(p.body.armA) >= 2 ? 4 : 0) | (PART_STATE(p.body.head) >= 2 ? 8 : 0) | (bl > 0 ? 16 : 0);
+}
 function setObj(i, o) { WORLD.obj[i] = o; (S.objMods = S.objMods || {})[i] = o; Net.toAll({ t: 'obj', i, o }); }
 function spawnChest(m) {
   const id = S.nextChest = (S.nextChest || 0) + 1, who = new Set();
@@ -135,7 +140,9 @@ function hostOnClient(from, m) {
       id: from, name: String(m.name || 'Aventureiro').slice(0, 16), cls, skin,
       color: /^#[0-9a-f]{6}$/i.test(m.color) ? m.color : '#8b2e2e',
       x: s.x, y: s.y, z: 0, lvl, xp: clamp(m.xp | 0, 0, need(lvl) - 1), gold: clamp(m.gold | 0, 0, 1e7),
-      pots: { hp: clamp((m.pots && m.pots.hp) | 0, 0, 999), mp: clamp((m.pots && m.pots.mp) | 0, 0, 999) },
+      pots: { hp: clamp((m.pots && m.pots.hp) | 0, 0, 999), mp: clamp((m.pots && m.pots.mp) | 0, 0, 999), band: clamp((m.pots && m.pots.band) | 0, 0, 999) },
+      body: Object.fromEntries(BODY_PARTS.map(k => [k, clamp(m.body && isFinite(m.body[k]) ? +m.body[k] : 100, 0, 100)])),
+      bleed: Object.fromEntries(BODY_PARTS.map(k => [k, clamp(m.bleed && isFinite(m.bleed[k]) ? +m.bleed[k] : 0, 0, 2)])), aim: 'torso',
       maxHp: maxHpFor(cls, lvl), maxMp: maxMpFor(cls, lvl), hp: 0, mp: 0,
       target: null, nextAtk: 0, cds: {}, buffs: {}, casting: null, lastCombat: 0, potCd: 0, lastMv: now_(),
       downed: null, carriedBy: null, carrying: null, revive: null, quests: {}, qdone: {}, inv: {},
@@ -144,7 +151,7 @@ function hostOnClient(from, m) {
     if (m.quests) for (const q of QUESTS) if (m.quests[q.id] != null) np.quests[q.id] = clamp(m.quests[q.id] | 0, 0, q.count);
     if (m.qdone) for (const q of QUESTS) if (m.qdone[q.id]) np.qdone[q.id] = m.qdone[q.id] | 0;
     np.hp = np.maxHp; np.mp = np.maxMp;
-    if (!m.lvl) { np.gold = 30; np.pots.hp = 3; np.pots.mp = 2; } // kit inicial
+    if (!m.lvl) { np.gold = 30; np.pots.hp = 3; np.pots.mp = 2; np.pots.band = 3; } // kit inicial
     S.players[from] = np;
     if (m.dev && typeof crypto !== 'undefined' && crypto.subtle) crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(m.dev))).then(buf => {
       const h = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -236,6 +243,8 @@ function hostOnClient(from, m) {
       else if (m.a === 'tp' && isFinite(x) && isFinite(y)) { p.x = clamp(x, 1, MAP_W - 2); p.y = clamp(y, 1, MAP_H - 2); p.z = +m.z || 0; p.fl = 0; p.fb = -1; Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: p.z, fl: 0, fb: -1 }); }
       break;
     }
+    case 'aim': if (['head', 'torso', 'legs'].includes(m.z)) p.aim = m.z; break;
+    case 'band': bandage(p); break;
     case 'skin': {
       const c = S.corpses && S.corpses[m.id]; if (!c || c.looted || p.downed || dist(p.x, p.y, c.x, c.y) > 1.9) break;
       c.looted = true;
@@ -313,6 +322,8 @@ function roll(p, mult = 1) {
   let dmg = rint(Math.floor(c.dmg[0][0] + c.dmg[0][1] * l), Math.floor(c.dmg[1][0] + c.dmg[1][1] * l)) * mult;
   if (buffOn(p, 'mead')) dmg *= 1.1;
   if (p.hp < p.maxHp * KNEEL_HP) dmg *= 0.7;   // de joelhos: golpes fracos
+  if (p.body) dmg *= ARM_DMG[PART_STATE(p.body.armA)];   // braço da arma ferido
+  dmg *= p._aimMul || 1;
   if (buffOn(p, 'whet')) dmg *= 1.15;
   const crit = Math.random() < c.crit + (buffOn(p, 'agile') ? 0.1 : 0);
   if (crit) dmg *= 1.8;
@@ -382,6 +393,50 @@ function gainXp(p, amount, delay = 0) {
   sendStat(p);
 }
 
+// ---------- corpo: qual parte foi atingida e o que isso causa ----------
+function pickPart(m) {
+  const z = HIT_ZONES[m ? HIT_CAT(m.type) : 'mid'], r = Math.random();
+  if (r < z[0]) return 'head'; if (r < z[0] + z[1]) return 'torso';
+  if (r < z[0] + z[1] + z[2]) return Math.random() < 0.55 ? 'armA' : 'armB';
+  return Math.random() < 0.5 ? 'legL' : 'legR';
+}
+function woundPart(p, part, dmg) {
+  if (!p.body) return;
+  const before = PART_STATE(p.body[part]);
+  p.body[part] = Math.max(0, p.body[part] - dmg / p.maxHp * 100 * 2.2);
+  const after = PART_STATE(p.body[part]);
+  if (after > before || (dmg >= p.maxHp * 0.12 && Math.random() < 0.5)) p.bleed[part] = Math.min(2, Math.max(p.bleed[part] || 0, BLEED_RATE[Math.max(1, after)]));
+  if (after > before) Net.toOne(p.id, { t: 'wound', part, st: after });
+}
+function bodyTick(p, now, dt) {
+  if (!p.body || p.downed || p.dev) return;
+  let tot = 0; for (const k of BODY_PARTS) tot += p.bleed[k] || 0;
+  tot = Math.min(2.5, tot);
+  if (tot > 0) {
+    p.bleedAcc = (p.bleedAcc || 0) + p.maxHp * tot / 100 * dt;
+    if (p.bleedAcc >= 1) { const h = Math.floor(p.bleedAcc); p.bleedAcc -= h; p.hp -= h; if (p.hp <= 0) { p.hp = 0; goDown(p, null); return; } }
+    for (const k of BODY_PARTS) if (p.bleed[k] > 0 && p.bleed[k] <= 0.3) p.bleed[k] = Math.max(0, p.bleed[k] - 0.006 * dt);   // feridas leves estancam sozinhas
+  } else if (now - p.lastCombat > 8000) {
+    for (const k of BODY_PARTS) { const h = p.body[k]; p.body[k] = h >= 40 ? Math.min(100, h + 0.4 * dt) : Math.min(40, h + 0.08 * dt); }   // grave só cicatriza até "ferido" (o resto, só com a sacerdotisa)
+  }
+  if (now - (p.bodySent || 0) > 2000) { p.bodySent = now; sendStat(p); }
+}
+function bandage(p) {
+  const now = now_(); if (p.downed || now < (p.bandT || 0)) return;
+  const worst = BODY_PARTS.slice().sort((a, b) => (p.bleed[b] - p.bleed[a]) || (p.body[a] - p.body[b]))[0];
+  if (p.pots.band > 0) {
+    p.bandT = now + 1800; const x0 = p.x, y0 = p.y;
+    Net.toOne(p.id, { t: 'banding', ms: 1500 });
+    setTimeout(() => { if (p.downed || dist(p.x, p.y, x0, y0) > 0.4) { tell(p, 'Você se mexeu: a bandagem soltou.'); return; } p.pots.band--; p.bleed[worst] = 0; p.body[worst] = Math.min(100, p.body[worst] + 12); tell(p, 'Bandagem em ' + BODY_NAMES[worst].toLowerCase() + '.'); sendStat(p); }, 1500);
+    return;
+  }
+  const fire = S.fires && S.fires.some(f => dist(f.x, f.y, p.x, p.y) < 1.8);
+  let nearFire = fire; for (let y = Math.round(p.y) - 2; y <= Math.round(p.y) + 2 && !nearFire; y++) for (let x = Math.round(p.x) - 2; x <= Math.round(p.x) + 2; x++) { const o = WORLD.obj[y * MAP_W + x]; if ((o === O.CAMPFIRE || o === O.TORCH || o === O.BRAZIER) && dist(x, y, p.x, p.y) < 1.8) { nearFire = true; break; } }
+  if (!nearFire) { tell(p, 'Sem bandagem e sem fogo por perto para cauterizar.'); return; }
+  p.bandT = now + 2000; for (const k of BODY_PARTS) p.bleed[k] = 0;
+  const h = Math.round(p.maxHp * 0.1); p.hp -= h; near(p.x, p.y, { t: 'hit', k: 'p', id: p.id, x: p.x, y: p.y, dmg: h, d: 0 });
+  tell(p, 'Você cauterizou as feridas no fogo. Dói, mas o sangue parou.'); if (p.hp <= 0) { p.hp = 0; goDown(p, null); } sendStat(p);
+}
 function damagePlayer(p, raw, m, delay = 0) {
   if (p.dev) return;   // o Tecelão não se fere
   if (p.downed) {
@@ -394,7 +449,10 @@ function damagePlayer(p, raw, m, delay = 0) {
   if (buffOn(p, 'wall')) mult *= 0.4;
   if (buffOn(p, 'warcry')) mult *= 0.8;
   if (buffOn(p, 'bless')) mult *= 0.9;
-  const dmg = Math.max(1, Math.round(raw * mult));
+  if (p.body && PART_STATE(p.body.armB) >= 2) mult = Math.min(1, mult * 1.25);
+  const part = pickPart(m), headK = part === 'head' ? 1.25 : 1;
+  const dmg = Math.max(1, Math.round(raw * mult * headK));
+  woundPart(p, part, dmg);
   p.hp -= dmg;
   p.lastCombat = now_();
   near(p.x, p.y, { t: 'hit', k: 'p', id: p.id, x: p.x, y: p.y, dmg, d: delay, ax: m ? m.x : p.x, ay: m ? m.y : p.y - 1 });
@@ -430,6 +488,7 @@ function respawnTemple(p) {
   p.carriedBy = null; p.downed = null; p.revive = null;
   p.xp = Math.floor(p.xp / 2);
   p.hp = p.maxHp; p.mp = p.maxMp; p.lastCombat = 0;
+  if (p.body) for (const k of BODY_PARTS) { p.body[k] = 100; p.bleed[k] = 0; }
   const s = townSpot(); p.x = s.x; p.y = s.y; p.z = 0; p.fl = 0; p.fb = -1;
   Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: 0 });
   Net.toOne(p.id, { t: 'respawned' });
@@ -448,6 +507,14 @@ function monBehind(p, m, range) {
 }
 function shot(p, kind, tx, ty, d, delay) { near(p.x, p.y, { t: 'proj', id: p.id, kind, tx, ty, d, delay }); }
 function basicAttack(p, m, now) {
+  const z = p.aim || 'torso';
+  if (Math.random() > AIM_ACC[z]) { p.nextAtk = now + CLASSES[p.cls].atkMs; anim('p', p, p.cls === 'knight' ? 'swing' : p.cls === 'archer' ? 'shoot' : 'bolt', m.x, m.y); near(m.x, m.y, { t: 'miss', id: m.id }); return; }   // errou
+  p._aimMul = AIM_DMG[z];
+  try { basicAttack0(p, m, now); } finally { p._aimMul = 1; }
+  if (p.body && PART_STATE(p.body.armA) >= 2) p.nextAtk += CLASSES[p.cls].atkMs * (PART_STATE(p.body.armA) === 3 ? 0.5 : 0.2);
+  if (S.monsters[m.id]) { if (z === 'legs') m.slowUntil = Math.max(m.slowUntil, now + 2500); else if (z === 'head' && Math.random() < 0.15) m.stunUntil = Math.max(m.stunUntil, now + 700); }
+}
+function basicAttack0(p, m, now) {
   const c = CLASSES[p.cls], r = Math.random();
   const kneel = p.hp < p.maxHp * KNEEL_HP;
   p.nextAtk = now + c.atkMs * (buffOn(p, 'agile') ? 0.5 : 1) * (kneel ? 1.5 : 1);
@@ -578,6 +645,7 @@ function npcAction(p, m) {
     say(`Fechado: ${n2} ${n2 > 1 ? 'itens' : 'item'} por ${total} de ouro. Traga mais quando puder.`);
   } else if (n.id === 'priest' && m.a === 'bless') {
     p.hp = p.maxHp; p.mp = p.maxMp; p.buffs.bless = now + 180000;
+    if (p.body) for (const k of BODY_PARTS) { p.body[k] = 100; p.bleed[k] = 0; }   // a sacerdotisa trata todas as feridas
     aoe('heal', p.x, p.y, { id: p.id });
     say('Que a Aurora guarde seus passos. Suas feridas estão fechadas, e a bênção reduz o dano que você recebe por algum tempo.');
   } else if (n.id === 'innkeeper' && m.a === 'mead') {
@@ -821,6 +889,7 @@ function hostTick() {
     S.nextSpawn = now + 1500;
   }
 
+  for (const p of players) bodyTick(p, now, dt);
   if (!S.bslots) initBastions();
   tickBastions(now);
   if (S.fires && S.fires.length) { S.fires = S.fires.filter(f => f.until > now); for (const p of players) { if (p.downed || now < (p.burnT || 0)) continue; if (S.fires.some(f => dist(f.x, f.y, p.x, p.y) < f.r)) { p.burnT = now + 500; damagePlayer(p, 6, null, 0); } } }
@@ -877,7 +946,7 @@ function hostTick() {
       if (p.devHidden && p.id !== r.id) continue;
       let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0) | (p.running && p.walking ? 256 : 0) | (p.sit ? 512 : 0) | (p.sit === 'c' ? 1024 : 0) | ((p.fl || 0) << 11) | (p.crouch ? 8192 : 0) | (p.slide ? 16384 : 0);
       for (const b in BUFF_BITS) if (buffOn(p, b)) fl |= BUFF_BITS[b];
-      pl.push([p.id, Math.round(p.x * 100), Math.round(p.y * 100), Math.round(p.z * 100), p.dir | 0, fl, Math.round(p.hp / p.maxHp * 100), p.carrying || 0, p.lifted || 0]);
+      pl.push([p.id, Math.round(p.x * 100), Math.round(p.y * 100), Math.round(p.z * 100), p.dir | 0, fl, Math.round(p.hp / p.maxHp * 100), p.carrying || 0, p.lifted || 0, bodyBits(p)]);
     }
     for (const m of mons) {
       if (Math.abs(m.x - r.x) > VIEW_RADIUS || Math.abs(m.y - r.y) > VIEW_RADIUS) continue;

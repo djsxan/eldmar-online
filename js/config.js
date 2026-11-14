@@ -3,8 +3,8 @@
 //  Mexa aqui para balancear o jogo.
 // ============================================================
 const GAME_NAME = 'World of Sxan';
-const VERSION = 'v1.7.0';
-const VERSION_NAME = 'Corpos e Cinzas';
+const VERSION = 'v1.8.0';
+const VERSION_NAME = 'Carne e Osso';
 
 const PLAYER_SPEED = 2.7;          // tiles por segundo (1 tile ≈ 2 m)
 // configurações do jogador (menu de pausa)
@@ -143,6 +143,7 @@ const MAX_ACTIVE_QUESTS = 3;
 const ITEMS = {
   hp: { name: 'Poção de Vida', price: 20, desc: 'Recupera 35% da vida.' },
   mp: { name: 'Poção de Mana', price: 25, desc: 'Recupera 40% da mana.' },
+  band: { name: 'Bandagem', price: 8, desc: 'Estanca o sangramento da pior ferida. Tecla B (perto do fogo, sem bandagem, cauteriza).' },
 };
 
 // saque dos monstros (vai para o inventário; o mercador compra)
@@ -186,6 +187,18 @@ const INV_SLOTS = 24;
 const DEV_HASH = '33345481d244e1b08304a2f808f595f84bffc248ffbb9169fd6bb9dd41e0ab68';
 // bastiões: cada monstro volta ~3 min depois de morrer (sem jogador perto); chefe ~10 min; o baú do chefe dura 2 min
 const BASTION_RESPAWN = 180000, BOSS_RESPAWN = 600000, CHEST_MS = 120000, MAX_WILD = 200;
+// ===== corpo: partes, feridas e sangramento (fase 1) =====
+const BODY_PARTS = ['head', 'torso', 'armA', 'armB', 'legL', 'legR'];
+const BODY_NAMES = { head: 'Cabeça', torso: 'Tronco', armA: 'Braço da arma', armB: 'Outro braço', legL: 'Perna esquerda', legR: 'Perna direita' };
+const PART_STATE = h => h > 70 ? 0 : h > 40 ? 1 : h > 15 ? 2 : 3;   // 0 saudável · 1 ferido · 2 grave · 3 quebrado
+const PART_STATE_NAMES = ['saudável', 'ferido', 'grave', 'quebrado'];
+// onde cada porte de inimigo costuma acertar: [cabeça, tronco, braços, pernas]
+const HIT_ZONES = { low: [0.04, 0.3, 0.16, 0.5], mid: [0.14, 0.42, 0.24, 0.2], high: [0.26, 0.46, 0.2, 0.08] };
+const HIT_CAT = t => ['rat', 'wolf', 'spider', 'toad', 'boar', 'deer', 'slime', 'elderslime'].includes(t) ? 'low' : ['troll', 'orc', 'orcchief', 'dragon', 'deserterchief', 'cryptlord'].includes(t) ? 'high' : 'mid';
+// mira com o mouse: cabeça erra mais e machuca mais; pernas deixam o alvo lento
+const AIM_ACC = { head: 0.7, torso: 0.95, legs: 0.85 }, AIM_DMG = { head: 1.5, torso: 1, legs: 0.8 };
+const BLEED_RATE = [0, 0.25, 0.6, 1.0];   // % da vida por segundo, por ferida (ferido / grave / quebrado)
+const LEG_SPEED = [1, 0.85, 0.62, 0.38], ARM_DMG = [1, 0.85, 0.6, 0.35];
 const BUFF_NAMES = { warcry: 'Grito de Guerra', wall: 'Muralha de Ferro', agile: 'Passo Ágil', bless: 'Bênção da Aurora', mead: 'Hidromel', whet: 'Lâmina Afiada' };
 const BUFF_BITS = { wall: 16, agile: 32, bless: 64, warcry: 128 };
 

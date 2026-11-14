@@ -211,6 +211,13 @@ function buildPose(cls, P) {
     else { Q.tl += 0.36 + br * 0.07; if (!P.act) Q.aB = [0.85, 0.3, 2.05]; if (P.walk >= 0 && !P.cr) Q.lB = [Q.lB[0] * 0.45, -0.1]; Q.ht = (Q.ht || 0) + br * 0.04; }
   }
   if (P.down) { Q.aA = [0.5, 0.75, 0.6]; Q.aB = [0.25, 0.85, 0.35]; Q.lA = [0.35, -0.6]; Q.lB = [0.05, -0.12]; Q.tl = 0; Q.tw = 0.18; Q.ht = -0.25; Q.sway = 0; }
+  // perna ferida: manca (a perna machucada quase não dobra, passo curto, tronco pende); braço da arma ferido pende
+  if (P.limp && !P.sl && !P.sit) {
+    const k = [0, 0.35, 0.7, 1][P.limp];
+    if (P.walk >= 0) { Q.lB = [Q.lB[0] * (1 - k * 0.6), Q.lB[1] * (1 - k * 0.8)]; Q.sway = (Q.sway || 0) + Math.sin(P.walk / 12 * Math.PI * 2) * 0.08 * k; Q.tw += 0.12 * k; }
+    Q.tl += 0.08 * k; if (P.limp >= 3 && !P.act) Q.aB = [0.35, 0.4, 0.6];
+  }
+  if (P.armw && !P.act) { Q.aA = [Q.tl * -0.5, 0.18, 0.12]; Q.wp = cls === 'knight' ? Q.aA[0] + Q.aA[2] + 0.2 : Q.wp; }
   if (P.sit === 'g') { Q.lA = [2.45, -2.35]; Q.lB = [2.2, -2.0]; Q.drop = 12; Q.aA = [1.15, 0.35, 1.35]; Q.aB = [1.05, 0.4, 1.25]; Q.tl = -0.22; Q.ht = 0.12; }
   else if (P.sit) { Q.lA = [1.5, -1.55]; Q.lB = [1.45, -1.5]; Q.drop = 12; Q.aA = [0.45, 0.25, 0.7]; Q.aB = [0.45, 0.25, 0.7]; Q.tl = -0.02; }
   if (P.carry) { Q.aA = [2.75, 0.25, 0.4]; Q.aB = [2.75, 0.25, 0.4]; Q.wp = 0.4; }
