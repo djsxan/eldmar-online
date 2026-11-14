@@ -71,7 +71,7 @@ function clientOnServer(m) {
       if (oldLvl && m.lvl > oldLvl) showBanner(`Nível ${m.lvl}`, 'Sua força cresce.');
       break;
     }
-    case 'tp': if (G.me) { G.floorWait = 0; G.climbing = null; G.me.lift = 0; Object.assign(G.me, { x: m.x, y: m.y, rx: m.x, ry: m.y, z: +m.z || 0, fl: m.fl | 0, fb: m.fb ?? -1 }); G.path = null; G.pathGoal = null; if (m.climb) G.climbArm = m.climb - 1; } break;
+    case 'tp': if (G.me && G.climbing && G.climbing.sent) { G.me.fl = m.fl | 0; G.me.fb = m.fb ?? -1; break; } if (G.me) { G.floorWait = 0; G.climbing = null; G.me.lift = 0; Object.assign(G.me, { x: m.x, y: m.y, rx: m.x, ry: m.y, z: +m.z || 0, fl: m.fl | 0, fb: m.fb ?? -1 }); G.path = null; G.pathGoal = null; if (m.climb) G.climbArm = m.climb - 1; } break;
     case 'hit':
       later(m.d, () => {
         const t = performance.now();
@@ -130,6 +130,7 @@ function clientOnServer(m) {
     case 'rv': { const e = G.players[m.id]; if (e) e.revive = m.by ? { by: m.by, t0: now } : null; break; }
     case 'carry': { const c = G.players[m.by]; if (c) c.carrying = m.id || null; break; }
     case 'respawned': showBanner('Capela da Aurora', 'Você despertou nas ruínas e perdeu metade da experiência do nível.', true); break;
+    case 'chestopen': showBanner('Baú do chefe', '+' + m.gold + ' de ouro, 2 poções e ' + m.items.filter(k => LOOT[k]).map(k => LOOT[k].name).join(', ')); break;
     case 'loot': { const it = LOOT[m.k]; if (it) { showToast('+ ' + it.name); G.newLoot = m.k; } break; }
     case 'qprog': { const q = QUESTS.find(x => x.id === m.id); if (q) showToast(`${q.name}: ${m.n}/${q.count}`); break; }
     case 'qdone': { const q = QUESTS.find(x => x.id === m.id); if (q) showBanner('Contrato cumprido', `${q.name} — +${q.xp} xp, +${q.gold} ouro`); break; }
@@ -137,6 +138,7 @@ function clientOnServer(m) {
 }
 
 function applySnapshot(m, now) {
+  G.chests = (m.ch || []).map(c => ({ id: c[0], x: c[1] / 100, y: c[2] / 100, open: !!c[3], mine: !!c[4] }));
   const seenP = new Set();
   for (let [id, x100, y100, z, dir, fl, hpPct, carrying] of m.p) {
     seenP.add(id);
@@ -275,7 +277,7 @@ function updateLocal(now, dt) {
     if (b && b.kind !== 'stairtower') {
       const nF = floorsOf(b);
       if (fl < nF - 1) { const s = stairWorld(b, fl); if (Math.hypot(me.x - s.L[0], me.y - s.L[1]) < 0.42) { const ex = s.U[0] + (s.U[0] - s.L[0]) * 0.45, ey = s.U[1] + (s.U[1] - s.L[1]) * 0.45; startClimb(now, bi, fl, fl + 1, [[me.x, me.y, 0], [s.L[0], s.L[1], 0.25], [s.U[0], s.U[1], 0.75], [ex, ey, 1]], s.arrive); } }
-      if (!G.climbing && fl > 0) { const s = stairWorld(b, fl - 1); if (Math.hypot(me.x - s.U[0], me.y - s.U[1]) < 0.42) { const ex = s.L[0] - (s.U[0] - s.L[0]) * 0.45, ey = s.L[1] - (s.U[1] - s.L[1]) * 0.45; startClimb(now, bi, fl, fl - 1, [[me.x, me.y, 0], [s.U[0], s.U[1], -0.25], [s.L[0], s.L[1], -0.75], [ex, ey, -1]], s.entry); } }
+      if (!G.climbing && fl > 0) { const s = stairWorld(b, fl - 1); if (Math.hypot(me.x - s.U[0], me.y - s.U[1]) < 0.42) { const ex = s.L[0] - (s.U[0] - s.L[0]) * 0.45, ey = s.L[1] - (s.U[1] - s.L[1]) * 0.45; { const ux = s.U[0] + (s.U[0] - s.L[0]) * 0.45, uy = s.U[1] + (s.U[1] - s.L[1]) * 0.45; startClimb(now, bi, fl, fl - 1, [[ux, uy, 1], [s.U[0], s.U[1], 0.75], [s.L[0], s.L[1], 0.25], [s.entry[0], s.entry[1], 0]], s.entry, true); } } }
     }
   }
   // torres-escada: pisar na escada sobe para a muralha; pisar no alçapão lá em cima desce
@@ -470,6 +472,31 @@ function updateInv() {
 for (const b of document.querySelectorAll('.gp-x')) b.addEventListener('click', () => togglePanel(b.dataset.close, false));
 $('btn-inv').addEventListener('click', () => togglePanel('inv'));
 $('btn-journal').addEventListener('click', () => togglePanel('journal'));
+// orbes de vida/mana + barras de estamina e experiência (centro inferior)
+function updateOrbs() {
+  const me = G.me; if (!me) return;
+  $('orbs').classList.toggle('hidden', !SET.orbs);
+  if (!SET.orbs) return;
+  const f = (v, m) => (100 * clamp(v / Math.max(1, m), 0, 1)).toFixed(1) + '%';
+  $('orb-hp').style.height = f(me.hp, me.maxHp); $('orb-mp').style.height = f(me.mp, me.maxMp);
+  $('orb-hp-t').textContent = me.hp + ' / ' + me.maxHp; $('orb-mp-t').textContent = me.mp + ' / ' + me.maxMp;
+  $('orb-st').style.width = f(G.stam ?? STAM_MAX, STAM_MAX); $('orb-st').parentNode.classList.toggle('tired', !!G.tired);
+  $('orb-xp').style.width = f(me.xp, need(me.lvl)); $('orb-lvl').textContent = me.lvl;
+}
+$('pz-orbs').addEventListener('change', e => { SET.orbs = e.target.checked; saveSettings(); updateOrbs(); });
+// baú do chefe: abre ao chegar perto (ou F)
+function openNearChest(r) {
+  const me = G.me; if (!me || !G.chests) return false;
+  for (const c of G.chests) if (c.mine && !c.open && dist(c.x, c.y, me.x, me.y) <= r && performance.now() > (G.chestT || 0)) { G.chestT = performance.now() + 1000; Net.send({ t: 'open', id: c.id }); return true; }
+  return false;
+}
+// aviso ao chegar perto de um bastião
+function checkBastion() {
+  const me = G.me; if (!me) return;
+  const B = BASTIONS.find(b => dist(b.x, b.y, me.x, me.y) < b.r + 5);
+  if (B && G.bastShown !== B.id) { G.bastShown = B.id; showBanner(B.name, 'Bastião inimigo · cuidado', true); }
+  else if (!B) G.bastShown = null;
+}
 // estado de saúde na tela: cansado = bordas escuras; à beira da morte = pulso vermelho e cores apagadas
 function updateHealthFx() {
   const hs = G.me ? healthState(G.me) : 0;
@@ -693,6 +720,7 @@ window.addEventListener('keydown', e => {
   if (k === 'q') { drinkPot('hp'); return; }
   if (k === 'e') { drinkPot('mp'); return; }
   if (k === 'r' && G.me.downed) { Net.send({ t: 'giveup' }); return; }
+  if (k === 'f' && !e.repeat && openNearChest(1.8)) return;
   if (k === 'f' && !e.repeat) { const d = nearestDowned(); if (d) { G.reviving = d.id; Net.send({ t: 'revive', id: d.id, on: true }); } return; }
   if (k === 'g' && !e.repeat) { if (G.me.carrying) Net.send({ t: 'carry' }); else { const d = nearestDowned(); if (d) Net.send({ t: 'carry', id: d.id }); } return; }
   if (k === 'x') { attackNearest(); return; }
@@ -755,6 +783,7 @@ function frame() {
       if (G.zoneShown == null) G.zoneShown = zi;
       else if (zi !== G.zoneShown) { G.zoneShown = zi; const z = ZONES[zi]; showBanner(z.name, z.stars ? '★'.repeat(z.stars) + '☆'.repeat(4 - z.stars) : 'Zona protegida', z.stars >= 3); }
       updateHealthFx();
+      updateOrbs(); checkBastion(); openNearChest(1.1);
       updateTargetFrame();
     }
     if (now - lastHud > 1000) { lastHud = now; updateHud(); }
@@ -1098,6 +1127,7 @@ function applySettings() {
   for (const b of document.querySelectorAll('#pz-quality button')) b.classList.toggle('on', b.dataset.q === SET.quality);
   $('pz-bright').value = SET.bright; $('pz-bright-v').textContent = Math.round(SET.bright * 100) + '%';
   $('pz-zoom').value = SET.zoom; $('pz-zoom-v').textContent = Math.round(SET.zoom * 100) + '%';
+  $('pz-orbs').checked = !!SET.orbs;
   document.documentElement.style.setProperty('--pad', SET.pad); $('pz-pad').value = SET.pad; $('pz-pad-v').textContent = Math.round(SET.pad * 100) + '%';
 }
 $('pz-pad').addEventListener('input', e => { SET.pad = +e.target.value; saveSettings(); applySettings(); });
@@ -1121,19 +1151,28 @@ $('pz-quit').addEventListener('click', () => { try { saveChar(); saveFog && G.fo
 applySettings();
 
 // subir/descer andando pelos degraus: segue os pontos (x, y, altura em andares) e no fim troca de andar com um esmaecimento cruzado
-function startClimb(now, bi, from, to, pts, dest) {
+function startClimb(now, bi, from, to, pts, dest, pre = false) {
   let len = 0; for (let k = 1; k < pts.length; k++) len += Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
-  G.climbing = { t0: now, dur: Math.max(600, len / (PLAYER_SPEED * 0.6) * 1000), bi, from, to, pts, len, dest };
+  G.climbing = { t0: now, dur: Math.max(600, len / (PLAYER_SPEED * 0.6) * 1000), bi, from, to, pts, len, dest, pre };
+  if (pre) fadeFlash();   // descer: escurece primeiro e desce os degraus já no andar de baixo (não atravessa o piso)
   G.path = null; G.pathGoal = null; if (G.me.sit) standUp(); G.me.emote = null;
 }
 function stepClimb(now) {
-  const c = G.climbing, me = G.me, k = Math.min(1, (now - c.t0) / c.dur);
+  const c = G.climbing, me = G.me;
+  if (c.pre) {
+    me.walking = false;
+    if (now - c.t0 < 270) return;
+    c.pre = false; c.sent = true; c.t0 = now; me.fl = c.to; me.fb = c.to > 0 ? c.bi : -1;
+    Net.send({ t: 'floor', b: c.bi, to: c.to });
+  }
+  const k = Math.min(1, (now - c.t0) / c.dur);
   let d = k * c.len, p = c.pts[c.pts.length - 1];
   for (let i = 1; i < c.pts.length; i++) { const a = c.pts[i - 1], b = c.pts[i], sl = Math.hypot(b[0] - a[0], b[1] - a[1]); if (d <= sl || i === c.pts.length - 1) { const t = sl ? Math.min(1, d / sl) : 1; p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; if (sl > 0.01) me.dir = dirFromVec(b[0] - a[0], b[1] - a[1], me.dir); break; } d -= sl; }
   const ox = me.x, oy = me.y; me.x = me.rx = p[0]; me.y = me.ry = p[1]; me.lift = p[2]; me.walking = true; me.walkDist += Math.hypot(me.x - ox, me.y - oy);
   if (k < 1) return;
-  // no topo: a tela escurece rapidinho e ele aparece em frente aos degraus, no outro andar
   me.walking = false;
+  if (c.sent) { G.climbing = null; me.lift = 0; G.climbT = now + 500; return; }   // descida termina na entrada
+  // no topo: a tela escurece rapidinho e ele aparece em frente aos degraus, no outro andar
   if (!c.fading) { c.fading = now; fadeFlash(); return; }
   if (now - c.fading < 270) return;
   G.climbing = null; me.lift = 0; me.fl = c.to; me.fb = c.to > 0 ? c.bi : -1;

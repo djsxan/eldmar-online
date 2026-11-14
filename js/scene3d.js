@@ -532,6 +532,27 @@ function mStatue() {
   for (const s of [-1, 1]) o.add(limb(V3(s * 0.25, 1.75, 0), V3(s * 0.06, 1.68, 0.3), 0.07, 0.06, st, 8));
   return o;
 }
+function mCave() {
+  // massa de rocha com uma boca escura, ossos na entrada
+  const o = grp(), rk = smat('rock', '#8a857c', { bump: 2 });
+  for (const [x, y, z, s] of [[-1.3, 0.9, -0.2, 1.2], [1.3, 0.9, -0.2, 1.2], [0, 2.0, -0.5, 1.5], [-0.9, 2.2, -1.1, 1.2], [0.9, 2.3, -1.0, 1.1], [-1.9, 0.5, 0.3, 0.8], [1.9, 0.5, 0.3, 0.8]]) o.add(mk(rockGeo(Math.floor((x + 3) * 100 + y * 10), s, 1, 0.9, 1).translate(x, y, z), rk));
+  o.add(mk(new THREE.SphereGeometry(0.95, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 1.3, 0.55).translate(0, 0, 0.35), smat(null, '#050403', { rough: 1, side: THREE.DoubleSide })));
+  const bone = smat(null, '#d8d0bc', { rough: 0.8 });
+  for (let k = 0; k < 5; k++) { const b = mk(new THREE.CylinderGeometry(0.03, 0.03, 0.35, 6), bone); b.position.set(-0.8 + k * 0.4, 0.04, 0.9 + (k % 2) * 0.2); b.rotation.set(Math.PI / 2, 0, k * 0.9); o.add(b); }
+  o.add(mk(new THREE.SphereGeometry(0.11, 10, 8).translate(0.5, 0.1, 1.05), bone));
+  return o;
+}
+function mChest(v) {
+  const o = grp(), wood = smat('wood', '#6a4220', { bump: 1.2 }), iron = smat('iron', '#3a3a40', { metal: 0.9, rough: 0.4 }), gold = smat(null, '#e2b74e', { metal: 1, rough: 0.3 });
+  o.add(wbox(0.9, 0.5, 0.6, 0, 0.25, 0, wood, 2));
+  for (const x of [-0.32, 0.32]) o.add(mk(new THREE.BoxGeometry(0.06, 0.52, 0.62).translate(x, 0.26, 0), iron));
+  const lid = grp(mk(new THREE.CylinderGeometry(0.3, 0.3, 0.9, 12, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).translate(0, 0, 0.3), wood));
+  for (const x of [-0.32, 0.32]) lid.add(mk(new THREE.CylinderGeometry(0.31, 0.31, 0.06, 12, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).translate(x, 0, 0.3), iron));
+  lid.position.set(0, 0.5, -0.3); if (v) lid.rotation.x = -1.9; o.add(lid);
+  o.add(mk(new THREE.BoxGeometry(0.14, 0.16, 0.04).translate(0, 0.42, 0.31), gold));
+  if (v) for (let k = 0; k < 6; k++) o.add(mk(new THREE.CylinderGeometry(0.06, 0.06, 0.02, 10).translate(-0.25 + k * 0.1, 0.5, (k % 2) * 0.1 - 0.05), gold));
+  return o;
+}
 function mAnvil() {
   const sh = new THREE.Shape(); sh.moveTo(-0.32, 0); sh.lineTo(0.2, 0); sh.quadraticCurveTo(0.42, 0.02, 0.5, 0.1); sh.lineTo(0.2, 0.12); sh.lineTo(-0.32, 0.12); sh.closePath();
   const top = new THREE.ExtrudeGeometry(sh, { depth: 0.2, bevelEnabled: true, bevelSize: 0.015, bevelThickness: 0.015, bevelSegments: 1 }).translate(0, 0.62, -0.1);
@@ -1237,8 +1258,8 @@ function interiorSprite(b, fl = 0) {
   wrap('bushSprite', v => `bu|${v}`, v => sc(mBush(v), 0.8));
   wrap('rockSprite', (v, m) => `ro|${v}|${m}`, (v, m) => mRock(v, m));
   wrap('grassSprite', (v, w, d) => `gr|${v}|${d}`, (v, w, d) => sc(mGrass(v, d), 0.7));
-  const SMALL = { mushroom: mMushroom, reeds: mReeds, stump: mStump, log: mLog, deadtree: mDeadTree, grave: mGrave, tent: mTent, barrel: mBarrel, crate: mCrate, hay: mHay, bench: mBench, well: mWell, stall: mStall, spikes: mSpikes, rubblebig: mRubble, dummy: mDummy, statue: mStatue, anvil: mAnvil, weaponrack: mWeaponRack, cart: mCart, table: mTable };
-  const PS = { barrel: 0.5, crate: 0.5, hay: 0.55, bench: 0.5, well: 0.72, stall: 0.6, tent: 0.75, spikes: 0.7, rubblebig: 0.8, dummy: 0.55, statue: 1.0, anvil: 0.5, weaponrack: 0.55, cart: 0.6, table: 0.5, grave: 0.6, stump: 0.75, log: 0.8, mushroom: 0.8, reeds: 0.8, deadtree: 1.25 };
+  const SMALL = { mushroom: mMushroom, reeds: mReeds, stump: mStump, log: mLog, deadtree: mDeadTree, grave: mGrave, tent: mTent, barrel: mBarrel, crate: mCrate, hay: mHay, bench: mBench, well: mWell, stall: mStall, spikes: mSpikes, rubblebig: mRubble, dummy: mDummy, statue: mStatue, anvil: mAnvil, cave: mCave, chest: mChest, weaponrack: mWeaponRack, cart: mCart, table: mTable };
+  const PS = { barrel: 0.5, crate: 0.5, hay: 0.55, bench: 0.5, well: 0.72, stall: 0.6, tent: 0.75, spikes: 0.7, rubblebig: 0.8, dummy: 0.55, statue: 1.0, anvil: 0.5, cave: 0.8, chest: 0.55, weaponrack: 0.55, cart: 0.6, table: 0.5, grave: 0.6, stump: 0.75, log: 0.8, mushroom: 0.8, reeds: 0.8, deadtree: 1.25 };
   const sc = (g, k) => { g.scale.setScalar(k); return g; };
   const origSmall = window.smallSprite;
   window.smallSprite = function (kind, v = 0, w) { const f = SMALL[kind]; return (f && scen3(`sm|${kind}|${v}`, () => sc(f(v), PS[kind] || 1))) || origSmall(kind, v, w); };

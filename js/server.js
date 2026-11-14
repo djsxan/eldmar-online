@@ -61,6 +61,50 @@ function monStand(x, y, m) {
   return true;
 }
 
+function spawnAt(type, x, y, extra) {
+  const id = S.nextMid++;
+  S.monsters[id] = { id, type, zone: zoneAt(x, y), x, y, homeX: x, homeY: y, hp: MON[type].hp, nextAtk: 0, stunUntil: 0, slowUntil: 0, taunt: null, aggro: null, returning: false, face: 1, path: null, pathT: 0, wander: null, waitUntil: 0, ...extra };
+  return id;
+}
+// ---------------- bastiões: vagas fixas de monstros, patrulhas, chefe e baú ----------------
+function initBastions() {
+  S.bslots = []; S.chests = S.chests || {};
+  for (const B of BASTIONS) {
+    const spots = [];
+    for (let k = 0; k < 800 && spots.length < 40; k++) { const a = Math.random() * 6.28, r = 1 + Math.random() * (B.r - 1.5), x = B.x + Math.cos(a) * r, y = B.y + Math.sin(a) * r; if (monStand(x, y, null) && REACH[Math.round(y) * MAP_W + Math.round(x)]) spots.push([x, y]); }
+    if (!spots.length) continue;
+    let si = 0; const take = () => spots[(si++) % spots.length];
+    for (const [type, n] of Object.entries(B.mons)) for (let i = 0; i < n; i++) S.bslots.push({ b: B, type, pos: take() });
+    if (B.boss) S.bslots.push({ b: B, type: B.boss, pos: take(), boss: true });
+    if (B.night) for (const [type, n] of Object.entries(B.night)) for (let i = 0; i < n; i++) S.bslots.push({ b: B, type, pos: take(), night: true });
+    if (B.patrol) {
+      const pts = []; for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2, x = B.x + Math.cos(a) * (B.r + 5), y = B.y + Math.sin(a) * (B.r + 5); if (monStand(x, y, null) && REACH[Math.round(y) * MAP_W + Math.round(x)]) pts.push([x, y]); }
+      if (pts.length >= 3) B.patrol.forEach((type, i) => S.bslots.push({ b: B, type, pos: pts[0], patrol: pts, off: i }));
+    }
+  }
+}
+function tickBastions(now) {
+  const night = dayInfo().night;
+  for (const s of S.bslots) {
+    const m = s.mid != null ? S.monsters[s.mid] : null;
+    if (m) { if (s.night && !night) { delete S.monsters[s.mid]; near(m.x, m.y, { t: 'mdie', id: m.id, d: 0 }); s.mid = null; } continue; }
+    if (s.mid != null) { s.mid = null; s.deadAt = now; }          // morreu
+    if (s.night && !night) continue;
+    if (s.deadAt && now - s.deadAt < (s.boss ? BOSS_RESPAWN : BASTION_RESPAWN)) continue;
+    const [x, y] = s.pos;
+    if (s.deadAt) { let busy = false; for (const id in S.players) if (dist(S.players[id].x, S.players[id].y, x, y) < 12) busy = true; if (busy) continue; }
+    const ox = s.patrol ? (s.off - 1) * 0.7 : 0;
+    s.mid = spawnAt(s.type, x + ox, y, { bs: s.b.id, patrol: s.patrol ? { pts: s.patrol, i: 0 } : null }); s.deadAt = 0;
+  }
+  for (const id in S.chests) if (now > S.chests[id].until) delete S.chests[id];
+}
+function spawnChest(m) {
+  const id = S.nextChest = (S.nextChest || 0) + 1, who = new Set();
+  for (const pid in S.players) if (dist(S.players[pid].x, S.players[pid].y, m.x, m.y) <= 14) who.add(pid);
+  S.chests[id] = { id, x: m.x, y: m.y, until: now_() + CHEST_MS, who, opened: new Set(), boss: m.type };
+  sys('Um baú surgiu onde ' + MON[m.type].name + ' caiu.');
+}
+function wildCount() { let n = 0; for (const id in S.monsters) if (!S.monsters[id].bs) n++; return n; }
 function spawnMonster() {
   const x = rint(2, MAP_W - 3), y = rint(2, MAP_H - 3), z = zoneAt(x, y);
   if (!ZONES[z].mons.length || !REACH[y * MAP_W + x] || !monStand(x, y, null)) return false;
@@ -142,6 +186,17 @@ function hostOnClient(from, m) {
       const [ax, ay] = to > fl ? sw.arrive : sw.entry; p.x = ax; p.y = ay; p.fl = to; p.fb = to > 0 ? (m.b | 0) : -1; p.lastMv = now_(); p.sit = null;
       if (p.carrying) { const t = S.players[p.carrying]; if (t) { t.x = p.x; t.y = p.y; t.fl = p.fl; t.fb = p.fb; } }
       Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: 0, fl: p.fl, fb: p.fb });
+      break;
+    }
+    case 'open': {
+      const c = S.chests && S.chests[m.id]; if (!c || p.downed || dist(p.x, p.y, c.x, c.y) > 2) break;
+      if (!c.who.has(p.id)) { tell(p, 'Este baú não é seu: você não lutou contra o chefe.'); break; }
+      if (c.opened.has(p.id)) break;
+      c.opened.add(p.id);
+      const gold = rint(90, 160); p.gold += gold; p.pots.hp += 2;
+      const items = [MON[c.boss].trophy]; if (Math.random() < 0.5) items.push('gem');
+      for (const k of items) if (k && LOOT[k]) { p.inv[k] = Math.min(999, (p.inv[k] || 0) + 1); Net.toOne(p.id, { t: 'loot', k }); }
+      Net.toOne(p.id, { t: 'chestopen', id: c.id, gold, items }); sendStat(p);
       break;
     }
     case 'emote': { const k = ['salute', 'dance', 'point'].includes(m.k) ? m.k : null; if (k && !p.downed) near(p.x, p.y, { t: 'emote', id: p.id, k }); break; }
@@ -241,6 +296,7 @@ function killMonster(m, p, delay) {
     Net.toOne(p.id, { t: 'loot', k });
   }
   if (drops.length) sendStat(p);
+  if (def.boss) spawnChest(m);
   const group = Object.values(S.players).filter(q => !q.downed && dist(q.x, q.y, m.x, m.y) <= 10);
   if (!group.includes(p)) group.push(p);
   const share = Math.ceil(def.xp * (group.length > 1 ? 0.7 : 1));
@@ -588,13 +644,15 @@ function monsterThink(m, players, now, dt) {
     const dd = dist(m.x, m.y, tgt.x, tgt.y);
     const sdx = (tgt.x - m.x) - (tgt.y - m.y); if (Math.abs(sdx) > 0.05) m.face = sdx > 0 ? 1 : -1;
     if (dd <= reach) {
-      if (now >= m.nextAtk) { m.nextAtk = now + d.atk; anim('m', m, 'bite', tgt.x, tgt.y); damagePlayer(tgt, rint(d.dmg[0], d.dmg[1]), m, 200); }
+      if (now >= m.nextAtk) { m.nextAtk = now + d.atk; anim('m', m, 'bite', tgt.x, tgt.y); damagePlayer(tgt, rint(d.dmg[0], d.dmg[1]), m, 200); if (d.drain && !tgt.downed) { tgt.mp = Math.max(0, tgt.mp - d.drain); sendStat(tgt); } }
     } else {
       chase(m, tgt.x, tgt.y, step, now);
       m.nextAtk = Math.max(m.nextAtk, now + 300);
     }
     m.wander = null;
   } else {
+    // patrulha: anda em volta do bastião, de ponto em ponto
+    if (m.patrol) { const P = m.patrol, t = P.pts[P.i]; if (!moveToward(m, t[0], t[1], step * 0.5) || dist(m.x, m.y, t[0], t[1]) < 0.6) P.i = (P.i + 1) % P.pts.length; m.homeX = m.x; m.homeY = m.y; return; }
     if (now < m.waitUntil) return;
     if (!m.wander) {
       const a = Math.random() * Math.PI * 2, r = 1 + Math.random() * 4;
@@ -614,12 +672,15 @@ function hostTick() {
   const players = Object.values(S.players);
 
   if (!S.filled) {
-    for (let i = 0; i < 8000 && Object.keys(S.monsters).length < MAX_MON; i++) spawnMonster();
+    for (let i = 0; i < 8000 && wildCount() < MAX_WILD; i++) spawnMonster();
     S.filled = true;
-  } else if (now >= S.nextSpawn && Object.keys(S.monsters).length < MAX_MON) {
+  } else if (now >= S.nextSpawn && wildCount() < MAX_WILD) {
     for (let i = 0; i < 40; i++) if (spawnMonster()) break;
     S.nextSpawn = now + 1500;
   }
+
+  if (!S.bslots) initBastions();
+  tickBastions(now);
 
   for (const p of players) {
     if (p.downed) {
@@ -678,7 +739,8 @@ function hostTick() {
       if (Math.abs(m.x - r.x) > VIEW_RADIUS || Math.abs(m.y - r.y) > VIEW_RADIUS) continue;
       ml.push([m.id, MON_TYPES.indexOf(m.type), Math.round(m.x * 100), Math.round(m.y * 100), m.hp, (m.slowUntil > now ? 1 : 0) | (m.stunUntil > now ? 2 : 0), m.face]);
     }
-    Net.toOne(r.id, { t: 's', p: pl, m: ml }, true);
+    const ch = []; for (const id in S.chests) { const c = S.chests[id]; if (Math.abs(c.x - r.x) <= VIEW_RADIUS && Math.abs(c.y - r.y) <= VIEW_RADIUS) ch.push([c.id, Math.round(c.x * 100), Math.round(c.y * 100), c.opened.has(r.id) ? 1 : 0, c.who.has(r.id) ? 1 : 0]); }
+    Net.toOne(r.id, { t: 's', p: pl, m: ml, ch }, true);
   }
 }
 

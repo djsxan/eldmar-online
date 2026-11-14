@@ -333,7 +333,8 @@ function fallAngle(ms) {
   const t = ms / 1100; if (t >= 1) return 0;
   return (t < 0.25 ? t / 0.25 : t < 0.65 ? 1 : 1 - (t - 0.65) / 0.35) * 1.15;
 }
-const MON_H = { deer: 70, boar: 46, rat: 30, slime: 40, wolf: 58, spider: 52, toad: 44, goblin: 68, skeleton: 92, orc: 104, troll: 150 };
+const PAINT_AS = { deer: 'wolf', boar: 'wolf', bandit: 'goblin', deserter: 'goblin', deserterchief: 'goblin', orcchief: 'orc', cryptlord: 'skeleton', elderslime: 'slime', wisp: 'slime' };
+const MON_H = { bandit: 84, deserter: 90, wisp: 70, orcchief: 140, cryptlord: 120, deserterchief: 104, elderslime: 70, deer: 70, boar: 46, rat: 30, slime: 40, wolf: 58, spider: 52, toad: 44, goblin: 68, skeleton: 92, orc: 104, troll: 150 };
 function drawMonsterEntity(ctx, e, sx, sy, now) {
   if (R3.ok) {
     let atk = -1;
@@ -346,6 +347,7 @@ function drawMonsterEntity(ctx, e, sx, sy, now) {
     if (e.dieAt && now > e.dieAt) { const t = Math.min(1, (now - e.dieAt) / 600); alpha = 1 - t; sink = t * 8; }
     ctx.imageSmoothingEnabled = true;
     softDab(ctx, sx, sy, MON[e.type].big ? 34 : 18, '#000000', 0.35 * alpha);
+    if (e.type === 'wisp') G.lights.push({ x: sx, y: sy - 46, r: 70, c: '140,255,200', a: 0.9 * alpha });
     const fall = e.fallAt ? fallAngle(now - e.fallAt) * (kb.dx >= 0 ? 1 : -1) : 0;
     if (fall) { ctx.save(); ctx.translate(sx, sy + sink); ctx.rotate(fall); pblit(ctx, s, 0, 0, alpha); ctx.restore(); }
     else pblit(ctx, s, sx, sy + sink, alpha);
@@ -358,7 +360,7 @@ function drawMonsterEntity(ctx, e, sx, sy, now) {
   let atk = -1;
   if (e.anim) { const t = (now - e.anim.t0) / ACT_MS.bite; if (t >= 0 && t < 1) atk = Math.min(3, Math.floor(t * 4)); }
   const f = e.walking ? Math.floor(e.walkDist * 3) % 4 : (Math.floor(now / 450 + e.id) % 2) * ((e.type === 'slime' || e.type === 'toad') ? 1 : 0);
-  const spr = monSprite(e.type === 'deer' || e.type === 'boar' ? 'wolf' : e.type, f, atk);
+  const spr = monSprite(PAINT_AS[e.type] || e.type, f, atk);
   let alpha = 1, sink = 0;
   if (e.dieAt && now > e.dieAt) { const t = Math.min(1, (now - e.dieAt) / 600); alpha = 1 - t; sink = Math.round(t * 4); }
   blit(ctx, def.big ? SHADOW_BIG : SHADOW, sx, sy);
@@ -436,6 +438,7 @@ function objSprite(o, x, y) {
     case O.DUMMY: return smallSprite('dummy');
     case O.STATUE: return smallSprite('statue');
     case O.ANVIL: return smallSprite('anvil');
+    case O.CAVE: return smallSprite('cave');
     case O.WEAPONRACK: return smallSprite('weaponrack');
     case O.CART: return smallSprite('cart');
     case O.TABLE: return smallSprite('table');
@@ -658,6 +661,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
 
   // 4) coleta dos itens
   const items = [], upper = [], visTrees = [], visFlowers = [], visGrass = [];
+  for (const c of (G.started && G.chests) || []) { const p = iso(c.x, c.y); items.push({ d: c.x + c.y, k: 0, chest: c, sx: p.sx + ox, sy: p.sy + oy }); }
   for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
     const i = y * MAP_W + x, o = WORLD.obj[i], g = WORLD.ground[i];
     const wx = (x - y) * HTW, wy = (x + y) * HTH, sx = wx + ox, sy = wy + oy;
@@ -759,6 +763,11 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     return d > meD && meX > l + 6 && meX < l + s.w - 6 && meY > t && meY < t + s.h - 10 && (yf ?? y) > meY + 18 ? (yf != null && inB >= 0 ? 0.22 : 0.42) : null;
   };
   const drawItem = it => {
+    if (it.chest) {
+      const c = it.chest, s = smallSprite('chest', c.open ? 1 : 0); ctx.imageSmoothingEnabled = true; if (s) pblit(ctx, s, it.sx, it.sy);
+      if (c.mine && !c.open) { G.lights.push({ x: it.sx, y: it.sy - 10, r: 40, c: '255,220,120', a: 0.7 }); const t = now / 300; for (let k = 0; k < 3; k++) dab(ctx, it.sx + Math.cos(t + k * 2.1) * 12, it.sy - 22 + Math.sin(t * 1.3 + k) * 6, 2, 2, '#ffe890'); }
+      return;
+    }
     if (it.k === 0) {
       if (it.cliff) {
         const i = it.y * MAP_W + it.x, h = WORLD.height[i] || 1, s = cliffSprite(h, Math.floor(hash2(it.x, it.y, 3) * 4), h >= 4 ? 1 : 0);

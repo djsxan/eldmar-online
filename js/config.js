@@ -3,12 +3,12 @@
 //  Mexa aqui para balancear o jogo.
 // ============================================================
 const GAME_NAME = 'World of Sxan';
-const VERSION = 'v1.4.0';
-const VERSION_NAME = 'Caça e Fôlego';
+const VERSION = 'v1.5.0';
+const VERSION_NAME = 'Bastiões';
 
 const PLAYER_SPEED = 2.7;          // tiles por segundo (1 tile ≈ 2 m)
 // configurações do jogador (menu de pausa)
-const SET = (() => { const d = { quality: (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches) ? 'low' : 'high', bright: 1, zoom: 1, pad: (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches) ? 0.75 : 0.5 }; try { return Object.assign(d, JSON.parse(localStorage.getItem('wos-settings') || '{}')); } catch (e) { return d; } })();
+const SET = (() => { const d = { quality: (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches) ? 'low' : 'high', bright: 1, zoom: 1, orbs: true, pad: (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches) ? 0.75 : 0.5 }; try { return Object.assign(d, JSON.parse(localStorage.getItem('wos-settings') || '{}')); } catch (e) { return d; } })();
 function saveSettings() { try { localStorage.setItem('wos-settings', JSON.stringify(SET)); } catch (e) { } }
 const STAIR_N = 5;                 // escadas: 5 tiles de rampa até o alto da muralha
 const SKIN_LVL = [1, 10, 20];      // nível para liberar cada skin (comum, rara, lendária)
@@ -110,7 +110,16 @@ const MON = {
   goblin:   { name: 'Saqueador Goblin',  hp: 90,  dmg: [6, 14],  xp: 45,  gold: [8, 16],  speed: 2.3, atk: 1100, aggro: 6 },
   skeleton: { name: 'Esqueleto Errante', hp: 120, dmg: [8, 16],  xp: 60,  gold: [6, 14],  speed: 1.7, atk: 1300, aggro: 6 },
   orc:      { name: 'Orc Guerreiro',     hp: 180, dmg: [10, 22], xp: 95,  gold: [12, 25], speed: 2.0, atk: 1300, aggro: 7 },
-  troll:    { name: 'Troll da Montanha', hp: 420, dmg: [18, 36], xp: 260, gold: [30, 60], speed: 1.5, atk: 1700, aggro: 6, big: true },
+  troll:    { name: 'Troll da Montanha', hp: 420, dmg: [18, 36], xp: 260, gold: [30, 60], speed: 1.5, atk: 1700, aggro: 6, big: true, boss: true, trophy: 'trolltusk' },
+  // inimigos dos bastiões
+  bandit:   { name: 'Bandido',           hp: 110, dmg: [7, 14],  xp: 50,  gold: [6, 14],  speed: 2.3, atk: 1100, aggro: 6 },
+  deserter: { name: 'Desertor',          hp: 170, dmg: [9, 19],  xp: 80,  gold: [10, 22], speed: 2.0, atk: 1250, aggro: 6 },
+  wisp:     { name: 'Fogo-Fátuo',        hp: 60,  dmg: [4, 8],   xp: 45,  gold: [0, 0],   speed: 2.6, atk: 1500, aggro: 7, drain: 10, cs: 1.7 },
+  // chefes (ao morrer deixam um baú para quem lutou)
+  orcchief: { name: 'Grukk, Chefe Orc',  hp: 750, dmg: [16, 30], xp: 420, gold: [60, 100], speed: 1.9, atk: 1400, aggro: 7, big: true, boss: true, base: 'orc', trophy: 'orcbanner' },
+  cryptlord: { name: 'Senhor da Cripta', hp: 620, dmg: [14, 26], xp: 400, gold: [40, 80], speed: 1.7, atk: 1350, aggro: 7, big: true, boss: true, base: 'skeleton', trophy: 'cryptcrown' },
+  deserterchief: { name: 'Capitão Varrick', hp: 680, dmg: [15, 28], xp: 410, gold: [70, 120], speed: 2.0, atk: 1250, aggro: 7, big: true, boss: true, base: 'deserter', trophy: 'insignia' },
+  elderslime: { name: 'Lodo Ancião',     hp: 480, dmg: [10, 20], xp: 300, gold: [0, 0],   speed: 1.1, atk: 1600, aggro: 6, big: true, boss: true, base: 'slime', cs: 1.9, trophy: 'slimecore' },
 };
 for (const k in MON) MON[k].speed *= 0.75; // escala nova do mundo
 const MON_TYPES = Object.keys(MON);
@@ -153,14 +162,25 @@ const LOOT = {
   venison:  { name: 'Carne de Cervo',   price: 9,   icon: '◖', color: '#c85a4a', desc: 'Carne magra. A taverna sempre compra.' },
   boartusk: { name: 'Presa de Javali',  price: 18,  icon: '◣', color: '#e8dcc0', desc: 'Curva e afiada como faca.' },
   pork:     { name: 'Carne de Javali',  price: 11,  icon: '◖', color: '#d87a6a', desc: 'Gorda e saborosa. Vira ensopado.' },
+  pouch:    { name: 'Bolsa Roubada',    price: 26,  icon: '◍', color: '#a8844a', desc: 'Moedas de algum viajante azarado.' },
+  rustblade: { name: 'Lâmina Enferrujada', price: 24, icon: '⟋', color: '#a87a5a', desc: 'Espada de um soldado que fugiu da guerra.' },
+  wispdust: { name: 'Pó Fantasma',      price: 32,  icon: '✺', color: '#8affd0', desc: 'Brilha fraquinho no escuro.' },
+  orcbanner: { name: 'Estandarte de Grukk', price: 160, icon: '⚑', color: '#c83a2a', desc: 'Troféu do chefe do Acampamento Orc.' },
+  cryptcrown: { name: 'Coroa do Senhor da Cripta', price: 180, icon: '♛', color: '#d8c070', desc: 'Ouro velho e frio, tirado de um morto.' },
+  insignia: { name: 'Insígnia do Capitão', price: 170, icon: '✠', color: '#c8c8d0', desc: 'Prova de que Varrick caiu.' },
+  slimecore: { name: 'Núcleo do Lodo Ancião', price: 130, icon: '◉', color: '#5ad84a', desc: 'Pulsa como um coração verde.' },
+  trolltusk: { name: 'Presa do Troll',  price: 150, icon: '◣', color: '#f0e8d0', desc: 'Do tamanho de um braço.' },
   gem:      { name: 'Gema Bruta',       price: 55,  icon: '◈', color: '#5ad0f0', desc: 'Pedra preciosa sem lapidar.' },
 };
 // recursos de cada criatura: [item, chance]
 const MON_LOOT = {
   rat: [['rattail', 0.85]], deer: [['hide', 1], ['venison', 0.75]], boar: [['boartusk', 0.9], ['pork', 0.8]], wolf: [['pelt', 0.95]],
+  bandit: [['pouch', 0.35]], deserter: [['rustblade', 0.4]], wisp: [['wispdust', 0.6]],
   spider: [['silk', 0.85]], toad: [['toadskin', 0.85]], slime: [['goo', 0.55]], goblin: [['trinket', 0.55]], skeleton: [['bone', 0.55]], orc: [['tusk', 0.55]], troll: [['trollheart', 1]],
 };
 const INV_SLOTS = 24;
+// bastiões: cada monstro volta ~3 min depois de morrer (sem jogador perto); chefe ~10 min; o baú do chefe dura 2 min
+const BASTION_RESPAWN = 180000, BOSS_RESPAWN = 600000, CHEST_MS = 120000, MAX_WILD = 200;
 const BUFF_NAMES = { warcry: 'Grito de Guerra', wall: 'Muralha de Ferro', agile: 'Passo Ágil', bless: 'Bênção da Aurora', mead: 'Hidromel', whet: 'Lâmina Afiada' };
 const BUFF_BITS = { wall: 16, agile: 32, bless: 64, warcry: 128 };
 

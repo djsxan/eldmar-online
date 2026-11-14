@@ -427,7 +427,12 @@ const MON_LOOK = {
   orc: () => ({ skin: tone('#5e7f42'), hair: tone('#1c1c1c'), armor: 'plate', body: tone('#5a5e66'), body2: tone('#3a2614'), accent: tone('#6a1a14'), legs: tone('#3d2b1a'), boots: tone('#27180d'), trim: tone('#8a6a34'), head: 'horned', headTone: tone('#4b4f57'), weapon: 'axe', pauldron: 'spike', capeTone: tone('#3a1a14') }),
   troll: () => ({ skin: tone('#7b8794'), hair: null, armor: 'cloth', body: tone('#57534e'), body2: tone('#292524'), accent: tone('#44403c'), legs: tone('#44403c'), boots: tone('#7b8794'), trim: tone('#5a5248'), head: 'none', weapon: 'club', capeTone: tone('#3a3630') }),
 };
-const MON_SCALE = { goblin: 0.72, skeleton: 0.98, orc: 1.18, troll: 1.7 };
+MON_LOOK.bandit = () => ({ skin: tone('#c8a080'), hair: tone('#3a2a1a'), armor: 'leather', body: tone('#4a3a2a'), body2: tone('#2a2016'), accent: tone('#3a2a1a'), legs: tone('#3a3024'), boots: tone('#2a1d12'), trim: tone('#6a5a3a'), head: 'hood', headTone: tone('#3a3226'), weapon: 'dagger', capeTone: tone('#2e261e') });
+MON_LOOK.deserter = () => ({ skin: tone('#c09878'), hair: tone('#4a3a2a'), armor: 'plate', body: tone('#6a6862'), body2: tone('#3a2a1a'), accent: tone('#5a1a14'), legs: tone('#3d2b1a'), boots: tone('#27180d'), trim: tone('#7a5a2a'), head: 'helm', headTone: tone('#5a5e62'), weapon: 'rustsword', shield: 'kite', capeTone: tone('#4a1a14') });
+MON_LOOK.deserterchief = () => ({ skin: tone('#b89070'), hair: tone('#2a1a10'), armor: 'plate', body: tone('#4a4c50'), body2: tone('#2a1a10'), accent: tone('#7a1a14'), legs: tone('#2d1b0a'), boots: tone('#1a1008'), trim: tone('#a8843a'), head: 'greathelm', headTone: tone('#3a3c40'), weapon: 'sword', shield: 'kite', capeTone: tone('#6a1410') });
+MON_LOOK.orcchief = () => ({ ...MON_LOOK.orc(), accent: tone('#9a1a14'), trim: tone('#c8a040'), head: 'horned', weapon: 'axe', capeTone: tone('#5a0e0a') });
+MON_LOOK.cryptlord = () => ({ ...MON_LOOK.skeleton(), head: 'circlet', weapon: 'darkblade', accent: tone('#3a1a4a'), trim: tone('#c8a850'), capeTone: tone('#2a1a3a') });
+const MON_SCALE = { goblin: 0.72, skeleton: 0.98, orc: 1.18, troll: 1.7, bandit: 0.98, deserter: 1.0, deserterchief: 1.12, orcchief: 1.45, cryptlord: 1.25 };
 function buildCreature(type) {
   const root = new THREE.Group(), R = { root, legs: [], type };
   const body = new THREE.Group(); root.add(body); R.body = body;
@@ -479,6 +484,14 @@ function buildCreature(type) {
       }
       const tail = mesh(capG(0.015, 0.12), dk, 0, 0.08, -0.42); tail.rotation.x = -0.5; body.add(tail);
       for (const [x, z] of [[-0.12, 0.22], [0.12, 0.22], [-0.12, -0.22], [0.12, -0.22]]) legJ(x, z, 0.26, 0.045, dk);
+      break;
+    }
+    case 'wisp': {
+      body.position.y = 0.95;
+      body.add(mesh(sphG(0.08), mat('#f0fff6', 'gem', { emissive: '#b8ffe0', emissiveIntensity: 3 }), 0, 0, 0));
+      const halo = mesh(sphG(0.2), mat('#7affc8', 'slime', { opacity: 0.35, emissive: '#3affa8', emissiveIntensity: 1.6 }), 0, 0, 0); body.add(halo); R.blob = halo;
+      for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; body.add(mesh(sphG(0.025), mat('#c8ffe8', 'gem', { emissive: '#8affd0', emissiveIntensity: 2.5 }), Math.cos(a) * 0.24, Math.sin(k * 1.7) * 0.12, Math.sin(a) * 0.24)); }
+      const tail = mesh(coneG(0.1, 0.4, 10), mat('#5affb8', 'slime', { opacity: 0.25, emissive: '#2aff98', emissiveIntensity: 1.2 }), 0, -0.3, 0); tail.rotation.x = Math.PI; body.add(tail);
       break;
     }
     case 'slime': {
@@ -534,8 +547,8 @@ function buildCreature(type) {
 function monSprite3D(type, f, atk, dir, hurt = -1) {
   return cache3(`m3|${type}|${f}|${atk}|${dir}|${hurt}`, () => {
     if (MON_LOOK[type]) {
-      let R = _rigs.get('mon:' + type); if (!R) { R = buildHumanoid(lookFor('mon:' + type, MON_LOOK[type]), { scale: MON_SCALE[type] }); scaryMonster(type, R, MON_SCALE[type]); _rigs.set('mon:' + type, R); }
-      const P = { dir, walk: atk >= 0 || hurt >= 0 ? -1 : (f >= 0 ? Math.round(f * 1.5) : -1), act: hurt >= 0 ? { k: 'hurt', f: hurt } : atk >= 0 ? { k: type === 'troll' || type === 'orc' ? 'bash' : 'swing', f: Math.min(11, Math.round(atk * 1.5)) } : null };
+      let R = _rigs.get('mon:' + type); if (!R) { R = buildHumanoid(lookFor('mon:' + type, MON_LOOK[type]), { scale: MON_SCALE[type] }); scaryMonster((MON[type] && MON[type].base) || type, R, MON_SCALE[type]); _rigs.set('mon:' + type, R); }
+      const P = { dir, walk: atk >= 0 || hurt >= 0 ? -1 : (f >= 0 ? Math.round(f * 1.5) : -1), act: hurt >= 0 ? { k: 'hurt', f: hurt } : atk >= 0 ? { k: ['troll', 'orc'].includes((MON[type] && MON[type].base) || type) ? 'bash' : 'swing', f: Math.min(11, Math.round(atk * 1.5)) } : null };
       const Q = buildPose('knight', P);
       if (type === 'troll') Q.tl += 0.25;
       if (type === 'goblin') Q.tl += 0.15;
@@ -543,7 +556,7 @@ function monSprite3D(type, f, atk, dir, hurt = -1) {
       return shoot3D(R, dir, 0);
     }
     let C = _rigs.get('crt:' + type);
-    if (!C) { C = buildCreature(type); scaryCreature(type, C); _rigs.set('crt:' + type, C); }
+    if (!C) { const base = (MON[type] && MON[type].base) || type; C = buildCreature(base); scaryCreature(base, C); if (MON[type] && MON[type].cs) C.root.scale.setScalar(MON[type].cs); _rigs.set('crt:' + type, C); }
     const ph = f / 8 * Math.PI * 2, lunge = atk >= 0 ? Math.sin(atk / 7 * Math.PI) : 0;
     C.legs.forEach((j, i) => { j.rotation.x = Math.sin(ph + (i % 2 ? Math.PI : 0) + (i >= 2 ? Math.PI : 0)) * (f >= 0 && atk < 0 ? 0.5 : 0.05); });
     C.body.position.z = lunge * 0.18;

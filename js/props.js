@@ -182,6 +182,14 @@ function smallSprite(kind, v = 0, w) {
       dab(c, 24, 30, 7, 8, '#a4a096'); stroke(c, [31, 42, 40, 18], '#a8a49a', 4); stroke(c, [40, 18, 40, 4], '#c8c4ba', 2);
       for (let i = 0; i < 18; i++) dab(c, 14 + R() * 20, 50 + R() * 30, 1.5, 1, '#4e6a2c');
     });
+    case 'cave': return paint('cave', 140, 110, 70, 100, (c, R) => {
+      c.fillStyle = '#6e6a62'; c.beginPath(); c.ellipse(70, 70, 66, 40, 0, Math.PI, 0); c.lineTo(136, 100); c.lineTo(4, 100); c.closePath(); c.fill();
+      c.fillStyle = '#0a0806'; c.beginPath(); c.ellipse(70, 100, 24, 34, 0, Math.PI, 0); c.fill();
+    });
+    case 'chest': return paint('chest' + v, 40, 34, 20, 30, (c, R) => {
+      c.fillStyle = '#6a4220'; c.fillRect(6, 12, 28, 18); c.fillStyle = '#3a3a40'; c.fillRect(10, 12, 3, 18); c.fillRect(27, 12, 3, 18);
+      c.fillStyle = v ? '#4a2c14' : '#7a5028'; c.fillRect(6, v ? 2 : 6, 28, 7); c.fillStyle = '#e2b74e'; c.fillRect(18, 14, 4, 5);
+    });
     case 'anvil': return paint('anvil', 48, 40, 24, 34, (c, R) => {
       c.fillStyle = '#4a3020'; c.fillRect(16, 20, 16, 14);
       c.fillStyle = lgrad(c, 0, 10, 0, 22, [[0, '#8a8e96'], [1, '#3a3c42']]);

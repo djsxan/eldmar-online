@@ -12,11 +12,11 @@ const O = {
   REEDS: 10, LILY: 11, STUMP: 12, DEADTREE: 13, GRAVE: 14, BONES: 15, TENT: 16, CAMPFIRE: 17, FENCE: 18,
   TORCH: 19, BARREL: 20, CRATE: 21, HAY: 22, WELL: 23, STALL: 24, BENCH: 25, BANNER: 26, LOG: 27,
   FLOWERBED: 28, SPIKES: 29, WALL: 30, TOWER: 31, PART: 32, GATE: 33, STAIRS: 34, RUBBLE: 35, RUBBLEBIG: 36,
-  STATUE: 37, BRAZIER: 38, DUMMY: 39, WATERFALL: 40, LOWWALL: 41, IVY: 42, ANVIL: 43, WEAPONRACK: 44, CART: 45, TABLE: 46,
+  STATUE: 37, BRAZIER: 38, DUMMY: 39, WATERFALL: 40, LOWWALL: 41, IVY: 42, ANVIL: 43, WEAPONRACK: 44, CART: 45, TABLE: 46, CAVE: 47,
 };
 const BLOCKING = new Set([O.TREE, O.PINE, O.ROCK, O.FOUNTAIN, O.STUMP, O.DEADTREE, O.GRAVE, O.TENT,
   O.CAMPFIRE, O.FENCE, O.BARREL, O.CRATE, O.HAY, O.WELL, O.STALL, O.LOG, O.SPIKES,
-  O.WALL, O.TOWER, O.PART, O.RUBBLEBIG, O.STATUE, O.BRAZIER, O.DUMMY, O.WATERFALL, O.LOWWALL, O.ANVIL, O.WEAPONRACK, O.CART, O.TABLE]);
+  O.WALL, O.TOWER, O.PART, O.RUBBLEBIG, O.CAVE, O.STATUE, O.BRAZIER, O.DUMMY, O.WATERFALL, O.LOWWALL, O.ANVIL, O.WEAPONRACK, O.CART, O.TABLE]);
 // objetos rasteiros (vão direto para o chão pré-desenhado)
 const FLAT = new Set([O.FLOWER, O.LILY, O.FLOWERBED, O.BONES, O.RUBBLE, O.IVY]);
 const DIRS8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
@@ -24,12 +24,12 @@ const DIRS8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, 
 const Z = { VILLAGE: 0, FIELDS: 1, FOREST: 2, SWAMP: 3, BONES: 4, ORCS: 5, WILD: 6, OUTSKIRTS: 7 };
 const ZONES = [
   { name: 'Cidadela de Sxan', stars: 0, mons: [] },
-  { name: 'Campos de Sxan', stars: 1, mons: ['rat', 'deer', 'deer', 'boar', 'slime'] },
+  { name: 'Campos de Sxan', stars: 1, mons: ['rat', 'deer', 'deer', 'boar'] },
   { name: 'Bosque Sombrio', stars: 2, mons: ['wolf', 'wolf', 'spider', 'deer', 'boar'] },
-  { name: 'Pântano Pútrido', stars: 2, mons: ['toad', 'toad', 'slime'] },
-  { name: 'Colinas de Ossos', stars: 3, mons: ['skeleton', 'skeleton', 'spider'] },
-  { name: 'Acampamento Orc', stars: 3, mons: ['goblin', 'goblin', 'orc'] },
-  { name: 'Terras Selvagens', stars: 4, mons: ['orc', 'troll', 'skeleton', 'orc'] },
+  { name: 'Pântano Pútrido', stars: 2, mons: ['toad', 'toad', 'rat'] },
+  { name: 'Colinas de Ossos', stars: 3, mons: ['spider', 'rat', 'wolf'] },
+  { name: 'Terras do Oeste', stars: 3, mons: ['boar', 'wolf', 'deer'] },
+  { name: 'Terras Selvagens', stars: 4, mons: ['wolf', 'boar', 'deer', 'spider'] },
   { name: 'Arredores de Sxan', stars: 0, mons: [] },
 ];
 
@@ -265,6 +265,16 @@ if (TEST3D) {
 }
 const TEMPLE_SPAWN = TEST3D ? { x: 40, y: 44 } : { x: BUILDINGS[0].x + 4, y: BUILDINGS[0].y + BUILDINGS[0].h + 2 };
 const MOUNTAIN = TEST3D ? { x: -100, y: -100, r: 1 } : { x: 50, y: 52, r: 20 };
+// ---------- bastiões: lugares onde os inimigos se concentram (o resto do mundo é da fauna) ----------
+const bpos = (a, d) => { const r = d * Math.SQRT2; return { x: Math.round(CENTER + r * (Math.cos(a) + Math.sin(a)) / 2), y: Math.round(CENTER + r * (Math.sin(a) - Math.cos(a)) / 2) }; };
+const CAVE_POS = (() => { const dx = CENTER - MOUNTAIN.x, dy = CENTER - MOUNTAIN.y, l = Math.hypot(dx, dy); return { x: Math.round(MOUNTAIN.x + dx / l * (MOUNTAIN.r + 1)), y: Math.round(MOUNTAIN.y + dy / l * (MOUNTAIN.r + 1)), ux: dx / l, uy: dy / l }; })();
+const BASTIONS = TEST3D ? [] : [
+  { id: 'orc', name: 'Acampamento Orc', kind: 'camp', ...bpos(Math.PI, 92), r: 9, mons: { orc: 5, goblin: 6 }, boss: 'orcchief', patrol: ['goblin', 'goblin', 'orc'] },
+  { id: 'crypt', name: 'Cripta das Colinas', kind: 'crypt', ...bpos(Math.PI / 2, 92), r: 9, mons: { skeleton: 9 }, boss: 'cryptlord', patrol: ['skeleton', 'skeleton'] },
+  { id: 'fort', name: 'Fortim dos Desertores', kind: 'fort', ...bpos(-Math.PI / 2 + 0.6, 90), r: 9, mons: { bandit: 6, deserter: 4 }, boss: 'deserterchief', patrol: ['bandit', 'bandit', 'deserter'] },
+  { id: 'pools', name: 'Poças do Pântano', kind: 'pools', ...bpos(0, 92), r: 9, mons: { slime: 7 }, boss: 'elderslime', night: { wisp: 4 } },
+  { id: 'cave', name: 'Caverna do Troll', kind: 'cave', x: CAVE_POS.x + Math.round(CAVE_POS.ux * 6), y: CAVE_POS.y + Math.round(CAVE_POS.uy * 6), r: 6, mons: {}, boss: 'troll' },
+];
 const RIVER_PTS = [[70, 74], [76, 100], [72, 128], [80, 172], [112, 198], [152, 214], [192, 234], [234, 254]];
 
 function catmull(p0, p1, p2, p3, t) {
@@ -422,6 +432,56 @@ function generateWorld() {
     if (d < MOUNTAIN.r + 4 && obj[i] === O.NONE && R(x, y, 50) < 0.12) obj[i] = R(x, y, 51) < 0.6 ? O.PINE : O.ROCK;
   }
 
+  // ---- bastiões: acampamento, cripta, fortim em ruínas, poças, caverna ----
+  for (const B of BASTIONS) {
+    const Rr = B.r, toC = Math.atan2(CENTER - B.y, CENTER - B.x);
+    for (let y = B.y - Rr - 3; y <= B.y + Rr + 3; y++) for (let x = B.x - Rr - 3; x <= B.x + Rr + 3; x++) {
+      if (x < 1 || y < 1 || x >= MAP_W - 1 || y >= MAP_H - 1) continue;
+      const i = idx(x, y), d = Math.hypot(x - B.x, y - B.y); if (d > Rr + 2.5) continue;
+      if (B.kind === 'cave' && ground[i] === T.CLIFF) continue;   // não come a montanha
+      height[i] = 0; obj[i] = O.NONE; river[i] = 0;
+      const n = hash2(x, y, 901);
+      ground[i] = B.kind === 'camp' ? (n < 0.7 ? T.DIRT : T.GRASS) : B.kind === 'crypt' ? (n < 0.55 ? T.DEAD : T.DIRT) : B.kind === 'fort' ? (n < 0.5 ? T.DIRT : n < 0.8 ? T.COBBLE : T.GRASS) : B.kind === 'pools' ? (n < 0.75 ? T.SWAMP : T.GRASS) : (n < 0.6 ? T.STONE : T.DIRT);
+    }
+    const put = (dx, dy, o) => { const x = B.x + dx, y = B.y + dy; if (x < 1 || y < 1 || x >= MAP_W - 1 || y >= MAP_H - 1) return; const i = idx(x, y); if (ground[i] !== T.WATER && ground[i] !== T.CLIFF) obj[i] = o; };
+    const angGap = (a, c, w) => Math.abs(((a - c) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI) < w;
+    // anel (paliçada / muro) com entrada virada para a cidade e outra nos fundos
+    const ring = (rad, o, gapW, chance = 1, alt = O.NONE) => { for (let y = -rad - 1; y <= rad + 1; y++) for (let x = -rad - 1; x <= rad + 1; x++) { if (Math.abs(Math.hypot(x, y) - rad) > 0.5) continue; const a = Math.atan2(y, x); if (angGap(a, toC, gapW) || angGap(a, toC + Math.PI, gapW * 0.7)) continue; put(x, y, hash2(B.x + x, B.y + y, 905) < chance ? o : alt); } };
+    const H = (dx, dy, s) => hash2(B.x + dx, B.y + dy, s);
+    if (B.kind === 'camp') {
+      ring(8, O.FENCE, 0.3); ring(10, O.SPIKES, 0.4, 0.3);
+      for (const [x, y] of [[-4, -3], [3, -4], [-3, 4], [4, 3], [-5, 0]]) put(x, y, O.TENT);
+      put(0, 0, O.CAMPFIRE); put(1, -2, O.BANNER); put(-1, 2, O.BANNER);
+      for (const [x, y] of [[5, 0], [5, 1], [6, -1]]) put(x, y, O.CRATE); put(-2, -6, O.BARREL); put(0, -5, O.WEAPONRACK); put(2, 5, O.WEAPONRACK);
+      for (let k = 0; k < 14; k++) { const x = Math.round((H(k, 1, 906) - 0.5) * 12), y = Math.round((H(k, 2, 906) - 0.5) * 12); if (Math.hypot(x, y) > 2 && Math.hypot(x, y) < 7 && obj[idx(B.x + x, B.y + y)] === O.NONE) put(x, y, O.BONES); }
+    } else if (B.kind === 'crypt') {
+      ring(8.5, O.LOWWALL, 0.3, 0.55, O.RUBBLE);
+      for (let y = -7; y <= 7; y += 2) for (let x = -7; x <= 7; x += 2) { const d = Math.hypot(x, y); if (d < 3.6 || d > 7.4 || angGap(Math.atan2(y, x), toC, 0.35)) continue; put(x, y, H(x, y, 907) < 0.85 ? O.GRAVE : O.DEADTREE); }
+      // mausoléu em ruínas: muro baixo 5x5 com entrada para a cidade, estátua no meio e braseiros na porta
+      const hx = Math.abs(Math.cos(toC)) >= Math.abs(Math.sin(toC)), ex = hx ? Math.sign(Math.cos(toC)) * 2 : 0, ey = hx ? 0 : Math.sign(Math.sin(toC)) * 2;
+      for (let y = -2; y <= 2; y++) for (let x = -2; x <= 2; x++) { if (Math.max(Math.abs(x), Math.abs(y)) !== 2) continue; if ((Math.abs(ex) === 2 && x === ex && Math.abs(y) <= 0) || (Math.abs(ey) === 2 && y === ey && Math.abs(x) <= 0)) continue; put(x, y, O.LOWWALL); }
+      put(0, 0, O.STATUE);
+      const px = Math.abs(ex) === 2 ? ex + Math.sign(ex) : 0, py = Math.abs(ey) === 2 ? ey + Math.sign(ey) : 0;
+      if (px) { put(px, -1, O.BRAZIER); put(px, 1, O.BRAZIER); } else { put(-1, py, O.BRAZIER); put(1, py, O.BRAZIER); }
+    } else if (B.kind === 'fort') {
+      ring(8, O.LOWWALL, 0.28, 0.8, O.RUBBLEBIG);
+      for (const [x, y] of [[-3, -3], [3, -3], [0, 4], [-4, 2]]) put(x, y, O.TENT);
+      put(0, 0, O.CAMPFIRE); put(0, -2, O.BANNER); put(-5, 1, O.WEAPONRACK); put(5, 1, O.WEAPONRACK); put(2, 5, O.DUMMY); put(3, 5, O.DUMMY);
+      for (const [x, y] of [[4, -5], [5, -4]]) put(x, y, O.CRATE); for (const [x, y] of [[-4, -5], [-5, -4]]) put(x, y, O.BARREL); put(5, -1, O.CART);
+      for (let k = 0; k < 10; k++) { const x = Math.round((H(k, 3, 908) - 0.5) * 14), y = Math.round((H(k, 4, 908) - 0.5) * 14); if (Math.hypot(x, y) > 2 && Math.hypot(x, y) < 7 && obj[idx(B.x + x, B.y + y)] === O.NONE) put(x, y, O.RUBBLE); }
+    } else if (B.kind === 'pools') {
+      for (const [px, py, pr] of [[-4, -2, 2], [3, -4, 1.6], [4, 3, 2], [-2, 4, 1.5]]) for (let y = -4; y <= 4; y++) for (let x = -4; x <= 4; x++) {
+        const d = Math.hypot(x, y), X = B.x + px + x, Y = B.y + py + y, i = idx(X, Y);
+        if (d <= pr) { ground[i] = T.WATER; obj[i] = H(px + x, py + y, 909) < 0.15 ? O.LILY : O.NONE; }
+        else if (d <= pr + 1.3 && obj[i] === O.NONE && H(px + x, py + y, 910) < 0.4) obj[i] = O.REEDS;
+      }
+      for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2 + 0.3; put(Math.round(Math.cos(a) * 7.5), Math.round(Math.sin(a) * 7.5), H(k, 5, 911) < 0.6 ? O.DEADTREE : O.MUSHROOM); }
+    } else if (B.kind === 'cave') {
+      { const i = idx(CAVE_POS.x, CAVE_POS.y); ground[i] = T.STONE; height[i] = 0; obj[i] = O.CAVE; }
+      for (let y = -Rr; y <= Rr; y++) for (let x = -Rr; x <= Rr; x++) { const d = Math.hypot(x, y), i = idx(B.x + x, B.y + y); if (d < 2 || d > Rr || obj[i] !== O.NONE || ground[i] === T.CLIFF) continue; const h = H(x, y, 912); obj[i] = h < 0.12 ? O.BONES : h < 0.17 ? O.ROCK : h < 0.2 ? O.RUBBLE : O.NONE; }
+    }
+  }
+
   const set = (x, y, g, o) => { const i = idx(x, y); if (g != null) ground[i] = g; if (o != null) obj[i] = o; };
   const inBox = (x, y, x0, y0, x1, y1) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
   const { x0, y0, x1, y1 } = CASTLE;
@@ -512,7 +572,7 @@ function generateWorld() {
 
   // ---- escadas de 2 degraus (rampas) até a muralha ----
   // torres-escada 3x3 encostadas na muralha, porta virada para a cidade; por cima viram parte do caminho da muralha
-  const stairTowers = [[C - 9, y1 - 3, 'N'], [C + 5, y0 + 1, 'S'], [x0 + 1, C + 9, 'E'], [x1 - 3, C - 7, 'W']];
+  const stairTowers = [];   // torres-escada removidas por enquanto (pedido do jogador)
   for (const [tx, ty, door] of stairTowers) {
     BUILDINGS.push({ x: tx, y: ty, ...BH('stairtower', 3, 3, WALL_UNITS, 0, '', { door }) });
     for (let y = ty; y <= ty + 2; y++) for (let x = tx; x <= tx + 2; x++) { set(x, y, T.FLOORSTONE, O.NONE); fl1[idx(x, y)] = 1; }
@@ -536,14 +596,14 @@ function generateWorld() {
 
   // ---- construções fixas + casas geradas (cidade densa, com vielas entre elas) ----
   // a casa não pode ficar sobre ruas nem outros prédios; a margem de 1 tile em volta pode ser rua (vira a calçada), mas não outro prédio
-  const free = (ax, ay, w, h) => { for (let y = ay - 2; y <= ay + h + 1; y++) for (let x = ax - 2; x <= ax + w + 1; x++) { const inner = x >= ax && x < ax + w && y >= ay && y < ay + h; if (!inb(x, y) || bld[idx(x, y)] !== -1 || (inner && used[idx(x, y)])) return false; if (x <= x0 + 1 || x >= x1 - 1 || y <= y0 + 1 || y >= y1 - 1) return false; } return true; };
+  const free = (ax, ay, w, h) => { const mg = ax < C - 10 ? 4 : 3; for (let y = ay - mg; y <= ay + h + mg - 1; y++) for (let x = ax - mg; x <= ax + w + mg - 1; x++) { const inner = x >= ax && x < ax + w && y >= ay && y < ay + h; if (!inb(x, y) || bld[idx(x, y)] !== -1 || (inner && used[idx(x, y)])) return false; if (x <= x0 + 1 || x >= x1 - 1 || y <= y0 + 1 || y >= y1 - 1) return false; } return true; };
   // os prédios fixos ocupam a área deles (+1 de margem) antes de sortear as casas
   for (const b of BUILDINGS) reserve(b.x - 1, b.y - 1, b.x + b.w, b.y + b.h);
   const houses = [];
   const roadDist = (px, py) => { let best = 99; for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) { const xx = Math.round(px) + dx, yy = Math.round(py) + dy; if (inb(xx, yy) && rdir[idx(xx, yy)] && bld[idx(xx, yy)] < 0) best = Math.min(best, Math.abs(dx) + Math.abs(dy)); } return best; };
-  for (let k = 0; k < 12000 && houses.length < 15; k++) {
+  for (let k = 0; k < 12000 && houses.length < 12; k++) {
     const x = x0 + 3 + Math.floor(R(k, 3, 700) * (x1 - x0 - 10)), y = y0 + 3 + Math.floor(R(k, 4, 700) * (y1 - y0 - 10));
-    if (x + 6 > KEEP.x0 - 12 && x < KEEP.x1 + 12 && y + 6 > KEEP.y0 - 12 && y < KEEP.y1 + 12) continue;   // praça aberta em volta do castelo
+    if (x + 6 > KEEP.x0 - 15 && x < KEEP.x1 + 15 && y + 6 > KEEP.y0 - 15 && y < KEEP.y1 + 15) continue;   // praça aberta em volta do castelo
     const nearKeep = x + 6 > KEEP.x0 - 19 && x < KEEP.x1 + 19 && y + 6 > KEEP.y0 - 19 && y < KEEP.y1 + 19, rr = R(k, 1, 700);
     const ai = nearKeep || rr < 0.55 ? Math.floor(R(k, 8, 700) * 4) : rr < 0.93 ? 4 + Math.floor(R(k, 8, 700) * 4) : 8 + Math.floor(R(k, 8, 700) * 2), T0 = HOUSE_TYPES[ai];
     let bestHb = null, bestD = 99;

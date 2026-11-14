@@ -327,3 +327,29 @@ body.tired #game { filter: saturate(0.8); }
 @media (max-width: 900px) { #combat-pad { transform: scale(var(--pad, .7)) !important; } }
 #btn-crouch { display: none; position: fixed; z-index: 6; left: 66px; bottom: 312px; width: 44px; height: 44px; border-radius: 50%; border: 0; font-size: 20px; color: #e8d29a; background: rgba(20,14,8,0.6); box-shadow: 0 0 0 1px rgba(201,162,74,0.5); }
 body.touch #btn-crouch { display: block; } #btn-crouch.on { background: rgba(140,100,40,0.8); color: #fff; }
+
+/* ===== orbes estilo Diablo II (centro inferior) ===== */
+#orbs { position: fixed; z-index: 5; left: 50%; bottom: 8px; transform: translateX(-50%); display: flex; align-items: flex-end; gap: 0; pointer-events: none; }
+#orbs.hidden { display: none; }
+#orbs .orb { position: relative; width: 96px; height: 96px; border-radius: 50%; pointer-events: auto;
+  background: radial-gradient(circle at 50% 50%, #0a0605 60%, #1a120c);
+  box-shadow: 0 0 0 3px #1a120a, 0 0 0 6px #6a5434, 0 0 0 7px #2a1e12, 0 0 0 10px #8a7048, 0 0 0 11px #1a120a, 0 6px 18px rgba(0,0,0,.8); }
+#orbs .orb-liquid { position: absolute; inset: 4px; border-radius: 50%; overflow: hidden; }
+#orbs .orb-fill { position: absolute; left: 0; right: 0; bottom: 0; transition: height .35s ease-out; }
+#orbs .orb.hp .orb-fill { background: radial-gradient(ellipse at 50% 120%, #ff3a2a, #b01010 45%, #4a0404 90%); }
+#orbs .orb.mp .orb-fill { background: radial-gradient(ellipse at 50% 120%, #4a8aff, #1a3ab8 45%, #060e48 90%); }
+#orbs .orb-fill::before { content: ''; position: absolute; left: -30%; right: -30%; top: -6px; height: 12px; border-radius: 50%; background: inherit; filter: brightness(1.35); animation: orbwave 3.2s ease-in-out infinite; }
+@keyframes orbwave { 0%, 100% { transform: translateX(-6%) rotate(-2deg); } 50% { transform: translateX(6%) rotate(2deg); } }
+#orbs .orb-glass { position: absolute; inset: 4px; border-radius: 50%; background: radial-gradient(circle at 32% 26%, rgba(255,255,255,.45), rgba(255,255,255,.06) 28%, transparent 46%), radial-gradient(circle at 50% 50%, transparent 58%, rgba(0,0,0,.55)); pointer-events: none; }
+#orbs .orb span { position: absolute; inset: 0; display: grid; place-items: center; font: 700 12px 'Cinzel', serif; color: #fff; text-shadow: 0 1px 3px #000, 0 0 6px #000; opacity: 0; transition: opacity .2s; }
+#orbs .orb:hover span { opacity: 1; }
+#orbs .orb-mid { position: relative; width: 210px; margin: 0 -4px 6px; padding: 7px 12px 6px; border-radius: 6px 6px 3px 3px; background: linear-gradient(#2a2016, #120c08); box-shadow: inset 0 0 0 1px #6a5434, 0 0 0 2px #1a120a, 0 4px 12px rgba(0,0,0,.7); pointer-events: auto; }
+#orbs .mbar { height: 9px; border-radius: 4px; background: #0a0605; box-shadow: inset 0 0 0 1px #3a2c1a; overflow: hidden; }
+#orbs .mbar + .mbar { margin-top: 5px; height: 5px; }
+#orbs .mbar > div { height: 100%; transition: width .2s; }
+#orbs .mbar.st > div { background: linear-gradient(#f0d870, #b8902a 60%, #6a4a10); }
+#orbs .mbar.st.tired > div { background: linear-gradient(#a89a7a, #5a4e34); }
+#orbs .mbar.xp > div { background: linear-gradient(#c8a8f0, #6a3aa8); }
+#orbs .orb-lvl { position: absolute; left: 50%; top: -14px; transform: translateX(-50%); min-width: 24px; padding: 1px 6px; border-radius: 8px; font: 700 11px 'Cinzel', serif; color: #f0d890; text-align: center; background: #120c08; box-shadow: 0 0 0 1px #8a7048; }
+#pause .pz-check { display: flex; gap: 8px; align-items: center; margin: 12px 0 4px; font-size: 14px; color: #e8dcc0; cursor: pointer; }
+@media (max-width: 900px) { #orbs { transform: translateX(-50%) scale(.72); transform-origin: bottom center; } }
