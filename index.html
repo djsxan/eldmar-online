@@ -43,6 +43,8 @@
         <button class="btn" id="btn-join">Entrar no reino</button>
       </div>
       <div id="status"></div>
+      <div id="servers" style="margin-top:12px;text-align:left"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><b>Reinos online</b><button class="btn" id="btn-scan" style="padding:3px 10px;font-size:12px">Atualizar</button></div><div id="sv-list"></div></div>
+      <style>#sv-list .sv-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px;margin:4px 0;border:1px solid rgba(201,162,74,.35);border-radius:6px;background:rgba(0,0,0,.18)}#sv-list .sv-row .btn{padding:3px 12px;font-size:12px}#sv-list .sv-empty{opacity:.7;font-size:13px;padding:4px 2px}</style>
       <p class="hint">Quem cria o reino é o <b>anfitrião</b>: o mundo roda no navegador dele, que precisa ficar aberto. Depois é só mandar o código ou o convite aos amigos.</p>
     </section>
     <div id="version"></div>
@@ -223,5 +225,6 @@
 <script src="js/scene3d.js"></script>
 <script src="js/server.js"></script>
 <script src="js/game.js"></script>
+<script src="js/life.js"></script>
 </body>
 </html>

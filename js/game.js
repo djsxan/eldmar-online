@@ -30,7 +30,7 @@ function anySprite(cls, skin, color, P, kind) {
 function later(ms, fn) { if (!ms || ms <= 0) fn(); else G.timers.push({ at: performance.now() + ms, fn }); }
 const IDLE_SETS = {
   knight: ['look', 'stretch', 'polish', 'kick', 'sit', 'look'], archer: ['look', 'stretch', 'yawn', 'polish', 'sit', 'kick'], mage: ['look', 'yawn', 'polish', 'stretch', 'sit'],
-  priest: ['pray', 'read', 'look', 'pray'], merchant: ['look', 'wave', 'kick', 'look'], innkeeper: ['drink', 'look', 'wave', 'drink'], guard: ['salute', 'look', 'kick', 'look'], captain: ['look', 'salute', 'polish', 'look'],
+  fruit: ['look', 'wave', 'look', 'stretch'], priest: ['pray', 'read', 'look', 'pray'], merchant: ['look', 'wave', 'kick', 'look'], innkeeper: ['drink', 'look', 'wave', 'drink'], guard: ['salute', 'look', 'kick', 'look'], captain: ['look', 'salute', 'polish', 'look'],
 };
 function updateIdle(e, now) {
   if (e.walking || (e.anim && now - e.anim.t0 < 700) || e.downed || (e.cast && e.cast.end > now)) { e.idleT = now; e.idleAnim = null; return; }
@@ -203,7 +203,7 @@ function applySnapshot(m, now) {
       continue;
     }
     e.hp = hpPct; e.maxHp = 100; e.z = z;
-    e.srvDir = dir; e.srvWalk = !!(fl & 1); if (e !== G.me) { e.running = !!(fl & 256); e.fl = (fl >> 11) & 3; e.crouch = !!(fl & 8192); e.slide = !!(fl & 16384); e.sit = fl & 512 ? { chair: fl & 1024 ? 1 : 0 } : null; }
+    e.srvDir = dir; e.srvWalk = !!(fl & 1); if (e !== G.me) { e.running = !!(fl & 256); e.fl = (fl >> 11) & 3; e.crouch = !!(fl & 8192); e.slide = !!(fl & 16384); e.sit = fl & 512 ? { chair: fl & 1024 ? 1 : 0 } : null; e.sleepB = fl & 32768 ? 1 : null; }
     e.buf.push({ t: now, x, y });
     if (e.buf.length > 6) e.buf.shift();
   }
@@ -271,6 +271,7 @@ function updateLocal(now, dt) {
   if (now < (G.floorWait || 0)) { me.walking = false; return; }
   if (document.activeElement && document.activeElement.tagName === 'INPUT') G.keys.clear();
   let v = myInput();
+  if (me.sleep) { if (v || G.path) getUp(); else { v = null; } }
   if (me.sit) { if (v || G.path) standUp(); else { v = null; } }
   if (v) { G.path = null; G.pathGoal = null; G.pendingNpc = null; G.pendingSeat = null; }
   else if (G.path && G.path.length) {
@@ -281,6 +282,7 @@ function updateLocal(now, dt) {
     else v = [dx / d, dy / d];
   }
   if (me.cast && me.cast.end > now) v = null;
+  if (G.pendingBed != null && !G.path) { const b = BEDS[G.pendingBed]; if (dist(me.x, me.y, b.x, b.y) <= 2) lieDown(G.pendingBed); G.pendingBed = null; }
   if (G.pendingSeat != null && !G.path) { const st = WORLD.seats[G.pendingSeat]; if (dist(me.x, me.y, st.x, st.y) <= 1.7) sitDown(G.pendingSeat); G.pendingSeat = null; }
   if (G.pendingNpc && !G.path) { const n = G.npcs[G.pendingNpc]; if (dist(me.x, me.y, n.x, n.y) <= 3) openDialog(n.id); G.pendingNpc = null; }
   // correr com SHIFT gasta estamina; ao esgotar, precisa recuperar um pouco antes de correr de novo
@@ -629,6 +631,9 @@ function flashDamage() { const v = $('vignette'); v.classList.remove('hit'); voi
 // ---------- diálogos com NPCs ----------
 const GUARD_TEXT = 'Além do fosso: os Campos (★) logo além da paliçada; o Bosque Sombrio (★★) ao norte; o Pântano Pútrido (★★) a leste; as Colinas de Ossos (★★★) ao sul; o Acampamento Orc (★★★) a oeste. Perto do mar, as Terras Selvagens (★★★★). A cachoeira fica na montanha, a noroeste.';
 const NPC_DIALOG = {
+  fruit: { greet: 'Frutas fresquinhas do pomar, colhidas hoje cedo! Maçã docinha, amora do mato... leva uma?', opts: [
+    ['Maçã — 3 ouro', { a: 'buyl', item: 'apple', qty: 1 }], ['5 Maçãs — 15 ouro', { a: 'buyl', item: 'apple', qty: 5 }],
+    ['Frutas Silvestres — 3 ouro', { a: 'buyl', item: 'berries', qty: 1 }], ['5 Frutas Silvestres — 15 ouro', { a: 'buyl', item: 'berries', qty: 5 }]] },
   merchant: { greet: 'Bem-vindo ao Empório. Não é muito, mas o que vendo funciona.', opts: [
     ['Poção de Vida — 20 ouro', { a: 'buy', item: 'hp', qty: 1 }], ['5 Poções de Vida — 100 ouro', { a: 'buy', item: 'hp', qty: 5 }],
     ['Poção de Mana — 25 ouro', { a: 'buy', item: 'mp', qty: 1 }], ['5 Poções de Mana — 125 ouro', { a: 'buy', item: 'mp', qty: 5 }],
@@ -655,7 +660,7 @@ function openDialog(id) {
   const n = NPCS.find(q => q.id === id), def = NPC_DIALOG[n.id === 'captain' ? 'captain' : n.kind];
   G.dialog = { id };
   $('dlg-name').textContent = n.name;
-  setDialogText(def.greet);
+  setDialogText(n.id === 'fruit' && !LIFE.atStall ? LIFE.busyText : def.greet);
   buildDialogOptions(id);
   const pc = $('dlg-portrait'), pctx = pc.getContext('2d');
   pctx.setTransform(1, 0, 0, 1, 0, 0); pctx.clearRect(0, 0, pc.width, pc.height); pctx.imageSmoothingEnabled = false;
@@ -669,6 +674,7 @@ function buildDialogOptions(id) {
   const n = NPCS.find(q => q.id === id), box = $('dlg-opts');
   box.innerHTML = '';
   const add = (label, fn, cls) => { const b = document.createElement('button'); b.textContent = label; b.onclick = fn; if (cls) b.className = cls; box.appendChild(b); };
+  if (id === 'fruit' && !LIFE.atStall) return;
   if (id === 'captain') {
     const me = G.me;
     for (const q of QUESTS) {
@@ -780,9 +786,16 @@ canvas.addEventListener('mousedown', e => {
     else { G.path = findPath(me.x, me.y, st.x, st.y, me.z, 1); G.pathGoal = G.path ? { x: st.x, y: st.y } : null; G.pendingSeat = G.path ? seat : null; }
     return;
   }
+  const bed = !npcUnderMouse(e.clientX, e.clientY) && typeof bedUnderMouse === 'function' ? bedUnderMouse(e.clientX, e.clientY) : -1;
+  if (bed >= 0 && e.button === 0) {
+    const b = BEDS[bed];
+    if (dist(me.x, me.y, b.x, b.y) <= 2) lieDown(bed);
+    else { G.path = findPath(me.x, me.y, b.x, b.y, me.z, 1); G.pathGoal = G.path ? { x: Math.round(b.x), y: Math.round(b.y) } : null; G.pendingBed = G.path ? bed : null; }
+    return;
+  }
   const npc = npcUnderMouse(e.clientX, e.clientY);
   if (npc) {
-    if (dist(me.x, me.y, npc.x, npc.y) <= 3) openDialog(npc.id);
+    if (dist(me.x, me.y, G.npcs[npc.id].x, G.npcs[npc.id].y) <= 3) openDialog(npc.id);
     else { G.path = findPath(me.x, me.y, Math.round(npc.x), Math.round(npc.y), me.z, 2); G.pathGoal = G.path ? { x: Math.round(npc.x), y: Math.round(npc.y) } : null; G.pendingNpc = npc.id; }
     return;
   }
@@ -839,7 +852,7 @@ window.addEventListener('keydown', e => {
   if (k === 'g' && !e.repeat) { liftOrThrow(); return; }
   if (k === 'x') { attackNearest(); return; }
   if (k === '0' && !e.repeat) { Net.send({ t: 'use', k: 'water' }); return; }
-  if (k === 'v' && !e.repeat) { if (G.me.sit) standUp(); else if (!G.me.walking) sitDown(null); return; }
+  if (k === 'v' && !e.repeat) { if (G.me.sleep) { getUp(); return; } if (G.me.sit) standUp(); else if (!G.me.walking) sitDown(null); return; }
   if (k === 'i' && !e.repeat) { togglePanel('inv'); return; }
   if (k === 'b' && !e.repeat) { Net.send({ t: 'band' }); return; }
   if (k === 'f2' && G.dev) { e.preventDefault(); $('devpanel').classList.toggle('hidden'); return; }
@@ -880,7 +893,7 @@ function frame() {
   S3.budget = G.started ? 2 : 5;
   let cam = lobbyCam;
   if (G.started) {
-    updateLocal(now, dt); updateFalls(now); updateLooting(now);
+    updateLocal(now, dt); updateFalls(now); updateLooting(now); if (typeof updateLife === 'function') updateLife(now);
     if (G.shootHeld && inCombatZone() && now - (G.shootT || 0) > 220) { G.shootT = now; Net.send({ t: 'shoot', a: G.me.fa ?? 0, id: G.target || 0 }); }
     { // luta com o dragão: a câmera se afasta devagar para caber tudo na tela (só se o zoom não foi mudado à mão)
       let near = false; for (const id in G.monsters) { const q = G.monsters[id]; if (MON[q.type].dragon && !q.dieAt && !(q.flags & 4) && dist(q.rx, q.ry, G.me.rx, G.me.ry) < 22) near = true; }
@@ -1006,15 +1019,16 @@ function helloMsg() {
   return { t: 'hello', dev: G.devPw || undefined, name, color: chosenColor, cls: chosenClass, skin: chosenSkin[chosenClass], lvl: saved.lvl, xp: saved.xp, gold: saved.gold, pots: saved.pots, food: saved.food, water: saved.water, infect: saved.infect, hasSkin: saved.hasSkin, body: saved.body, bleed: saved.bleed, lost: saved.lost, pro: saved.pro, inv: saved.inv, quests: saved.quests, qdone: saved.qdone };
 }
 function showRoom(code) { $('room-code').textContent = Net.offline ? 'offline' : code; }
-function createRoom(code = randomCode(), tries = 0) {
+function createRoom(code = 'S1', tries = 0) {
   if (!$('name').value.trim()) { setStatus('Escolha um nome para seu herói.', true); $('name').focus(); return; }
   lockLobby(true); setStatus('Erguendo o reino...');
   Net.onClient = hostOnClient; Net.onServer = clientOnServer; Net.onPeerLeave = hostOnLeave;
   Net.host(code, err => {
     if (err) {
-      if (err.type === 'unavailable-id' && tries < 3) { createRoom(randomCode(), tries + 1); return; }
+      if (err.type === 'unavailable-id' && tries < Net.SLOTS + 3) { const sl = /^S(\d+)$/.exec(code); createRoom(sl && +sl[1] < Net.SLOTS ? 'S' + (+sl[1] + 1) : randomCode(), tries + 1); return; }
       setStatus('Não foi possível criar a sala: ' + (err.type || err), true); lockLobby(false); return;
     }
+    Net.infoFn = () => ({ name: (S.players[Net.myId] || {}).name || $('name').value.trim() || 'Aventureiro', n: Object.keys(S.players).length, ver: VERSION });
     startHostLoop(); hostTick(); showRoom(code); Net.send(helloMsg());
   });
 }

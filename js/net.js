@@ -8,6 +8,7 @@
 // ============================================================
 const Net = {
   PREFIX: 'world-of-sxan-v4-',
+  SLOTS: 20, infoFn: null,       // vagas fixas S1..S20: a tela inicial procura reinos abertos nelas
   peer: null, isHost: false, offline: false, myId: null, room: null,
   rel: {}, fast: {},          // (anfitrião) conexões por jogador
   hostRel: null, hostFast: null,
@@ -25,6 +26,7 @@ const Net = {
     this.peer = peer;
     peer.on('open', id => { opened = true; this.myId = id; cb(null); });
     peer.on('connection', conn => {
+      if (conn.label === 'info') { conn.on('open', () => { try { conn.send(this.infoFn ? this.infoFn() : {}); } catch (e) { } setTimeout(() => { try { conn.close(); } catch (e) { } }, 1500); }); return; }
       const who = conn.peer, isFast = conn.label === 'fast';
       (isFast ? this.fast : this.rel)[who] = conn;
       conn.on('data', d => this.onClient(who, d));
@@ -38,6 +40,23 @@ const Net = {
     });
     peer.on('disconnected', () => { if (!peer.destroyed) peer.reconnect(); });
     peer.on('error', err => { if (!opened) { peer.destroy(); cb(err); } else console.warn('PeerJS:', err); });
+  },
+
+  // procura reinos abertos nas vagas fixas (sem servidor de lista)
+  scan(cb) {
+    if (typeof Peer === 'undefined') { cb([]); return; }
+    const found = [], peer = new Peer({ debug: 0 }); let done = false, left = this.SLOTS;
+    const finish = () => { if (done) return; done = true; try { peer.destroy(); } catch (e) { } cb(found.sort((a, b) => a.slot - b.slot)); };
+    const tick = () => { if (--left <= 0) finish(); };
+    peer.on('open', () => {
+      for (let i = 1; i <= this.SLOTS; i++) {
+        let got = false; const c = peer.connect(this.PREFIX + 'S' + i, { label: 'info', reliable: true, serialization: 'json' });
+        c.on('data', d => { if (got) return; got = true; found.push(Object.assign({ slot: i, code: 'S' + i }, d)); tick(); });
+        c.on('error', () => { if (!got) { got = true; tick(); } });
+      }
+      setTimeout(finish, 8000);
+    });
+    peer.on('error', err => { if (err && err.type === 'peer-unavailable') tick(); else if (!done && (!peer.open)) finish(); });
   },
 
   goOffline() { this.offline = true; this.isHost = true; this.myId = 'local'; },

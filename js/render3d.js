@@ -328,6 +328,7 @@ function applyPose(R, Q, P, walkPh) {
   // cantil na mão (e a arma some enquanto bebe)
   { const b = (Q.bot || 0) > 0.5; if (b && !R.bottle) { const g = new THREE.Group(), lm = mat('#6a4a2a', 'leather'); g.add(mesh(capG(0.035, 0.07), lm, 0, -0.05, 0.02)); g.add(mesh(cylG(0.012, 0.016, 0.04, 8), mat('#3a2a1a', 'wood'), 0, 0.0, 0.02)); R.A.hand.add(g); R.bottle = g; }
     if (R.bottle) R.bottle.visible = b; if (R.weapon && !R.weapon.bow) R.weapon.obj.visible = !b; }
+  { const pp = (Q.pipe || 0) > 0.5; if (pp && !R.pipe) { const g = new THREE.Group(), wd = mat('#4a2e1a', 'wood'); g.add(mesh(cylG(0.006, 0.006, 0.12, 6), wd, 0, -0.02, 0.06)); g.children[0].rotation.x = Math.PI / 2; g.add(mesh(cylG(0.018, 0.014, 0.035, 8), wd, 0, 0.0, 0.12)); R.A.hand.add(g); R.pipe = g; } if (R.pipe) R.pipe.visible = pp; }
   // arco e escudo seguem a mão, mas ficam "de pé" (orientados pelo tronco)
   if ((R.weapon && R.weapon.bow) || R.shield) {
     R.root.updateMatrixWorld(true);
@@ -421,7 +422,7 @@ function applyLost(R, mask = 0, pro = 0) {
   if (R.shield) R.shield.visible = !lost('armB');
   for (const k in R.stumps) { R.stumps[k].visible = lost(k) && !pr(k); if (R.pegs[k]) R.pegs[k].visible = lost(k) && pr(k); }
 }
-function pose3Key(P) { return (P.dir | 0) + '|' + (P.walk >= 0 ? (P.run ? 'r' : 'w') + P.walk : '') + (P.act ? P.act.k + P.act.f : '') + (P.idle ? P.idle.k + P.idle.f : '') + (P.sit ? 's' + P.sit + (P.sv || '') : '') + (P.carry ? 'c' : '') + (P.down ? 'd' : '') + (P.cr ? 'K' : '') + (P.sl ? 'L' : '') + (P.hs ? 'h' + P.hs : '') + (P.br != null ? 'b' + P.br : '') + (P.limp ? 'm' + P.limp : '') + (P.armw ? 'W' : '') + (P.lost ? 'X' + P.lost + '_' + (P.pro || 0) : ''); }
+function pose3Key(P) { return (P.dir | 0) + '|' + (P.walk >= 0 ? (P.run ? 'r' : 'w') + P.walk : '') + (P.act ? P.act.k + P.act.f : '') + (P.idle ? P.idle.k + P.idle.f : '') + (P.sit ? 's' + P.sit + (P.sv || '') : '') + (P.smk != null ? 'k' + Math.floor(P.smk * 8) : '') + (P.eat != null ? 'e' + Math.floor(P.eat * 8) : '') + (P.carry ? 'c' : '') + (P.down ? 'd' : '') + (P.cr ? 'K' : '') + (P.sl ? 'L' : '') + (P.hs ? 'h' + P.hs : '') + (P.br != null ? 'b' + P.br : '') + (P.limp ? 'm' + P.limp : '') + (P.armw ? 'W' : '') + (P.lost ? 'X' + P.lost + '_' + (P.pro || 0) : ''); }
 function heroSprite3D(cls, skin, color, P) {
   const lk = cls + ':' + skin + ':' + color;
   return cache3('h3|' + lk + '|' + pose3Key(P) , () => {
@@ -439,7 +440,7 @@ function npcSprite3D(kind, P) {
     const R = rigFor('npc:' + kind, L);
     const Q = buildPose(NPC_CLS[kind] || 'knight', P);
     applyPose(R, Q, P, 0);
-    return shoot3D(R, P.dir | 0, 0);
+    return shoot3D(R, P.dir | 0, P.down ? -Math.PI / 2 : 0);
   }, 'n|' + kind + (P.dir | 0));
 }
 

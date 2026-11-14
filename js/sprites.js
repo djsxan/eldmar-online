@@ -44,6 +44,7 @@ function shadeHex(hex, amt) {
   return '#' + h(r) + h(g) + h(b);
 }
 const NPC_LOOKS = {
+  fruit: () => Object.assign(heroLook('archer', 'scout', '#3e5a34'), { armor: 'robe', body: tone('#3e5a34'), body2: tone('#efe6cf'), accent: tone('#efe6cf'), trim: tone('#a8342a'), head: 'none', hairStyle: 'long', hair: tone('#3a2414'), weapon: null, quiver: false, skin: tone('#e6bea0'), capeTone: null }),
   priest: () => Object.assign(heroLook('mage', 'adept', '#e9e2cf'), { body: tone('#e9e2cf'), body2: tone('#c9a24a'), head: 'hood', accent: tone('#f2ecdc'), weapon: 'book', beard: null, hair: tone('#6b4a2b'), skin: tone('#e2b896') }),
   merchant: () => Object.assign(heroLook('archer', 'scout', '#2f5a3a'), { armor: 'vest', body: tone('#7a3b22'), body2: tone('#d6c9a8'), head: 'cap', headTone: tone('#2f5a3a'), weapon: null, quiver: false, beard: tone('#5a3a22'), hair: tone('#5a3a22') }),
   innkeeper: () => Object.assign(heroLook('archer', 'scout', '#8b3a22'), { armor: 'vest', body: tone('#8b3a22'), body2: tone('#ece6d6'), head: 'none', hairStyle: 'long', hair: tone('#a8562a'), weapon: 'mug', quiver: false, skin: tone('#e8b994') }),
@@ -234,6 +235,10 @@ function buildPose(cls, P) {
   if (P.armw && !P.act) { Q.aA = [Q.tl * -0.5, 0.18, 0.12]; Q.wp = cls === 'knight' ? Q.aA[0] + Q.aA[2] + 0.2 : Q.wp; }
   if (P.sit === 'g') { Q.lA = [2.45, -2.35]; Q.lB = [2.2, -2.0]; Q.drop = 12; Q.aA = [1.15, 0.35, 1.35]; Q.aB = [1.05, 0.4, 1.25]; Q.tl = -0.22; Q.ht = 0.12; }
   else if (P.sit) { Q.lA = [1.5, -1.55]; Q.lB = [1.45, -1.5]; Q.drop = 12; Q.aA = [0.45, 0.25, 0.7]; Q.aB = [0.45, 0.25, 0.7]; Q.tl = -0.02; }
+  if (P.smk != null || P.eat != null) {   // fumando cachimbo / comendo: a mão vai à boca de tempos em tempos
+    const ph = Math.floor((P.smk ?? P.eat) * 8) / 8, up = ph >= 0.25 && ph < 0.5;
+    Q.aA = up ? [1.6, 0.2, 2.45] : [0.75, 0.3, 1.25]; if (up) Q.ht = -0.12; if (P.smk != null) Q.pipe = 1;
+  }
   if (P.sit && P.sv) {
     if (P.sit === 'g') {
       if (P.sv === 1) { Q.lA = [1.45, -0.12]; Q.lB = [1.25, -0.55]; Q.tl = -0.55; Q.aA = [-0.75, 0.32, 0.05]; Q.aB = [-0.75, 0.32, 0.05]; Q.ht = -0.15; }
@@ -598,7 +603,7 @@ function heroSprite(cls, skin, color, P) {
   const L = lookFor(lk, () => heroLook(cls, skin, color));
   return sprite('h|' + lk + '|' + poseKey(P), HW, HH, HAX, HAY, pc => drawHeroPC(pc, L, P, cls), { ok: 0.42 });
 }
-const NPC_CLS = { priest: 'mage', merchant: 'archer', innkeeper: 'archer', guard: 'knight', captain: 'knight', smith: 'knight' };
+const NPC_CLS = { fruit: 'archer', priest: 'mage', merchant: 'archer', innkeeper: 'archer', guard: 'knight', captain: 'knight', smith: 'knight' };
 function npcSprite(kind, P) {
   const L = lookFor('npc:' + kind, NPC_LOOKS[kind]);
   return sprite('n|' + kind + '|' + poseKey(P), HW, HH, HAX, HAY, pc => drawHeroPC(pc, L, P, NPC_CLS[kind] || 'knight'), { ok: 0.42 });

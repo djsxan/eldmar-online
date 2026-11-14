@@ -277,6 +277,7 @@ function heroPoseFor(e, now) {
   const view0 = DIR_VIEW[e.dir || 0];
   const P = { view: view0 === 'W' ? 'E' : view0, walk: -1, act: null, idle: null, sit: false, carry: !!(e.carrying || e.lifted) };
   P.dir = e.dir || 0;
+  if (e.custP && !e.walking) { Object.assign(P, e.custP); if (P.sit) P.walk = -1; return P; }
   if (e.walking) { P.walk = Math.floor(e.walkDist * (e.cls === 'knight' ? 8.5 : 9.5) / (e.running ? 1.45 : 1)) % 12; if (e.running) P.run = 1; }
   if (e.anim) { const t = actProg(e.anim, now); if (t >= 0 && ACTS[e.anim.a]) P.act = { k: e.anim.a, f: Math.min(11, Math.floor(t * 12)) }; }
   if (!e.isNpc) { P.lost = e.lost || 0; P.pro = e.pro || 0; }
@@ -326,6 +327,11 @@ function drawWeaverAura(ctx, sx, sy, now) {
   G.lights.push({ x: sx, y: sy - 30, r: 80, c: '235,245,255', a: 0.85 });
 }
 function drawHeroEntity(ctx, e, sx, sy, now) {
+  if (R3.ok && e.sleepB && !e.downed) {   // deitado na cama, dormindo
+    const P = { dir: e.dir || 0, walk: -1, down: true, lost: e.lost || 0, pro: e.pro || 0 };
+    const s = e.isNpc ? npcSprite3D(e.kind, P) : heroSprite3D(e.cls, e.skin, e.color, P);
+    ctx.imageSmoothingEnabled = true; pblit(ctx, s, sx, sy - 11); if (typeof drawZzz === 'function') drawZzz(ctx, sx, sy - 26, now); e._spr = null; return;
+  }
   if (R3.ok && e.knockUntil && now < e.knockUntil && !e.downed) { const kf = FALLS['kp' + e.id]; if (now < e.knockUntil - 650 && kf) { drawFall(ctx, kf, sx, sy, now, 1, woundLevel(e)); e._spr = null; return; } }
   if (R3.ok && e.fling) {
     const f = e.fling, k = Math.min(1, (now - f.t0) / f.ms); ctx.imageSmoothingEnabled = true;
@@ -340,6 +346,7 @@ function drawHeroEntity(ctx, e, sx, sy, now) {
     if (e.downed && !e.carriedBy) { const f = FALLS['p' + e.id]; if (f) { drawFall(ctx, f, sx, sy, now, 1, 3); return; } const s = heroSprite3D(e.cls, e.skin, e.color, { dir: e.dir || 0, walk: -1, down: true }); ctx.imageSmoothingEnabled = true; pblit(ctx, woundOf(s, 3), sx, sy); return; }
     const P = heroPoseFor(e, now);
     if (!P.act && e.hitAt && now - e.hitAt < 300) P.act = { k: 'hurt', f: Math.min(11, Math.floor((now - e.hitAt) / 300 * 12)) };
+    if (e.custP && e.custP.stool && typeof drawStool === 'function') drawStool(ctx, sx, sy);
     const s = e.isNpc ? npcSprite3D(e.kind, P) : woundOf(heroSprite3D(e.cls, e.skin, e.color, P), woundLevel(e));
     ctx.imageSmoothingEnabled = true;
     softDab(ctx, sx, sy, 10, '#000000', 0.35);
