@@ -28,7 +28,7 @@ function fullStat(p) {
     pots: { hp: p.pots.hp, mp: p.pots.mp }, inv: { ...p.inv }, quests: { ...p.quests }, qdone: { ...p.qdone },
     buffs: Object.entries(p.buffs).filter(([, u]) => u > now).map(([k, u]) => [k, u - now]),
     cds: [0, 1, 2, 3].map(i => Math.max(0, (p.cds[i] || 0) - now)),
-    combat: now - p.lastCombat < OUT_OF_COMBAT_MS, downed: p.downed ? p.downed.until - now : 0,
+    combat: now - p.lastCombat < OUT_OF_COMBAT_MS, slow: Math.max(0, (p.slowUntil || 0) - now), downed: p.downed ? p.downed.until - now : 0,
   };
 }
 function sendStat(p) { Net.toOne(p.id, fullStat(p)); }
@@ -55,7 +55,8 @@ function monsterAtPos(x, y, self, r = 0.62) {
   return false;
 }
 function monStand(x, y, m) {
-  if (!canStand(x, y, 0, 0.3) || inSafe(x, y)) return false;
+  if (m && m.z) { if (!canStandZ(x, y, 1, 0.3) || stairH(x, y) >= 0) return false; }
+  else if (!canStand(x, y, 0, 0.3) || inSafe(x, y)) return false;
   if (monsterAtPos(x, y, m)) return false;
   for (const id in S.players) { const p = S.players[id]; if (p.z < 0.5 && !p.downed && dist(p.x, p.y, x, y) < 0.55) return false; }
   return true;
@@ -70,6 +71,7 @@ function spawnAt(type, x, y, extra) {
 function initBastions() {
   S.bslots = []; S.chests = S.chests || {};
   for (const B of BASTIONS) {
+    if (B.kind === 'dragon') { S.bslots.push({ b: B, type: B.boss, pos: [B.x, B.y], boss: true, z: 1 }); continue; }
     const spots = [];
     for (let k = 0; k < 800 && spots.length < 40; k++) { const a = Math.random() * 6.28, r = 1 + Math.random() * (B.r - 1.5), x = B.x + Math.cos(a) * r, y = B.y + Math.sin(a) * r; if (monStand(x, y, null) && REACH[Math.round(y) * MAP_W + Math.round(x)]) spots.push([x, y]); }
     if (!spots.length) continue;
@@ -90,14 +92,18 @@ function tickBastions(now) {
     if (m) { if (s.night && !night) { delete S.monsters[s.mid]; near(m.x, m.y, { t: 'mdie', id: m.id, d: 0 }); s.mid = null; } continue; }
     if (s.mid != null) { s.mid = null; s.deadAt = now; }          // morreu
     if (s.night && !night) continue;
-    if (s.deadAt && now - s.deadAt < (s.boss ? BOSS_RESPAWN : BASTION_RESPAWN)) continue;
+    if (s.deadAt && now - s.deadAt < (s.b.respawn && s.boss ? s.b.respawn : s.boss ? BOSS_RESPAWN : BASTION_RESPAWN)) continue;
     const [x, y] = s.pos;
     if (s.deadAt) { let busy = false; for (const id in S.players) if (dist(S.players[id].x, S.players[id].y, x, y) < 12) busy = true; if (busy) continue; }
     const ox = s.patrol ? (s.off - 1) * 0.7 : 0;
-    s.mid = spawnAt(s.type, x + ox, y, { bs: s.b.id, patrol: s.patrol ? { pts: s.patrol, i: 0 } : null }); s.deadAt = 0;
+    s.mid = spawnAt(s.type, x + ox, y, { bs: s.b.id, patrol: s.patrol ? { pts: s.patrol, i: 0 } : null, z: s.z || 0, sleep: !!MON[s.type].dragon, ang: Math.PI * 0.75 }); s.deadAt = 0;
   }
   for (const id in S.chests) if (now > S.chests[id].until) delete S.chests[id];
+  // objetos quebrados voltam ao lugar depois de 3 min (se ninguém estiver em cima)
+  if (S.objBack && S.objBack.length) S.objBack = S.objBack.filter(q => { if (now < q.at) return true; const x = q.i % MAP_W, y = Math.floor(q.i / MAP_W); for (const id in S.players) if (dist(S.players[id].x, S.players[id].y, x, y) < 0.9) return true; for (const id in S.monsters) if (dist(S.monsters[id].x, S.monsters[id].y, x, y) < 0.9) return true; setObj(q.i, q.o); return false; });
 }
+// objetos do cenário que mudaram (levantados/quebrados) — todos os clientes recebem
+function setObj(i, o) { WORLD.obj[i] = o; (S.objMods = S.objMods || {})[i] = o; Net.toAll({ t: 'obj', i, o }); }
 function spawnChest(m) {
   const id = S.nextChest = (S.nextChest || 0) + 1, who = new Set();
   for (const pid in S.players) if (dist(S.players[pid].x, S.players[pid].y, m.x, m.y) <= 14) who.add(pid);
@@ -138,7 +144,7 @@ function hostOnClient(from, m) {
     np.hp = np.maxHp; np.mp = np.maxMp;
     if (!m.lvl) { np.gold = 30; np.pots.hp = 3; np.pots.mp = 2; } // kit inicial
     S.players[from] = np;
-    Net.toOne(from, { t: 'welcome', you: from, x: np.x, y: np.y, players: Object.values(S.players).map(pinfo) });
+    Net.toOne(from, { t: 'welcome', you: from, x: np.x, y: np.y, players: Object.values(S.players).map(pinfo), objs: S.objMods || {} });
     Net.toOthers({ t: 'pinfo', p: pinfo(np) }, from);
     sendStat(np);
     sys(`${np.name}, ${CLASSES[cls].name}, chegou à Cidadela de Sxan.`);
@@ -188,6 +194,28 @@ function hostOnClient(from, m) {
       Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: 0, fl: p.fl, fb: p.fb });
       break;
     }
+    case 'lift': {
+      const i = m.i | 0, o = WORLD.obj[i], tx = i % MAP_W, ty = Math.floor(i / MAP_W);
+      if (!THROWABLE[o] || p.lifted || p.carrying || p.downed || p.z >= 0.5 || p.fl > 0 || dist(p.x, p.y, tx, ty) > 1.7) break;
+      p.lifted = o; setObj(i, O.NONE); (S.objBack = S.objBack || []).push({ i, o, at: now_() + 180000 });
+      break;
+    }
+    case 'throw': {
+      if (!p.lifted || p.downed) break;
+      const o = p.lifted; p.lifted = null;
+      let tx = +m.tx, ty = +m.ty; if (!isFinite(tx) || !isFinite(ty)) break;
+      const d0 = dist(p.x, p.y, tx, ty); if (d0 > 7) { tx = p.x + (tx - p.x) / d0 * 7; ty = p.y + (ty - p.y) / d0 * 7; }
+      const ms = 260 + dist(p.x, p.y, tx, ty) * 70;
+      near(p.x, p.y, { t: 'throwfx', o, fx: p.x, fy: p.y, tx, ty, ms, by: p.id });
+      setTimeout(() => {
+        const dmg = THROWABLE[o] + p.lvl * 2;
+        for (const q of Object.values(S.monsters)) {
+          if (q.z || dist(q.x, q.y, tx, ty) > 1.3 + (MON[q.type].rad || 0) * 0.5) continue;
+          q.stunUntil = Math.max(q.stunUntil, now_() + 900); hitRolled(p, q, dmg, false, 0, 1);
+        }
+      }, ms);
+      break;
+    }
     case 'open': {
       const c = S.chests && S.chests[m.id]; if (!c || p.downed || dist(p.x, p.y, c.x, c.y) > 2) break;
       if (!c.who.has(p.id)) { tell(p, 'Este baú não é seu: você não lutou contra o chefe.'); break; }
@@ -213,6 +241,7 @@ function hostOnClient(from, m) {
 
 function handleMove(p, m) {
   if (p.carriedBy) return;
+  if (now_() < (p.flungUntil || 0)) return;   // voando/caído depois do golpe de cauda
   const now = now_();
   const x = +m.x, y = +m.y;
   if (!isFinite(x) || !isFinite(y)) return;
@@ -354,6 +383,7 @@ function damagePlayer(p, raw, m, delay = 0) {
 
 // ---------------- caído (downed) ----------------
 function goDown(p, m) {
+  p.lifted = null;
   p.hp = 0; p.downed = { until: now_() + DOWNED_MS }; p.target = null; p.casting = null; p.revive = null;
   if (p.carrying) dropCarried(p);
   for (const id in S.monsters) { const q = S.monsters[id]; if (q.aggro === p.id) q.aggro = null; if (q.taunt && q.taunt.pid === p.id) q.taunt = null; }
@@ -443,7 +473,7 @@ function useSkill(p, i) {
   if (sk.tgt) {
     m = S.monsters[p.target];
     if (!m) { tell(p, 'Selecione um alvo.'); return; }
-    if (dist(p.x, p.y, m.x, m.y) > sk.range) { tell(p, 'Alvo fora de alcance.'); return; }
+    if (dist(p.x, p.y, m.x, m.y) > sk.range + (MON[m.type].rad || 0)) { tell(p, 'Alvo fora de alcance.'); return; }
   }
   const offensive = sk.id !== 'heal' && sk.id !== 'wall' && sk.id !== 'agile';
   if (offensive && inSafe(p.x, p.y)) { tell(p, 'Não se luta dentro da cidadela.'); return; }
@@ -607,6 +637,7 @@ function chase(m, tx, ty, step, now) {
 
 function monsterThink(m, players, now, dt) {
   const d = MON[m.type];
+  if (d.dragon) return dragonThink(m, players, now, dt);
   if (now < m.stunUntil) return;
   const speed = d.speed * (now < m.slowUntil ? 0.5 : 1), step = speed * dt;
   const homeDist = dist(m.x, m.y, m.homeX, m.homeY);
@@ -643,7 +674,12 @@ function monsterThink(m, players, now, dt) {
     if (homeDist > 13) { m.returning = true; m.aggro = null; m.taunt = null; return; }
     const dd = dist(m.x, m.y, tgt.x, tgt.y);
     const sdx = (tgt.x - m.x) - (tgt.y - m.y); if (Math.abs(sdx) > 0.05) m.face = sdx > 0 ? 1 : -1;
-    if (dd <= reach) {
+    if (d.thrower && dd > 2.6 && dd < 7 && now >= (m.cdThrow || 0) && now >= m.nextAtk) {
+      m.cdThrow = now + 6500 + Math.random() * 4000; m.nextAtk = now + 1200;
+      const tx = tgt.x, ty = tgt.y, ms = 320 + dd * 75;
+      anim('m', m, 'bite', tx, ty); near(m.x, m.y, { t: 'throwfx', o: O.ROCK, fx: m.x, fy: m.y, tx, ty, ms, big: d.big ? 1 : 0 });
+      setTimeout(() => { if (!S.monsters[m.id] || tgt.downed || dist(tgt.x, tgt.y, tx, ty) > 1.1) return; damagePlayer(tgt, Math.round(rint(d.dmg[0], d.dmg[1]) * 1.15), m, 0); }, ms);
+    } else if (dd <= reach) {
       if (now >= m.nextAtk) { m.nextAtk = now + d.atk; anim('m', m, 'bite', tgt.x, tgt.y); damagePlayer(tgt, rint(d.dmg[0], d.dmg[1]), m, 200); if (d.drain && !tgt.downed) { tgt.mp = Math.max(0, tgt.mp - d.drain); sendStat(tgt); } }
     } else {
       chase(m, tgt.x, tgt.y, step, now);
@@ -664,6 +700,86 @@ function monsterThink(m, players, now, dt) {
   }
 }
 
+// ---------------- DRAGÃO ----------------
+const angDiff = (a, b) => { let d = (a - b) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
+function dragonDir(m) { const dx = Math.cos(m.ang), dy = Math.sin(m.ang); return dirFromVec(dx, dy, 0); }
+function dragonThink(m, players, now, dt) {
+  const d = MON[m.type];
+  const onTop = p => p && !p.downed && p.z >= 0.5 && dist(p.x, p.y, m.homeX, m.homeY) < 8;
+  const near0 = players.filter(onTop);
+  if (m.sleep) {
+    const wake = m.aggro || near0.some(p => dist(p.x, p.y, m.x, m.y) < (p.crouch ? 2.2 : 4.5));
+    if (!wake) return;
+    m.sleep = false; m.nextRoar = now + 300; m.busyUntil = now + 300;
+  }
+  if (!near0.length) {
+    m.idleSince = m.idleSince || now;
+    if (now - m.idleSince > 15000) {   // ninguém em cima: volta ao ninho, recupera e dorme
+      if (dist(m.x, m.y, m.homeX, m.homeY) > 0.4) { moveToward(m, m.homeX, m.homeY, d.speed * dt * 0.6); m.ang = Math.atan2(m.homeY - m.y, m.homeX - m.x); return; }
+      m.sleep = true; m.hp = d.hp; m.aggro = null; m.idleSince = 0;
+    }
+    return;
+  }
+  m.idleSince = 0;
+  if (now < (m.busyUntil || 0)) return;
+  const tgt = near0.find(p => p.id === m.aggro) || near0.slice().sort((a, b) => dist(a.x, a.y, m.x, m.y) - dist(b.x, b.y, m.x, m.y))[0];
+  m.aggro = tgt.id;
+  const dd = dist(m.x, m.y, tgt.x, tgt.y), want = Math.atan2(tgt.y - m.y, tgt.x - m.x);
+  const turn = angDiff(want, m.ang); m.ang += Math.max(-dt * 1.8, Math.min(dt * 1.8, turn));
+  // rugido: assusta (lentidão) e treme a tela
+  if (now >= (m.nextRoar || 0)) {
+    m.nextRoar = now + 16000 + Math.random() * 6000; m.busyUntil = now + DRAGON_MS.roar;
+    anim('m', m, 'roar', tgt.x, tgt.y);
+    for (const p of near0) if (dist(p.x, p.y, m.x, m.y) < 8) { p.slowUntil = now + 2500; sendStat(p); }
+    near(m.x, m.y, { t: 'shake', s: 9 }); return;
+  }
+  // golpe de cauda: quem está atrás ou dos lados voa longe
+  const flank = near0.filter(p => dist(p.x, p.y, m.x, m.y) < 4.4 && Math.abs(angDiff(Math.atan2(p.y - m.y, p.x - m.x), m.ang)) > 1.5);
+  if (flank.length && now >= (m.cdTail || 0)) {
+    m.cdTail = now + 5500; m.busyUntil = now + DRAGON_MS.tail; anim('m', m, 'tail', flank[0].x, flank[0].y);
+    setTimeout(() => { if (!S.monsters[m.id]) return; for (const p of Object.values(S.players)) { if (p.downed || p.z < 0.5 || dist(p.x, p.y, m.x, m.y) > 4.6 || Math.abs(angDiff(Math.atan2(p.y - m.y, p.x - m.x), m.ang)) < 1.1) continue; damagePlayer(p, rint(24, 38), m, 0); if (!p.downed) flingPlayer(p, m.x, m.y, 6); } }, 430);
+    return;
+  }
+  // sopro de fogo: avisa no chão, depois queima o cone e deixa o chão em chamas
+  if (dd > 3.0 && dd < 8.5 && Math.abs(turn) < 0.5 && now >= (m.cdBreath || 0)) {
+    m.cdBreath = now + 9000; m.busyUntil = now + DRAGON_MS.breath; m.ang = want;
+    anim('m', m, 'breath', tgt.x, tgt.y);
+    const a0 = want, x0 = m.x + Math.cos(a0) * 2.2, y0 = m.y + Math.sin(a0) * 2.2;
+    near(m.x, m.y, { t: 'tele', x: x0, y: y0, z: 1, a: a0, len: 7.5, w: 0.5, ms: 1050 });
+    setTimeout(() => {
+      if (!S.monsters[m.id]) return;
+      for (const p of Object.values(S.players)) { if (p.downed) continue; const ax = p.x - x0, ay = p.y - y0, l = Math.hypot(ax, ay); if (l > 7.5 || Math.abs(angDiff(Math.atan2(ay, ax), a0)) > 0.5) continue; damagePlayer(p, rint(38, 56), m, 0); }
+      const list = []; for (let k = 1; k <= 6; k++) { const r = k * 1.15, sp = (Math.random() - 0.5) * r * 0.5; list.push([x0 + Math.cos(a0) * r - Math.sin(a0) * sp, y0 + Math.sin(a0) * r + Math.cos(a0) * sp, 0.9 + k * 0.08, 5000]); }
+      S.fires = (S.fires || []).concat(list.map(([x, y, r, ms]) => ({ x, y, r, until: now_() + ms })));
+      near(m.x, m.y, { t: 'fires', l: list, z: 1, ms: 520 });
+    }, 1050);
+    return;
+  }
+  // mordida
+  if (dd <= 3.4) {
+    if (now >= m.nextAtk && Math.abs(turn) < 0.8) { m.nextAtk = now + 1800; m.busyUntil = now + 500; anim('m', m, 'bite', tgt.x, tgt.y); setTimeout(() => { if (S.monsters[m.id] && !tgt.downed && dist(tgt.x, tgt.y, m.x, m.y) < 3.7) damagePlayer(tgt, rint(d.dmg[0], d.dmg[1]), m, 0); }, 380); }
+    return;
+  }
+  moveToward(m, tgt.x, tgt.y, d.speed * dt);
+}
+// arremesso realista: a pessoa voa em arco para longe e cai (pode cair da mesa)
+function flingPlayer(p, fx, fy, D) {
+  if (p.carrying) dropCarried(p);
+  const dx = p.x - fx, dy = p.y - fy, l = Math.hypot(dx, dy) || 1, ux = dx / l, uy = dy / l;
+  let best = [p.x, p.y, p.z];
+  for (let s = 0.25; s <= D; s += 0.25) {
+    const x = p.x + ux * s, y = p.y + uy * s, t = tileAt(x, y), top = WORLD.ground[t] === T.CLIFF && WORLD.fl1[t] > 0;
+    if (top) { if (canStandZ(x, y, 1, 0.22)) best = [x, y, 1]; continue; }
+    if (WORLD.ground[t] === T.CLIFF || WORLD.ground[t] === T.WATER) continue;      // passa por cima da borda da rocha
+    if (!canStand(x, y, 0, 0.22)) { if (BLOCKING.has(WORLD.obj[t]) || wallHit(x, y, 0.22)) break; continue; }
+    best = [x, y, 0];
+  }
+  const fz = p.z, [tx, ty, tz] = best, ms = 600 + Math.hypot(tx - p.x, ty - p.y) * 45;
+  near(p.x, p.y, { t: 'fling', id: p.id, fx: p.x, fy: p.y, fz, tx, ty, tz, ms });
+  p.x = tx; p.y = ty; p.z = tz; p.flungUntil = now_() + ms + 900; p.lastMv = now_(); p.sit = null;
+  if (fz >= 0.5 && tz < 0.5) setTimeout(() => damagePlayer(p, Math.round(p.maxHp * 0.08), null, 0), ms);   // queda da mesa
+}
+
 // ---------------- laço principal (10x por segundo) ----------------
 function hostTick() {
   const now = now_();
@@ -681,6 +797,7 @@ function hostTick() {
 
   if (!S.bslots) initBastions();
   tickBastions(now);
+  if (S.fires && S.fires.length) { S.fires = S.fires.filter(f => f.until > now); for (const p of players) { if (p.downed || now < (p.burnT || 0)) continue; if (S.fires.some(f => dist(f.x, f.y, p.x, p.y) < f.r)) { p.burnT = now + 500; damagePlayer(p, 6, null, 0); } } }
 
   for (const p of players) {
     if (p.downed) {
@@ -704,7 +821,7 @@ function hostTick() {
     if (!p.target) continue;
     const m = S.monsters[p.target];
     if (!m) { p.target = null; continue; }
-    if (!p.casting && !p.carrying && now >= p.nextAtk && !inSafe(p.x, p.y) && p.z < 0.5 && dist(p.x, p.y, m.x, m.y) <= CLASSES[p.cls].range) basicAttack(p, m, now);
+    if (!p.casting && !p.carrying && !p.lifted && now >= p.nextAtk && !inSafe(p.x, p.y) && Math.abs(p.z - (m.z || 0)) < 0.5 && dist(p.x, p.y, m.x, m.y) <= CLASSES[p.cls].range + (MON[m.type].rad || 0)) basicAttack(p, m, now);
   }
 
   for (const m of Object.values(S.monsters)) monsterThink(m, players, now, dt);
@@ -733,11 +850,11 @@ function hostTick() {
       if (dist(p.x, p.y, r.x, r.y) > VIEW_RADIUS) continue;
       let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0) | (p.running && p.walking ? 256 : 0) | (p.sit ? 512 : 0) | (p.sit === 'c' ? 1024 : 0) | ((p.fl || 0) << 11) | (p.crouch ? 8192 : 0) | (p.slide ? 16384 : 0);
       for (const b in BUFF_BITS) if (buffOn(p, b)) fl |= BUFF_BITS[b];
-      pl.push([p.id, Math.round(p.x * 100), Math.round(p.y * 100), Math.round(p.z * 100), p.dir | 0, fl, Math.round(p.hp / p.maxHp * 100), p.carrying || 0]);
+      pl.push([p.id, Math.round(p.x * 100), Math.round(p.y * 100), Math.round(p.z * 100), p.dir | 0, fl, Math.round(p.hp / p.maxHp * 100), p.carrying || 0, p.lifted || 0]);
     }
     for (const m of mons) {
       if (Math.abs(m.x - r.x) > VIEW_RADIUS || Math.abs(m.y - r.y) > VIEW_RADIUS) continue;
-      ml.push([m.id, MON_TYPES.indexOf(m.type), Math.round(m.x * 100), Math.round(m.y * 100), m.hp, (m.slowUntil > now ? 1 : 0) | (m.stunUntil > now ? 2 : 0), m.face]);
+      ml.push([m.id, MON_TYPES.indexOf(m.type), Math.round(m.x * 100), Math.round(m.y * 100), m.hp, (m.slowUntil > now ? 1 : 0) | (m.stunUntil > now ? 2 : 0) | (m.sleep ? 4 : 0), m.face, MON[m.type].dragon ? dragonDir(m) : -1]);
     }
     const ch = []; for (const id in S.chests) { const c = S.chests[id]; if (Math.abs(c.x - r.x) <= VIEW_RADIUS && Math.abs(c.y - r.y) <= VIEW_RADIUS) ch.push([c.id, Math.round(c.x * 100), Math.round(c.y * 100), c.opened.has(r.id) ? 1 : 0, c.who.has(r.id) ? 1 : 0]); }
     Net.toOne(r.id, { t: 's', p: pl, m: ml, ch }, true);

@@ -192,7 +192,14 @@ function buildPose(cls, P) {
       Q.tl += 0.32 + br * 0.12; Q.ht = (Q.ht || 0) + 0.2 + br * 0.06;
       // braços pendurados na vertical (compensa a curvatura do tronco) e a ponta da arma arrastando atrás
       if (!P.act) { const t = Q.tl; Q.aA = [-t * 0.9, 0.16, 0.08]; Q.aB = [-t * 0.85, 0.14, 0.12]; const arm = Q.aA[0] + Q.aA[2]; Q.wp = cls === 'knight' ? arm + 0.25 : cls === 'mage' ? arm + Math.PI + 0.35 : Q.wp; }
-      if (P.walk >= 0 && !P.cr) { Q.lA = [Q.lA[0] * 0.55, Q.lA[1] * 0.4 - 0.04]; Q.lB = [Q.lB[0] * 0.55, Q.lB[1] * 0.4 - 0.04]; Q.tw *= 0.4; }
+      if (P.walk >= 0 && !P.cr && P.run) {
+        // corrida exausta: tronco despencado, cabeça pendendo, passos pesados e desiguais, braços soltos balançando
+        const ph = P.walk / 12 * Math.PI * 2;
+        Q.tl += 0.18 + Math.abs(Math.sin(ph)) * 0.1; Q.ht += 0.12 + Math.abs(Math.cos(ph)) * 0.1;
+        Q.lA = [Q.lA[0] * 0.85, Q.lA[1] * 0.75 - 0.1]; Q.lB = [Q.lB[0] * 0.7, Q.lB[1] * 0.6 - 0.1];
+        Q.sway = (Q.sway || 0) * 2.6; Q.tw *= 1.6;
+        if (!P.act) { const t = Q.tl; Q.aA = [-t * 0.7 + Math.sin(ph) * 0.55, 0.22, 0.25]; Q.aB = [-t * 0.7 - Math.sin(ph) * 0.5, 0.2, 0.3]; const arm = Q.aA[0] + Q.aA[2]; Q.wp = cls === 'knight' ? arm + 0.35 : cls === 'mage' ? arm + Math.PI + 0.45 : Q.wp; }
+      } else if (P.walk >= 0 && !P.cr) { Q.lA = [Q.lA[0] * 0.55, Q.lA[1] * 0.4 - 0.04]; Q.lB = [Q.lB[0] * 0.55, Q.lB[1] * 0.4 - 0.04]; Q.tw *= 0.4; }
     }
     else if (P.hs === 3) {
       // de joelhos: um joelho no chão, mão no peito, arrastando-se devagar
@@ -203,6 +210,7 @@ function buildPose(cls, P) {
     }
     else { Q.tl += 0.36 + br * 0.07; if (!P.act) Q.aB = [0.85, 0.3, 2.05]; if (P.walk >= 0 && !P.cr) Q.lB = [Q.lB[0] * 0.45, -0.1]; Q.ht = (Q.ht || 0) + br * 0.04; }
   }
+  if (P.down) { Q.aA = [0.5, 0.75, 0.6]; Q.aB = [0.25, 0.85, 0.35]; Q.lA = [0.35, -0.6]; Q.lB = [0.05, -0.12]; Q.tl = 0; Q.tw = 0.18; Q.ht = -0.25; Q.sway = 0; }
   if (P.sit === 'g') { Q.lA = [2.45, -2.35]; Q.lB = [2.2, -2.0]; Q.drop = 12; Q.aA = [1.15, 0.35, 1.35]; Q.aB = [1.05, 0.4, 1.25]; Q.tl = -0.22; Q.ht = 0.12; }
   else if (P.sit) { Q.lA = [1.5, -1.55]; Q.lB = [1.45, -1.5]; Q.drop = 12; Q.aA = [0.45, 0.25, 0.7]; Q.aB = [0.45, 0.25, 0.7]; Q.tl = -0.02; }
   if (P.carry) { Q.aA = [2.75, 0.25, 0.4]; Q.aB = [2.75, 0.25, 0.4]; Q.wp = 0.4; }

@@ -378,7 +378,11 @@ function shoot3D(R, dir, extraRotX, groundSit) {
     for (const k of [R.LA.kn, R.LB.kn]) { k.getWorldPosition(tmpV); minY = Math.min(minY, tmpV.y - 0.05); }   // de joelhos: o joelho toca o chão
     if (groundSit) { R.hips.getWorldPosition(tmpV); minY = Math.min(minY, tmpV.y - 0.13); }
     R.root.position.y = -minY + 0.035;
-  } else R.root.position.y = 0.12;
+  } else {
+    // deitado: centraliza o quadril na posição do personagem e apoia o corpo inteiro no chão
+    R.hips.getWorldPosition(tmpV); R.root.position.set(-tmpV.x, 0, -tmpV.z); R.root.updateMatrixWorld(true);
+    const bb = new THREE.Box3().setFromObject(R.root); R.root.position.y = -bb.min.y + 0.01;
+  }
   scene.add(R.root);
   renderer.render(scene, cam);
   scene.remove(R.root);

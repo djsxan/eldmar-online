@@ -124,8 +124,30 @@ function canvasTex(kind) {
     noiseDots(500, 0.5, 2.5, 0.12, 0.18);
     for (let i = 0; i < 18; i++) { const sx = R() * S, sy = R() * S; x.strokeStyle = 'rgba(0,0,0,0.25)'; x.lineWidth = 1; x.beginPath(); x.moveTo(sx, sy); x.lineTo(sx + (R() - 0.5) * 20, sy + R() * 14); x.stroke(); }
   } else if (kind === 'plaster') {
-    noiseDots(1800, 1, 5, 0.04, 0.08);
-    for (let i = 0; i < 10; i++) { const g = x.createRadialGradient(R() * S, R() * S, 0, R() * S, R() * S, 40 + R() * 60); g.addColorStop(0, 'rgba(120,100,70,0.12)'); g.addColorStop(1, 'rgba(120,100,70,0)'); x.fillStyle = g; x.fillRect(0, 0, S, S); }
+    // reboco de cal envelhecido: manchado suave, grão fino, marcas de desempenadeira, umidade, rachaduras e partes descascadas
+    x.fillStyle = gray(0.86); x.fillRect(0, 0, S, S);
+    const blot = (cx, cy, r, col, a) => { for (const [ox, oy] of [[0, 0], [S, 0], [-S, 0], [0, S], [0, -S]]) { const gr = x.createRadialGradient(cx + ox, cy + oy, 0, cx + ox, cy + oy, r); gr.addColorStop(0, col + a + ')'); gr.addColorStop(1, col + '0)'); x.fillStyle = gr; x.fillRect(cx + ox - r, cy + oy - r, r * 2, r * 2); } };
+    for (let i = 0; i < 26; i++) blot(R() * S, R() * S, 30 + R() * 70, R() < 0.5 ? 'rgba(255,252,244,' : 'rgba(96,84,66,', 0.05 + R() * 0.07);
+    // marcas de desempenadeira (arcos largos e suaves)
+    for (let i = 0; i < 40; i++) { const cx = R() * S, cy = R() * S, r = 14 + R() * 26; x.strokeStyle = 'rgba(255,255,250,' + (0.05 + R() * 0.05) + ')'; x.lineWidth = 3 + R() * 5; x.beginPath(); x.arc(cx, cy, r, R() * 6, R() * 6 + 1.2); x.stroke(); y.strokeStyle = gray(0.56); y.globalAlpha = 0.5; y.lineWidth = x.lineWidth; y.beginPath(); y.arc(cx, cy, r, 0, 0.01); y.stroke(); y.globalAlpha = 1; }
+    // grão fino da cal
+    for (let i = 0; i < 6000; i++) { const px_ = R() * S, py = R() * S, v = R(); x.fillStyle = v < 0.5 ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.06)'; x.fillRect(px_, py, 1, 1); y.fillStyle = v < 0.5 ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)'; y.fillRect(px_, py, 1, 1); }
+    // escorridos de umidade
+    for (let i = 0; i < 7; i++) { const sx = R() * S, sy = R() * S * 0.5, len = 40 + R() * 90, w = 3 + R() * 7, gr = x.createLinearGradient(0, sy, 0, sy + len); gr.addColorStop(0, 'rgba(90,82,60,0)'); gr.addColorStop(0.4, 'rgba(90,82,60,0.10)'); gr.addColorStop(1, 'rgba(90,82,60,0)'); x.fillStyle = gr; x.fillRect(sx, sy, w, len); }
+    // rachaduras finas
+    for (let i = 0; i < 6; i++) { let cx = R() * S, cy = R() * S; x.strokeStyle = 'rgba(40,32,24,0.32)'; x.lineWidth = 0.6; y.strokeStyle = gray(0.2); y.lineWidth = 1; x.beginPath(); y.beginPath(); x.moveTo(cx, cy); y.moveTo(cx, cy); for (let k = 0; k < 6; k++) { cx += (R() - 0.5) * 16; cy += 4 + R() * 9; x.lineTo(cx, cy); y.lineTo(cx, cy); } x.stroke(); y.stroke(); }
+    // reboco caído mostrando o tijolo por baixo
+    for (let i = 0; i < 3; i++) {
+      const cx = 20 + R() * (S - 40), cy = 20 + R() * (S - 40), rw = 5 + R() * 8, rh2 = 4 + R() * 5, pts = [];
+      for (let k = 0; k < 9; k++) { const t = k / 9 * Math.PI * 2, rr = 0.7 + R() * 0.45; pts.push([cx + Math.cos(t) * rw * rr, cy + Math.sin(t) * rh2 * rr]); }
+      const path = cx2 => { cx2.beginPath(); pts.forEach(([px_, py], k) => k ? cx2.lineTo(px_, py) : cx2.moveTo(px_, py)); cx2.closePath(); };
+      x.save(); path(x); x.clip(); x.fillStyle = 'rgb(118,92,78)'; x.fillRect(cx - rw * 2, cy - rh2 * 2, rw * 4, rh2 * 4);
+      for (let by = cy - rh2 * 2; by < cy + rh2 * 2; by += 6) for (let bx = cx - rw * 2 + ((by / 6) % 2) * 6; bx < cx + rw * 2; bx += 12) { x.fillStyle = 'rgba(' + (130 + R() * 40 | 0) + ',' + (88 + R() * 20 | 0) + ',' + (70 + R() * 14 | 0) + ',1)'; x.fillRect(bx + 0.8, by + 0.8, 10.4, 4.4); }
+      x.restore(); path(x); x.strokeStyle = 'rgba(255,250,240,0.55)'; x.lineWidth = 1.2; x.stroke();
+      y.save(); path(y); y.clip(); y.fillStyle = gray(0.22); y.fillRect(cx - rw * 2, cy - rh2 * 2, rw * 4, rh2 * 4);
+      for (let by = cy - rh2 * 2; by < cy + rh2 * 2; by += 6) for (let bx = cx - rw * 2 + ((by / 6) % 2) * 6; bx < cx + rw * 2; bx += 12) { y.fillStyle = gray(0.36); y.fillRect(bx + 0.8, by + 0.8, 10.4, 4.4); }
+      y.restore(); path(y); y.strokeStyle = gray(0.85); y.lineWidth = 1.5; y.stroke();
+    }
   } else if (kind === 'wood' || kind === 'bark') {
     const planks = kind === 'wood' ? 5 : 1;
     for (let p = 0; p < planks; p++) {
@@ -173,7 +195,7 @@ function canvasTex(kind) {
   }
   }
   const map = new THREE.CanvasTexture(c), bump = new THREE.CanvasTexture(b);
-  for (const t of [map, bump]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; }
+  for (const t of [map, bump]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; if (kind === 'plaster') t.repeat.set(0.22, 0.22); }   // reboco: textura grande, sem padrão repetido
   map.encoding = THREE.sRGBEncoding;
   return CTX3[kind] = { map, bump };
 }
@@ -1169,7 +1191,46 @@ function mInterior(b, fl = 0) {
   if (!knee.includes('right')) for (let k = 0; k < Math.floor(h / 2); k++) o.add(mk(new THREE.BoxGeometry(0.03, 0.6, 0.42).translate(w - t - 0.02, hw * 0.6, 1 + k * 2), lightWin));
   if (!knee.includes('front')) for (let k = 0; k < Math.floor(w / 2); k++) if (Math.abs(1 + k * 2 - dx) > 0.9) o.add(mk(new THREE.BoxGeometry(0.42, 0.6, 0.03).translate(1 + k * 2, hw * 0.6, h - t - 0.02), lightWin));
   // luz quente no meio do cômodo
-  { const pl = new THREE.PointLight(0xffd09a, 0.7, Math.max(w, h) * 1.2); pl.position.set(w / 2, 1.6, h / 2); o.add(pl); }
+  { const pl = new THREE.PointLight(0xffd09a, 0.55, Math.max(w, h) * 1.2); pl.position.set(w / 2, 1.6, h / 2); o.add(pl); }
+  // ---- luzes e detalhes ----
+  {
+    const iron = smat(null, '#2a2622', { metal: 0.8, rough: 0.5 }), flameM = smat(null, '#ffd27a', { emissive: '#ff9a30', ei: 2.6 }), wax = smat(null, '#efe4c8', { rough: 0.6 });
+    const used = new Set(L.F.flatMap(f => { const c = []; for (let a2 = 0; a2 < f.w; a2++) for (let b2 = 0; b2 < f.h; b2++) c.push((f.i + a2) + ',' + (f.j + b2)); return c; }));
+    // arandela com vela acesa presa à parede (wall: 'back' ou 'left')
+    const sconce = (wall, pos) => {
+      const g2 = grp(), y = Math.min(hw - 0.35, 1.55);
+      g2.add(mk(new THREE.BoxGeometry(0.08, 0.22, 0.04).translate(0, y, 0.02), iron));
+      g2.add(mk(new THREE.BoxGeometry(0.06, 0.04, 0.2).translate(0, y - 0.08, 0.12), iron));
+      g2.add(mk(new THREE.CylinderGeometry(0.07, 0.05, 0.04, 8).translate(0, y - 0.05, 0.2), iron));
+      g2.add(mk(new THREE.CylinderGeometry(0.025, 0.025, 0.14, 6).translate(0, y + 0.04, 0.2), wax));
+      g2.add(mk(new THREE.ConeGeometry(0.025, 0.07, 6).translate(0, y + 0.15, 0.2), flameM, false));
+      const pl = new THREE.PointLight(0xffa858, 0.75, 3.2); pl.position.set(0, y + 0.2, 0.35); g2.add(pl);
+      if (wall === 'back') g2.position.set(pos, 0, t); else { g2.rotation.y = Math.PI / 2; g2.position.set(t, 0, pos); }
+      o.add(g2);
+    };
+    const R2 = rng(b.x * 7 + b.y * 3 + fl * 11);
+    if (!knee.includes('back')) for (const px of w >= 6 ? [w * 0.25, w * 0.75] : [w * 0.5]) sconce('back', px + 0.5 * (R2() - 0.5) * 0.3);
+    if (!knee.includes('left')) sconce('left', h * 0.5);
+    if (knee.includes('back') && knee.includes('left')) { const pl = new THREE.PointLight(0xffa858, 0.6, 3.5); pl.position.set(0.6, 1.4, 0.6); o.add(pl); }
+    // lamparina pendurada no meio do cômodo
+    if (b.kind !== 'stairtower') { const lx = w / 2, lz = h / 2, ly = Math.min(hw - 0.2, 2.0); o.add(mk(new THREE.CylinderGeometry(0.006, 0.006, 0.5, 4).translate(lx, ly + 0.25, lz), iron)); o.add(mk(new THREE.CylinderGeometry(0.09, 0.12, 0.2, 6).translate(lx, ly - 0.1, lz), iron)); o.add(mk(new THREE.SphereGeometry(0.06, 8, 6).translate(lx, ly - 0.1, lz), flameM, false)); const pl = new THREE.PointLight(0xffc070, 0.7, 4.5); pl.position.set(lx, ly - 0.15, lz); o.add(pl); }
+    // quadro / tapeçaria na parede do fundo
+    if (!knee.includes('back') && w >= 4) { const px = w * (0.35 + R2() * 0.3), tapestry = b.kind === 'castle' || b.kind === 'temple' || b.kind === 'barracks'; const cols = ['#6a1a1c', '#1a3a5a', '#3a4a1a', '#5a3a1a']; if (tapestry) { o.add(mk(new THREE.PlaneGeometry(0.8, 1.2).translate(px, Math.min(hw - 0.9, 1.4), t + 0.02), smat('cloth', cols[Math.floor(R2() * 4)], { side: THREE.DoubleSide }))); o.add(mk(new THREE.CylinderGeometry(0.02, 0.02, 0.95, 6).rotateZ(Math.PI / 2).translate(px, Math.min(hw - 0.3, 2.0), t + 0.03), smat('wood', '#4a2f17'))); } else { const fy = Math.min(hw - 0.7, 1.45); o.add(mk(new THREE.BoxGeometry(0.62, 0.46, 0.04).translate(px, fy, t + 0.02), smat('wood', '#5a3a1a'))); o.add(mk(new THREE.PlaneGeometry(0.5, 0.34).translate(px, fy, t + 0.045), smat(null, ['#7a8a5a', '#8a6a4a', '#5a6a8a'][Math.floor(R2() * 3)], { rough: 0.9 }))); } }
+    // escudos na parede (quartel e castelo)
+    if ((b.kind === 'barracks' || b.kind === 'castle') && !knee.includes('left')) for (const pz of [h * 0.3, h * 0.7]) { const sh = mk(new THREE.CylinderGeometry(0.26, 0.26, 0.04, 12).rotateZ(Math.PI / 2).translate(t + 0.03, 1.5, pz), smat(null, ['#7a1a1c', '#1a3a6a'][Math.floor(R2() * 2)], { metal: 0.3, rough: 0.5 })); o.add(sh); o.add(mk(new THREE.SphereGeometry(0.05, 8, 6).translate(t + 0.06, 1.5, pz), smat(null, '#c9a24a', { metal: 1, rough: 0.3 }))); }
+    // pequenos objetos no chão em tiles livres: sacos, balde, cesto
+    const sack = smat('cloth', '#9a8458', { bump: 1 });
+    for (let k = 0; k < Math.min(3, Math.floor(w * h / 10)); k++) {
+      const i2 = Math.floor(R2() * w), j2 = Math.floor(R2() * h); if (used.has(i2 + ',' + j2) || (fl === 0 && i2 === doorCol(b) && j2 >= h - 2) || (i2 > 0 && i2 < w - 1 && j2 > 0)) continue;
+      const kind = R2();
+      if (kind < 0.45) { const s2 = mk(new THREE.SphereGeometry(0.18, 10, 8).scale(1, 1.3, 1).translate(i2 + 0.3 + R2() * 0.4, 0.2, j2 + 0.3 + R2() * 0.4), sack); o.add(s2); }
+      else if (kind < 0.75) { o.add(mk(new THREE.CylinderGeometry(0.13, 0.11, 0.24, 10, 1, true).translate(i2 + 0.5, 0.12, j2 + 0.5), smat('wood', '#6a4a2a', { side: THREE.DoubleSide }))); o.add(mk(new THREE.TorusGeometry(0.125, 0.01, 4, 12).rotateX(Math.PI / 2).translate(i2 + 0.5, 0.2, j2 + 0.5), iron)); }
+      else { o.add(mk(new THREE.CylinderGeometry(0.2, 0.15, 0.22, 10).translate(i2 + 0.5, 0.11, j2 + 0.5), smat('wood', '#a8844a'))); for (let q = 0; q < 3; q++) o.add(mk(new THREE.SphereGeometry(0.05, 6, 5).translate(i2 + 0.42 + q * 0.08, 0.25, j2 + 0.5), smat(null, ['#c83a2a', '#d8a030', '#6a8a3a'][q]))); }
+    }
+    // ervas secando perto da lareira e teias de aranha nos cantos altos
+    const fp = L.F.find(f => f.t === 'fireplace'); if (fp && !knee.includes('back')) for (let q = 0; q < 3; q++) { const hx = fp.i + 0.2 + q * 0.3; o.add(mk(new THREE.ConeGeometry(0.05, 0.22, 5).rotateX(Math.PI).translate(hx, Math.min(hw - 0.25, 1.9), t + 0.12), smat(null, ['#5a7a3a', '#7a6a3a', '#4a6a2a'][q], { rough: 1 }))); }
+    if (!knee.includes('back') && !knee.includes('left') && hw > 1.6) o.add(mk(new THREE.CircleGeometry(0.28, 6, 0, Math.PI / 2).rotateY(Math.PI / 4).translate(t + 0.05, hw - 0.1, t + 0.05), smat(null, '#d8d4cc', { transparent: true, opacity: 0.35, side: THREE.DoubleSide }), false));
+  }
   // móveis
   const W_ = () => smat('wood', '#7a5434', { bump: 1 }), DW = () => smat('wood', '#4e3420', { bump: 1 });
   const cloth = c => smat('cloth', c, { bump: 0.5 });

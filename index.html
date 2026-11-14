@@ -55,16 +55,6 @@
 
   <div id="buffs"></div>
   <div id="hstate"></div>
-  <!-- orbes de vida e mana (estilo Diablo II) -->
-  <div id="orbs">
-    <div class="orb hp" title="Vida"><div class="orb-liquid"><div class="orb-fill" id="orb-hp"></div></div><div class="orb-glass"></div><span id="orb-hp-t"></span></div>
-    <div class="orb-mid">
-      <div class="mbar st" title="Estamina"><div id="orb-st"></div></div>
-      <div class="mbar xp" title="Experiência"><div id="orb-xp"></div></div>
-      <div class="orb-lvl" id="orb-lvl"></div>
-    </div>
-    <div class="orb mp" title="Mana"><div class="orb-liquid"><div class="orb-fill" id="orb-mp"></div></div><div class="orb-glass"></div><span id="orb-mp-t"></span></div>
-  </div>
   <div id="topbtns"><button id="btn-inv" title="Inventário (I)">🎒</button><button id="btn-journal" title="Jornada (J)">📜</button><button id="btn-help" title="Ajuda">?</button><button id="btn-menu" title="Menu (Esc)">☰</button></div>
 
   <!-- inventário (I) -->
@@ -132,8 +122,6 @@
           <div class="char-foot"><span class="coin"></span><span id="gold">0</span><span id="combat-state"></span></div>
         </div>
       </div>
-      <div class="pz-sec">Onde você está</div>
-      <div class="pz-zone"><span id="zone-name"></span> <span id="zone-stars"></span></div>
       <div class="pz-sec">Sala</div>
       <div class="pz-room">Código <b id="room-code"></b></div>
       <button class="pz-btn" id="btn-copy">Copiar convite</button>
@@ -147,7 +135,6 @@
       <input type="range" id="pz-zoom" min="0.6" max="1.6" step="0.05">
       <div class="pz-sec">Tamanho dos botões de combate <span id="pz-pad-v"></span></div>
       <input type="range" id="pz-pad" min="0.4" max="1.3" step="0.05">
-      <label class="pz-check"><input type="checkbox" id="pz-orbs"> Orbes de vida e mana na tela (estilo Diablo)</label>
       <button class="pz-btn" id="pz-full">Tela cheia</button>
       <details class="pz-keys"><summary>Controles</summary>
         <div><b>Mover</b> WASD / setas / clique no chão · <b>Correr</b> Shift</div>
@@ -176,7 +163,7 @@
   </div>
 </div>
 
-<div id="worldmap" class="hidden"><div class="wm-frame"><div class="wm-title">Reino de Sxan</div><canvas id="wm-canvas"></canvas><div class="wm-hint">M ou Esc para fechar · as áreas cobertas ainda não foram exploradas</div></div></div>
+<div id="worldmap" class="hidden"><div class="wm-frame"><div class="wm-title">Reino de Sxan</div><canvas id="wm-canvas"></canvas><div class="wm-hint">M ou Esc para fechar · X marca lugares que você já encontrou</div></div></div>
 <div id="dialog" class="hidden">
   <div class="panel parch dlg">
     <canvas id="dlg-portrait" width="96" height="140"></canvas>
@@ -211,6 +198,7 @@
 <script src="https://unpkg.com/three@0.149.0/build/three.min.js"></script>
 <script src="js/render.js"></script>
 <script src="js/render3d.js"></script>
+<script src="js/dragon.js"></script>
 <script src="js/scene3d.js"></script>
 <script src="js/server.js"></script>
 <script src="js/game.js"></script>

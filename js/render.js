@@ -251,9 +251,29 @@ function healthState(e) {
   if (r < 0.6 || (e === G.me && (G.tired || (G.stam ?? STAM_MAX) < STAM_MAX * 0.3))) return 1;
   return 0;
 }
+// ferimentos no corpo: mais sangue, sujeira e rasgos a cada estado (à beira da morte 1, de joelhos 2, caído 3)
+function woundLevel(e) { if (e.isNpc || !e.maxHp) return 0; if (e.downed) return 3; const h = healthState(e); return h === 3 ? 2 : h === 2 ? 1 : 0; }
+const WOUNDS = new WeakMap();
+function woundOf(s, lv) {
+  if (!s || !lv) return s;
+  let m = WOUNDS.get(s); if (!m) { m = {}; WOUNDS.set(s, m); }
+  if (m[lv]) return m[lv];
+  const c = document.createElement('canvas'); c.width = s.c.width; c.height = s.c.height; const x = c.getContext('2d');
+  x.drawImage(s.c, 0, 0); x.globalCompositeOperation = 'source-atop';
+  const W = c.width, H = c.height; let sd = W * 7 + H * 13 + lv; const rnd = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
+  x.fillStyle = 'rgba(55,38,22,' + (0.1 + lv * 0.07) + ')'; x.fillRect(0, 0, W, H);                       // sujeira / roupa encardida
+  for (let k = 0; k < lv * 6; k++) {                                                                       // manchas de sangue (mais no tronco)
+    const px = W * (0.35 + rnd() * 0.3), py = H * (0.35 + rnd() * 0.45), r = W * (0.025 + rnd() * 0.04 * lv);
+    const g = x.createRadialGradient(px, py, 0, px, py, r); g.addColorStop(0, 'rgba(90,4,4,0.85)'); g.addColorStop(1, 'rgba(120,8,8,0)'); x.fillStyle = g; x.fillRect(px - r, py - r, r * 2, r * 2);
+    if (rnd() < 0.5) { x.fillStyle = 'rgba(110,6,6,0.7)'; x.fillRect(px - 1, py, 2, r * (1 + rnd() * 2)); }   // escorrido
+  }
+  if (lv >= 2) { x.globalCompositeOperation = 'destination-out'; x.strokeStyle = 'rgba(0,0,0,0.9)'; for (let k = 0; k < lv * 2; k++) { const px = W * (0.38 + rnd() * 0.24), py = H * (0.45 + rnd() * 0.35); x.lineWidth = 1 + rnd(); x.beginPath(); x.moveTo(px, py); x.lineTo(px + (rnd() - 0.5) * 6, py + 3 + rnd() * 6); x.stroke(); } }   // rasgos
+  return (m[lv] = { ...s, c });
+}
+function objSprite(o) { return o === O.BARREL ? smallSprite('barrel') : o === O.CRATE ? smallSprite('crate') : o === O.ROCK ? rockSprite(0, 0) : null; }
 function heroPoseFor(e, now) {
   const view0 = DIR_VIEW[e.dir || 0];
-  const P = { view: view0 === 'W' ? 'E' : view0, walk: -1, act: null, idle: null, sit: false, carry: !!e.carrying };
+  const P = { view: view0 === 'W' ? 'E' : view0, walk: -1, act: null, idle: null, sit: false, carry: !!(e.carrying || e.lifted) };
   P.dir = e.dir || 0;
   if (e.walking) { P.walk = Math.floor(e.walkDist * (e.cls === 'knight' ? 8.5 : 9.5) / (e.running ? 1.45 : 1)) % 12; if (e.running) P.run = 1; }
   if (e.anim) {
@@ -281,11 +301,20 @@ function heroPoseFor(e, now) {
 }
 
 function drawHeroEntity(ctx, e, sx, sy, now) {
+  if (R3.ok && e.fling) {
+    const f = e.fling, k = Math.min(1, (now - f.t0) / f.ms); ctx.imageSmoothingEnabled = true;
+    if (k < 1) {
+      const s = heroSprite3D(e.cls, e.skin, e.color, { dir: e.dir || 0, walk: -1, act: { k: 'hurt', f: 6 } }), lift = Math.sin(Math.PI * k) * 95;
+      softDab(ctx, sx, sy, 10 * (1 - Math.sin(Math.PI * k) * 0.6), '#000000', 0.3);
+      ctx.save(); ctx.translate(sx, sy - lift - 26); ctx.rotate(f.spin * k * Math.PI * 3); pblit(ctx, woundOf(s, woundLevel(e)), 0, 26); ctx.restore(); e._spr = null; return;
+    }
+    const s = heroSprite3D(e.cls, e.skin, e.color, { dir: e.dir || 0, walk: -1, down: true }); pblit(ctx, woundOf(s, Math.max(1, woundLevel(e))), sx, sy); e._spr = null; return;
+  }
   if (R3.ok) {
-    if (e.downed && !e.carriedBy) { const s = heroSprite3D(e.cls, e.skin, e.color, { dir: e.dir || 0, walk: -1, down: true }); ctx.imageSmoothingEnabled = true; pblit(ctx, s, sx, sy); return; }
+    if (e.downed && !e.carriedBy) { const s = heroSprite3D(e.cls, e.skin, e.color, { dir: e.dir || 0, walk: -1, down: true }); ctx.imageSmoothingEnabled = true; pblit(ctx, woundOf(s, 3), sx, sy); return; }
     const P = heroPoseFor(e, now);
     if (!P.act && e.hitAt && now - e.hitAt < 300) P.act = { k: 'hurt', f: Math.min(11, Math.floor((now - e.hitAt) / 300 * 12)) };
-    const s = e.isNpc ? npcSprite3D(e.kind, P) : heroSprite3D(e.cls, e.skin, e.color, P);
+    const s = e.isNpc ? npcSprite3D(e.kind, P) : woundOf(heroSprite3D(e.cls, e.skin, e.color, P), woundLevel(e));
     ctx.imageSmoothingEnabled = true;
     softDab(ctx, sx, sy, 10, '#000000', 0.35);
     const kb = knockOf(e, now); sx += kb.x * 0.6; sy += kb.y * 0.6;
@@ -333,9 +362,10 @@ function fallAngle(ms) {
   const t = ms / 1100; if (t >= 1) return 0;
   return (t < 0.25 ? t / 0.25 : t < 0.65 ? 1 : 1 - (t - 0.65) / 0.35) * 1.15;
 }
-const PAINT_AS = { deer: 'wolf', boar: 'wolf', bandit: 'goblin', deserter: 'goblin', deserterchief: 'goblin', orcchief: 'orc', cryptlord: 'skeleton', elderslime: 'slime', wisp: 'slime' };
-const MON_H = { bandit: 84, deserter: 90, wisp: 70, orcchief: 140, cryptlord: 120, deserterchief: 104, elderslime: 70, deer: 70, boar: 46, rat: 30, slime: 40, wolf: 58, spider: 52, toad: 44, goblin: 68, skeleton: 92, orc: 104, troll: 150 };
+const PAINT_AS = { dragon: 'troll', deer: 'wolf', boar: 'wolf', bandit: 'goblin', deserter: 'goblin', deserterchief: 'goblin', orcchief: 'orc', cryptlord: 'skeleton', elderslime: 'slime', wisp: 'slime' };
+const MON_H = { dragon: 260, bandit: 84, deserter: 90, wisp: 70, orcchief: 140, cryptlord: 120, deserterchief: 104, elderslime: 70, deer: 70, boar: 46, rat: 30, slime: 40, wolf: 58, spider: 52, toad: 44, goblin: 68, skeleton: 92, orc: 104, troll: 150 };
 function drawMonsterEntity(ctx, e, sx, sy, now) {
+  if (R3.ok && e.type === 'dragon') { drawDragon(ctx, e, sx, sy, now); return; }
   if (R3.ok) {
     let atk = -1;
     if (e.anim) { const t = (now - e.anim.t0) / ACT_MS.bite; if (t >= 0 && t < 1) atk = Math.min(7, Math.floor(t * 8)); }
@@ -659,6 +689,37 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
   if (G.pathGoal) { const p = iso(G.pathGoal.x, G.pathGoal.y); diamondOutline(ctx, p.sx + ox, p.sy + oy - myZ, `rgba(240,200,80,${0.45 + Math.sin(now / 200) * 0.3})`); }
   for (const id in G.players) { const e = G.players[id]; if (e.cast && e.cast.end > now && e.visible) { const p = iso(e.rx, e.ry); drawMagicCircle(ctx, p.sx + ox, p.sy + oy - (e.z || 0) * FLOOR_PX, now, e.cast.el, (now - e.cast.start) / (e.cast.end - e.cast.start)); } }
 
+  // 3b) no chão: sangue, aviso do sopro do dragão, fogo
+  {
+    const P = (x, y, z) => { const p = iso(x, y); return [p.sx + ox, p.sy + oy - (z || 0) * FLOOR_PX]; };
+    G.blood = G.blood.filter(b => b.until > now);
+    for (const b of G.blood) {
+      const [bx, by] = P(b.x, b.y, b.z); if (bx < -40 || bx > vw + 40 || by < -40 || by > vh + 40) continue;
+      const life = 1 - (now - b.t0) / (b.until - b.t0), a = Math.min(1, life * 4) * 0.75, R = b.r * 24;
+      let s = b.seed; const rnd = () => (s = (s * 9301 + 49297) % 233280) / 233280;
+      ctx.fillStyle = 'rgba(' + (70 + rnd() * 30 | 0) + ',4,4,' + a.toFixed(2) + ')';
+      for (let k = 0; k < 5; k++) { ctx.beginPath(); ctx.ellipse(bx + (rnd() - 0.5) * R, by + (rnd() - 0.5) * R * 0.5, R * (0.25 + rnd() * 0.35), R * (0.12 + rnd() * 0.16), 0, 0, 7); ctx.fill(); }
+    }
+    G.teles = G.teles.filter(t => now - t.t0 < t.ms + 700);
+    for (const t of G.teles) {
+      const k = (now - t.t0) / t.ms, pts = [P(t.x, t.y, t.z)];
+      for (let q = -6; q <= 6; q++) { const a = t.a + t.w * q / 6; pts.push(P(t.x + Math.cos(a) * t.len, t.y + Math.sin(a) * t.len, t.z)); }
+      ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
+      if (k < 1) { ctx.fillStyle = 'rgba(200,30,10,' + (0.12 + k * 0.25 + Math.sin(now / 60) * 0.04).toFixed(2) + ')'; ctx.fill(); ctx.strokeStyle = 'rgba(255,90,40,0.6)'; ctx.lineWidth = 2; ctx.stroke(); }
+      else { const f = (now - t.t0 - t.ms) / 700, [x0, y0] = pts[0], [x1, y1] = pts[7], gr = ctx.createLinearGradient(x0, y0, x1, y1); gr.addColorStop(0, 'rgba(255,250,200,' + (0.95 * (1 - f)).toFixed(2) + ')'); gr.addColorStop(0.35, 'rgba(255,170,40,' + (0.85 * (1 - f)).toFixed(2) + ')'); gr.addColorStop(1, 'rgba(200,40,10,0)'); ctx.fillStyle = gr; ctx.fill(); G.lights.push({ x: (x0 + x1) / 2, y: (y0 + y1) / 2, r: 200, c: '255,140,40', a: 1 - f }); if (Math.random() < 0.6) spawnPart('ember', x0 + (x1 - x0) * Math.random() - G.view.ox, y0 + (y1 - y0) * Math.random() - G.view.oy); }
+    }
+    G.fires = G.fires.filter(f => f.until > now);
+    for (const f of G.fires) { if (now < f.t0) continue; const [fx, fy] = P(f.x, f.y, f.z), fade = Math.min(1, (f.until - now) / 800); ctx.globalAlpha = fade; liveFlame(ctx, fx, fy, 1.1 * f.r, now, f.x * 13 + f.y); ctx.globalAlpha = 1; G.lights.push({ x: fx, y: fy - 14, r: 60, c: '255,150,60', a: fade, flick: 1 }); if (Math.random() < 0.05) spawnPart('smoke', fx - G.view.ox, fy - G.view.oy - 20); }
+  }
+  // 3c) objetos arremessados
+  G.throws = (G.throws || []).filter(t => now - t.t0 < t.ms + 50);
+  for (const t of G.throws) {
+    const k = Math.min(1, (now - t.t0) / t.ms), wx = t.fx + (t.tx - t.fx) * k, wy = t.fy + (t.ty - t.fy) * k, p = iso(wx, wy), lift = Math.sin(Math.PI * k) * (40 + Math.hypot(t.tx - t.fx, t.ty - t.fy) * 6) + 40 * (1 - k);
+    const s = objSprite(t.o); if (!s) continue;
+    softDab(ctx, p.sx + ox, p.sy + oy, 9, '#000000', 0.3);
+    ctx.save(); ctx.translate(p.sx + ox, p.sy + oy - lift); ctx.rotate(k * Math.PI * 2.5); pblit(ctx, s, 0, s.h * 0.35); ctx.restore();
+    if (k >= 1 && !t.hit) { t.hit = 1; for (let q = 0; q < 14; q++) spawnPart(t.o === O.ROCK ? 'dust' : 'spark', p.sx + (Math.random() - 0.5) * 16, p.sy - Math.random() * 10, t.o === O.ROCK ? undefined : { color: 'rgba(150,100,60,A)' }); if (t.by === G.myId || dist(t.tx, t.ty, G.me.x, G.me.y) < 1.5) G.shake = Math.max(G.shake, 3); }
+  }
   // 4) coleta dos itens
   const items = [], upper = [], visTrees = [], visFlowers = [], visGrass = [];
   for (const c of (G.started && G.chests) || []) { const p = iso(c.x, c.y); items.push({ d: c.x + c.y, k: 0, chest: c, sx: p.sx + ox, sy: p.sy + oy }); }
@@ -770,7 +831,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     }
     if (it.k === 0) {
       if (it.cliff) {
-        const i = it.y * MAP_W + it.x, h = WORLD.height[i] || 1, s = cliffSprite(h, Math.floor(hash2(it.x, it.y, 3) * 4), h >= 4 ? 1 : 0);
+        const i = it.y * MAP_W + it.x, h = WORLD.height[i] || 1, s = cliffSprite(h, Math.floor(hash2(it.x, it.y, 3) * 4), h === 4 ? 1 : 0);
         blitV(s, it.sx, it.sy, it.d);
         if (it.o === O.WATERFALL) { drawWaterfallLive(ctx, it.sx, it.sy, CLIFF_H[h], now); if (Math.random() < 0.5) spawnPart('mist', it.sx - ox + (Math.random() - 0.5) * 50, it.sy - oy + 18); }
         return;
@@ -804,6 +865,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
       drawHeroEntity(ctx, e, it.sx, it.sy, now);
       heroExtras(e, it.sx, it.sy);
       if (e.carrying && G.players[e.carrying]) drawCarried(ctx, G.players[e.carrying], it.sx, it.sy);
+      if (e.lifted) { const os = objSprite(e.lifted); if (os) pblit(ctx, os, it.sx, it.sy - 58); }
       G.lights.push({ x: it.sx, y: it.sy - 30, r: 34, c: '255,240,220', a: 0.4 });
       labels.push({ sx: it.sx, sy: it.sy - (e.downed && !e.carriedBy ? 20 : (R3.ok ? 58 : 80)), name: e.name, color: e.id === G.myId ? '#f4dc8a' : '#b8d0f0', hp: e.hp / e.maxHp, mp: e.id === G.myId ? e.mp / e.maxMp : null, e, player: true });
     }

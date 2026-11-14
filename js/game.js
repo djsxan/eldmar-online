@@ -5,7 +5,7 @@
 // ============================================================
 const G = {
   myId: null, me: null, players: {}, monsters: {}, npcs: {},
-  nums: [], effects: [], parts: [], lights: [], timers: [], shake: 0,
+  nums: [], effects: [], parts: [], lights: [], timers: [], shake: 0, throws: [], teles: [], fires: [], breaths: [], blood: [],
   target: null, hover: null, path: null, pathGoal: null, keys: new Set(), cdEnd: [0, 0, 0, 0],
   started: false, view: { ox: 0, oy: 0 }, dialog: null, pendingNpc: null, reviving: null, zoomUser: false,
 };
@@ -52,6 +52,7 @@ function clientOnServer(m) {
     case 'welcome':
       G.myId = m.you;
       for (const p of m.players) G.players[p.id] = mkEnt({ ...p });
+      for (const i in m.objs || {}) WORLD.obj[+i] = m.objs[i];
       G.me = G.players[G.myId];
       Object.assign(G.me, { x: m.x, y: m.y, rx: m.x, ry: m.y, z: 0, visible: true, mp: 0, maxMp: 1, hp: 1, maxHp: 1, quests: {}, qdone: {}, pots: { hp: 0, mp: 0 }, inv: {}, gold: 0, buffs: {}, lastTile: tileAt(m.x, m.y), sendT: 0 });
       startGame();
@@ -63,6 +64,7 @@ function clientOnServer(m) {
     case 'pstat': {
       const e = G.me; if (!e || m.id !== G.myId) break;
       const oldLvl = e.lvl;
+      if (m.slow) G.slowUntil = now + m.slow;
       Object.assign(e, { hp: m.hp, maxHp: m.maxHp, mp: m.mp, maxMp: m.maxMp, lvl: m.lvl, xp: m.xp, gold: m.gold, pots: m.pots, inv: m.inv || {}, combat: m.combat, quests: m.quests, qdone: m.qdone });
       setBuffs(e, m.buffs);
       G.cdEnd = m.cds.map(r => now + r);
@@ -79,6 +81,7 @@ function clientOnServer(m) {
         const pos = e ? tileW(e.rx, e.ry, (e.z || 0) * FLOOR_PX) : tileW(m.x, m.y);
         if (e) {
           e.hitAt = t;
+          if (!(m.k === 'm' && NO_BLOOD.has(e.type)) && Math.random() < 0.4) addBlood(e.rx + (Math.random() - 0.5) * 0.5, e.ry + (Math.random() - 0.5) * 0.5, e.z || 0, 0.28 + Math.random() * 0.2, 45000);
           // empurrão na direção oposta a quem bateu (em coordenadas de tela)
           const vx = (m.x - (m.ax ?? m.x)) - (m.y - (m.ay ?? m.y)), vy = ((m.x - (m.ax ?? m.x)) + (m.y - (m.ay ?? m.y))) * 0.5, vl = Math.hypot(vx, vy) || 1;
           e.knock = { t0: t, dx: vx / vl, dy: vy / vl, s: m.crit || m.hv ? 1.8 : 1 };
@@ -131,6 +134,17 @@ function clientOnServer(m) {
     case 'carry': { const c = G.players[m.by]; if (c) c.carrying = m.id || null; break; }
     case 'respawned': showBanner('Capela da Aurora', 'Você despertou nas ruínas e perdeu metade da experiência do nível.', true); break;
     case 'chestopen': showBanner('Baú do chefe', '+' + m.gold + ' de ouro, 2 poções e ' + m.items.filter(k => LOOT[k]).map(k => LOOT[k].name).join(', ')); break;
+    case 'shake': G.shake = Math.max(G.shake, m.s || 6); break;
+    case 'tele': G.teles.push({ ...m, t0: now }); break;
+    case 'fires': for (const [x, y, r, ms] of m.l) G.fires.push({ x, y, r, z: m.z || 0, t0: now + (m.ms || 0), until: now + ms }); G.breaths.push({ t0: now, ms: 650 }); break;
+    case 'fling': {
+      const e = G.players[m.id]; if (!e) break;
+      e.fling = { t0: now, ms: m.ms, fx: m.fx, fy: m.fy, fz: m.fz, tx: m.tx, ty: m.ty, tz: m.tz, spin: Math.random() < 0.5 ? -1 : 1 };
+      if (m.id === G.myId) { G.path = null; G.pathGoal = null; G.climbing = null; G.shake = Math.max(G.shake, 8); flashDamage(); }
+      break;
+    }
+    case 'obj': WORLD.obj[m.i] = m.o; break;
+    case 'throwfx': G.throws.push({ ...m, t0: now }); break;
     case 'loot': { const it = LOOT[m.k]; if (it) { showToast('+ ' + it.name); G.newLoot = m.k; } break; }
     case 'qprog': { const q = QUESTS.find(x => x.id === m.id); if (q) showToast(`${q.name}: ${m.n}/${q.count}`); break; }
     case 'qdone': { const q = QUESTS.find(x => x.id === m.id); if (q) showBanner('Contrato cumprido', `${q.name} — +${q.xp} xp, +${q.gold} ouro`); break; }
@@ -140,12 +154,12 @@ function clientOnServer(m) {
 function applySnapshot(m, now) {
   G.chests = (m.ch || []).map(c => ({ id: c[0], x: c[1] / 100, y: c[2] / 100, open: !!c[3], mine: !!c[4] }));
   const seenP = new Set();
-  for (let [id, x100, y100, z, dir, fl, hpPct, carrying] of m.p) {
+  for (let [id, x100, y100, z, dir, fl, hpPct, carrying, lifted] of m.p) {
     seenP.add(id);
     let e = G.players[id];
     if (!e) e = G.players[id] = mkEnt({ id, name: '...', cls: 'knight', skin: 'iron', color: '#888888', lvl: 1 });
     const x = x100 / 100, y = y100 / 100;
-    e.flags = fl; e.visible = true; e.carrying = carrying || null; e.carriedBy = !!(fl & 4); z = z / 100;
+    e.flags = fl; e.visible = true; e.carrying = carrying || null; e.lifted = lifted || 0; e.carriedBy = !!(fl & 4); z = z / 100;
     const wasDown = e.downed; e.downed = !!(fl & 2);
     if (e.downed && !wasDown && !e.downUntil) e.downUntil = now + DOWNED_MS;
     if (id === G.myId) {
@@ -159,12 +173,13 @@ function applySnapshot(m, now) {
   }
   for (const id in G.players) if (!seenP.has(id) && id !== G.myId) G.players[id].visible = false;
   const seenM = new Set();
-  for (const [id, ti, x100, y100, hp, flags, face] of m.m) {
+  for (const [id, ti, x100, y100, hp, flags, face, dg] of m.m) {
     seenM.add(id);
     const x = x100 / 100, y = y100 / 100;
     let e = G.monsters[id];
     if (!e) { const type = MON_TYPES[ti]; e = G.monsters[id] = mkEnt({ id, type, x, y, rx: x, ry: y, maxHp: MON[type].hp, visible: true }); }
-    e.hp = hp; e.flags = flags; e.face = face;
+    e.hp = hp; e.flags = flags; e.face = face; if (dg != null && dg >= 0) e.dg = dg;
+    { const t = Math.round(y) * MAP_W + Math.round(x); e.z = WORLD.ground[t] === T.CLIFF && WORLD.fl1[t] > 0 ? 1 : 0; }
     e.buf.push({ t: now, x, y });
     if (e.buf.length > 6) e.buf.shift();
   }
@@ -215,6 +230,7 @@ function updateLocal(now, dt) {
   const me = G.me;
   if (!me || me.carriedBy) { if (me) { me.walking = false; } return; }
   if (G.climbing) { stepClimb(now); return; }
+  if (me.fling) { stepFling(me, now); return; }
   if (now < (G.floorWait || 0)) { me.walking = false; return; }
   if (document.activeElement && document.activeElement.tagName === 'INPUT') G.keys.clear();
   let v = myInput();
@@ -251,11 +267,12 @@ function updateLocal(now, dt) {
   if (v) {
     let sp = PLAYER_SPEED;
     if (me.buffs && me.buffs.agile > now) sp *= 1.6;
-    if (running) sp *= RUN_MUL;
+    if (running) sp *= RUN_MUL * (healthState(me) === 1 ? 0.75 : 1);   // cansado corre pesado e mais devagar
     if (me.crouch) sp *= CROUCH_MUL;
     if (kneel) sp *= KNEEL_MUL;
+    if (now < (G.slowUntil || 0)) sp *= 0.5;   // rugido do dragão
     if (G.slide) { const k = (now - G.slide.t0) / SLIDE_MS; sp = PLAYER_SPEED * RUN_MUL * 1.5 * (1 - k * 0.65); if (Math.random() < 0.5) { const w = tileW(me.x, me.y, 0); spawnPart('dust', w.x, w.y); } }
-    if (me.carrying) sp *= 0.75;
+    if (me.carrying || me.lifted) sp *= 0.75;
     if (me.downed) sp *= 0.22;
     if (WORLD.ground[tileAt(me.x, me.y)] === T.SHALLOW) sp *= 0.65;
     if (stairH(me.x, me.y) >= 0) sp *= 0.8;
@@ -472,18 +489,6 @@ function updateInv() {
 for (const b of document.querySelectorAll('.gp-x')) b.addEventListener('click', () => togglePanel(b.dataset.close, false));
 $('btn-inv').addEventListener('click', () => togglePanel('inv'));
 $('btn-journal').addEventListener('click', () => togglePanel('journal'));
-// orbes de vida/mana + barras de estamina e experiência (centro inferior)
-function updateOrbs() {
-  const me = G.me; if (!me) return;
-  $('orbs').classList.toggle('hidden', !SET.orbs);
-  if (!SET.orbs) return;
-  const f = (v, m) => (100 * clamp(v / Math.max(1, m), 0, 1)).toFixed(1) + '%';
-  $('orb-hp').style.height = f(me.hp, me.maxHp); $('orb-mp').style.height = f(me.mp, me.maxMp);
-  $('orb-hp-t').textContent = me.hp + ' / ' + me.maxHp; $('orb-mp-t').textContent = me.mp + ' / ' + me.maxMp;
-  $('orb-st').style.width = f(G.stam ?? STAM_MAX, STAM_MAX); $('orb-st').parentNode.classList.toggle('tired', !!G.tired);
-  $('orb-xp').style.width = f(me.xp, need(me.lvl)); $('orb-lvl').textContent = me.lvl;
-}
-$('pz-orbs').addEventListener('change', e => { SET.orbs = e.target.checked; saveSettings(); updateOrbs(); });
 // baú do chefe: abre ao chegar perto (ou F)
 function openNearChest(r) {
   const me = G.me; if (!me || !G.chests) return false;
@@ -722,7 +727,7 @@ window.addEventListener('keydown', e => {
   if (k === 'r' && G.me.downed) { Net.send({ t: 'giveup' }); return; }
   if (k === 'f' && !e.repeat && openNearChest(1.8)) return;
   if (k === 'f' && !e.repeat) { const d = nearestDowned(); if (d) { G.reviving = d.id; Net.send({ t: 'revive', id: d.id, on: true }); } return; }
-  if (k === 'g' && !e.repeat) { if (G.me.carrying) Net.send({ t: 'carry' }); else { const d = nearestDowned(); if (d) Net.send({ t: 'carry', id: d.id }); } return; }
+  if (k === 'g' && !e.repeat) { liftOrThrow(); return; }
   if (k === 'x') { attackNearest(); return; }
   if (k === 'v' && !e.repeat) { if (G.me.sit) standUp(); else if (!G.me.walking) sitDown(null); return; }
   if (k === 'i' && !e.repeat) { togglePanel('inv'); return; }
@@ -759,7 +764,8 @@ function frame() {
   let cam = lobbyCam;
   if (G.started) {
     updateLocal(now, dt);
-    for (const id in G.players) { const e = G.players[id]; if (id !== G.myId) interp(e, now); updateIdle(e, now); }
+    for (const id in G.players) { const e = G.players[id]; if (id !== G.myId) { if (e.fling) stepFling(e, now); else interp(e, now); } updateIdle(e, now); bleed(e, now); }
+    for (const id in G.monsters) { const q = G.monsters[id]; if (q.dieAt && !q._pool && now > q.dieAt && !NO_BLOOD.has(q.type)) { q._pool = 1; addBlood(q.rx, q.ry, q.z || 0, MON[q.type].big ? 1.3 : 0.8, 60000); } }
     for (const id in G.monsters) { const m = G.monsters[id]; interp(m, now); if (m.dieAt && now > m.dieAt + 650) delete G.monsters[id]; }
     for (const id in G.npcs) updateIdle(G.npcs[id], now);
     cam = { x: G.me.rx, y: G.me.ry, z: G.me.z };
@@ -781,9 +787,9 @@ function frame() {
       // sem minimapa: ao entrar numa região nova, aparece o nome dela
       const zi = zoneAt(G.me.x, G.me.y);
       if (G.zoneShown == null) G.zoneShown = zi;
-      else if (zi !== G.zoneShown) { G.zoneShown = zi; const z = ZONES[zi]; showBanner(z.name, z.stars ? '★'.repeat(z.stars) + '☆'.repeat(4 - z.stars) : 'Zona protegida', z.stars >= 3); }
+      else if (zi !== G.zoneShown) G.zoneShown = zi;   // sem nomes de lugares na tela
       updateHealthFx();
-      updateOrbs(); checkBastion(); openNearChest(1.1);
+      openNearChest(1.1);
       updateTargetFrame();
     }
     if (now - lastHud > 1000) { lastHud = now; updateHud(); }
@@ -844,7 +850,7 @@ function startGame() {
   if (matchMedia('(pointer: coarse)').matches) document.body.classList.add('touch');
   if (!$('btn-crouch')) { const b = document.createElement('button'); b.id = 'btn-crouch'; b.textContent = '⤓'; b.title = 'Agachar'; document.body.appendChild(b); b.addEventListener('click', () => { G.crouchToggle = !G.crouchToggle; b.classList.toggle('on', G.crouchToggle); }); }
   addChat('', `Bem-vindo a World of Sxan, ${G.me.name}. Fale com os moradores clicando neles. Enter abre o chat.`);
-  showBanner('Cidadela de Sxan', 'Zona protegida — os monstros não atravessam o fosso.');
+
 }
 
 // tooltips
@@ -1091,12 +1097,11 @@ function drawWorldMap() {
   x.globalCompositeOperation = 'multiply'; x.fillStyle = 'rgba(230,205,160,0.55)'; x.fillRect(0, 0, size, size); x.globalCompositeOperation = 'source-over';
   const seen = (wx, wy) => G.fog && G.fog[Math.round(wy) * MAP_W + Math.round(wx)];
   x.textAlign = 'center'; x.textBaseline = 'middle';
-  const label = (t, wx, wy, sz, col) => { const [px, py] = P(wx, wy); x.font = '700 ' + sz + 'px "Cinzel", serif'; x.lineWidth = 3; x.strokeStyle = 'rgba(240,226,190,0.85)'; x.strokeText(t, px, py); x.fillStyle = col; x.fillText(t, px, py); };
-  for (const L of ZONE_LABELS) if (seen(L.x, L.y)) label(ZONES[L.z].name + (ZONES[L.z].stars ? ' ' + '★'.repeat(ZONES[L.z].stars) : ''), L.x, L.y, 13, '#4a2e14');
-  if (seen(C, C)) label('Sxan', C, C + 2, 20, '#5a1a10');
-  // marcos: lojas e NPCs já vistos
-  const icons = { priest: '✚', merchant: '⚖', innkeeper: '🍺', smith: '⚒', captain: '!' };
-  for (const n of NPCS) if (icons[n.kind] && seen(n.x, n.y)) { const [px, py] = P(n.x, n.y); x.font = '700 12px serif'; x.fillStyle = '#2a1a0a'; x.fillText(icons[n.kind], px, py); }
+  // sem nomes: pontos de interesse já descobertos ganham um "X" (bastiões, covil do dragão, lojas e serviços, portões)
+  const mark = (wx, wy, big) => { const [px, py] = P(wx, wy), r = big ? 7 : 5; x.lineCap = 'round'; for (const [w, c] of [[big ? 6 : 5, 'rgba(240,226,190,0.9)'], [big ? 3 : 2.4, big ? '#8a1a10' : '#4a2e14']]) { x.lineWidth = w; x.strokeStyle = c; x.beginPath(); x.moveTo(px - r, py - r); x.lineTo(px + r, py + r); x.moveTo(px + r, py - r); x.lineTo(px - r, py + r); x.stroke(); } };
+  for (const B of BASTIONS) if (seen(B.x, B.y)) mark(B.x, B.y, true);
+  for (const n of NPCS) if (n.kind !== 'guard' && seen(n.x, n.y)) mark(n.x, n.y, false);
+  for (const gt of WORLD.gates) { const gx = (gt.x0 + gt.x1) / 2, gy = gt.y; if (gt.kind !== 'keep' && seen(gx, gy)) mark(gx, gy, false); }
   // jogadores
   for (const id in G.players) {
     const e = G.players[id]; if (!e.visible && id !== G.myId) continue;
@@ -1127,14 +1132,13 @@ function applySettings() {
   for (const b of document.querySelectorAll('#pz-quality button')) b.classList.toggle('on', b.dataset.q === SET.quality);
   $('pz-bright').value = SET.bright; $('pz-bright-v').textContent = Math.round(SET.bright * 100) + '%';
   $('pz-zoom').value = SET.zoom; $('pz-zoom-v').textContent = Math.round(SET.zoom * 100) + '%';
-  $('pz-orbs').checked = !!SET.orbs;
   document.documentElement.style.setProperty('--pad', SET.pad); $('pz-pad').value = SET.pad; $('pz-pad-v').textContent = Math.round(SET.pad * 100) + '%';
 }
 $('pz-pad').addEventListener('input', e => { SET.pad = +e.target.value; saveSettings(); applySettings(); });
 function togglePause(force) {
   G.paused = force != null ? force : !G.paused;
   $('pause').classList.toggle('hidden', !G.paused);
-  if (G.paused) { applySettings(); G.keys.clear(); updateHud(); const z = ZONES[zoneAt(G.me.x, G.me.y)]; $('zone-name').textContent = z.name + (G.me.fl > 0 ? ' · andar ' + (G.me.fl + 1) : G.me.z >= 0.5 ? ' · Muralhas' : ''); $('zone-stars').textContent = z.stars ? '★'.repeat(z.stars) + '☆'.repeat(4 - z.stars) : 'Zona protegida'; }
+  if (G.paused) { applySettings(); G.keys.clear(); updateHud(); }
 }
 $('btn-menu').addEventListener('click', () => togglePause());
 $('pz-resume').addEventListener('click', () => togglePause(false));
@@ -1150,6 +1154,41 @@ $('pz-full').addEventListener('click', () => { if (document.fullscreenElement) d
 $('pz-quit').addEventListener('click', () => { try { saveChar(); saveFog && G.fog && saveFog(); } catch (e) { } location.reload(); });
 applySettings();
 
+// ---------- pegar e arremessar objetos (G) ----------
+function liftOrThrow() {
+  const me = G.me; if (!me || me.downed) return;
+  if (me.lifted) {
+    const t = G.target && G.monsters[G.target];
+    let tx, ty;
+    if (t && dist(t.rx, t.ry, me.x, me.y) < 8) { tx = t.rx; ty = t.ry; }
+    else { const th = (me.dir || 0) * Math.PI / 4, sx = Math.sin(th), sy = Math.cos(th), v = [(sx + 2 * sy) / 2, (2 * sy - sx) / 2], l = Math.hypot(v[0], v[1]) || 1; tx = me.x + v[0] / l * 5; ty = me.y + v[1] / l * 5; }
+    me.dir = dirFromVec(tx - me.x, ty - me.y, me.dir); me.anim = { a: 'swing', t0: performance.now() };
+    Net.send({ t: 'throw', tx, ty }); return;
+  }
+  if (me.carrying) { Net.send({ t: 'carry' }); return; }
+  const d = nearestDowned(); if (d) { Net.send({ t: 'carry', id: d.id }); return; }
+  let best = -1, bd = 1.6;
+  for (let y = Math.round(me.y) - 2; y <= Math.round(me.y) + 2; y++) for (let x = Math.round(me.x) - 2; x <= Math.round(me.x) + 2; x++) { if (!inBounds(x, y)) continue; const i = y * MAP_W + x; if (!THROWABLE[WORLD.obj[i]]) continue; const dd = dist(me.x, me.y, x, y); if (dd < bd) { bd = dd; best = i; } }
+  if (best >= 0) Net.send({ t: 'lift', i: best }); else showToast('Nada para pegar aqui.');
+}
+// ---------- sangue no chão: respingos, pingos de quem sangra e rastro de quem se arrasta caído (5 min) ----------
+const NO_BLOOD = new Set(['skeleton', 'cryptlord', 'slime', 'elderslime', 'wisp']);
+function addBlood(x, y, z, r, ms) { G.blood.push({ x, y, z, r, t0: performance.now(), until: performance.now() + ms, seed: Math.random() * 1000 }); if (G.blood.length > 500) G.blood.shift(); }
+function bleed(e, now) {
+  if (!e.visible) return;
+  const hs = e.downed ? 4 : healthState(e); if (hs < 2) { e._bx = e.rx; e._by = e.ry; return; }
+  if (e._bx == null) { e._bx = e.rx; e._by = e.ry; }
+  const d = Math.hypot(e.rx - e._bx, e.ry - e._by), step = hs === 4 ? 0.3 : hs === 3 ? 0.6 : 0.9;
+  if (d >= step) { e._bx = e.rx; e._by = e.ry; addBlood(e.rx, e.ry, e.z || 0, hs === 4 ? 0.34 : 0.16 + Math.random() * 0.1, hs === 4 ? 300000 : 90000); }
+}
+// arremessado pela cauda do dragão: voa em arco girando e fica caído um instante
+function stepFling(e, now) {
+  const f = e.fling, k = Math.min(1, (now - f.t0) / f.ms);
+  e.x = e.rx = f.fx + (f.tx - f.fx) * k; e.y = e.ry = f.fy + (f.ty - f.fy) * k;
+  e.z = k < 1 ? f.fz + (f.tz - f.fz) * k : f.tz; e.walking = false;
+  if (now - f.t0 > f.ms + 900) { e.fling = null; if (e === G.me) { me_sync(); } }
+}
+function me_sync() { const me = G.me; me.sendT = 0; Net.send({ t: 'mv', x: Math.round(me.x * 100) / 100, y: Math.round(me.y * 100) / 100, z: Math.round(me.z * 100) / 100, d: me.dir, w: 0, r: 0 }, true); }
 // subir/descer andando pelos degraus: segue os pontos (x, y, altura em andares) e no fim troca de andar com um esmaecimento cruzado
 function startClimb(now, bi, from, to, pts, dest, pre = false) {
   let len = 0; for (let k = 1; k < pts.length; k++) len += Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);

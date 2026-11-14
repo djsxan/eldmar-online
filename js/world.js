@@ -17,6 +17,8 @@ const O = {
 const BLOCKING = new Set([O.TREE, O.PINE, O.ROCK, O.FOUNTAIN, O.STUMP, O.DEADTREE, O.GRAVE, O.TENT,
   O.CAMPFIRE, O.FENCE, O.BARREL, O.CRATE, O.HAY, O.WELL, O.STALL, O.LOG, O.SPIKES,
   O.WALL, O.TOWER, O.PART, O.RUBBLEBIG, O.CAVE, O.STATUE, O.BRAZIER, O.DUMMY, O.WATERFALL, O.LOWWALL, O.ANVIL, O.WEAPONRACK, O.CART, O.TABLE]);
+// objetos soltos que dá para pegar e arremessar (dano base)
+const THROWABLE = { [O.BARREL]: 18, [O.CRATE]: 20, [O.ROCK]: 26 };
 // objetos rasteiros (vão direto para o chão pré-desenhado)
 const FLAT = new Set([O.FLOWER, O.LILY, O.FLOWERBED, O.BONES, O.RUBBLE, O.IVY]);
 const DIRS8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
@@ -273,6 +275,7 @@ const BASTIONS = TEST3D ? [] : [
   { id: 'crypt', name: 'Cripta das Colinas', kind: 'crypt', ...bpos(Math.PI / 2, 92), r: 9, mons: { skeleton: 9 }, boss: 'cryptlord', patrol: ['skeleton', 'skeleton'] },
   { id: 'fort', name: 'Fortim dos Desertores', kind: 'fort', ...bpos(-Math.PI / 2 + 0.6, 90), r: 9, mons: { bandit: 6, deserter: 4 }, boss: 'deserterchief', patrol: ['bandit', 'bandit', 'deserter'] },
   { id: 'pools', name: 'Poças do Pântano', kind: 'pools', ...bpos(0, 92), r: 9, mons: { slime: 7 }, boss: 'elderslime', night: { wisp: 4 } },
+  { id: 'dragon', name: 'Covil do Dragão', kind: 'dragon', ...bpos(Math.PI / 4, 110), r: 9, mons: {}, boss: 'dragon', respawn: 1800000 },
   { id: 'cave', name: 'Caverna do Troll', kind: 'cave', x: CAVE_POS.x + Math.round(CAVE_POS.ux * 6), y: CAVE_POS.y + Math.round(CAVE_POS.uy * 6), r: 6, mons: {}, boss: 'troll' },
 ];
 const RIVER_PTS = [[70, 74], [76, 100], [72, 128], [80, 172], [112, 198], [152, 214], [192, 234], [234, 254]];
@@ -476,6 +479,22 @@ function generateWorld() {
         else if (d <= pr + 1.3 && obj[i] === O.NONE && H(px + x, py + y, 910) < 0.4) obj[i] = O.REEDS;
       }
       for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2 + 0.3; put(Math.round(Math.cos(a) * 7.5), Math.round(Math.sin(a) * 7.5), H(k, 5, 911) < 0.6 ? O.DEADTREE : O.MUSHROOM); }
+    } else if (B.kind === 'dragon') {
+      // mesa de rocha (anda-se por cima, no nível 1) + rampa de 5 degraus virada para a cidade + ossos em volta
+      const PR = 5.5;
+      for (let y = -Rr; y <= Rr; y++) for (let x = -Rr; x <= Rr; x++) {
+        const X = B.x + x, Y = B.y + y, i = idx(X, Y), d = Math.hypot(x, y) + (hash2(X, Y, 913) - 0.5) * 0.8;
+        if (d <= PR) { ground[i] = T.CLIFF; height[i] = 5; fl1[i] = 1; obj[i] = O.NONE; }
+        else if (d < Rr && obj[i] === O.NONE) { const h = hash2(X, Y, 914); obj[i] = h < 0.1 ? O.BONES : h < 0.16 ? O.ROCK : h < 0.2 ? O.RUBBLE : O.NONE; }
+      }
+      const sx = Math.abs(Math.cos(toC)) >= Math.abs(Math.sin(toC)) ? Math.sign(Math.cos(toC)) : 0, sy = sx ? 0 : Math.sign(Math.sin(toC));
+      const sdir = sx > 0 ? 2 : sx < 0 ? 1 : sy > 0 ? 4 : 3;   // a rampa sobe em direção à mesa
+      for (let j = 0; j < STAIR_N; j++) {
+        const X = B.x + sx * (6 + j), Y = B.y + sy * (6 + j), i = idx(X, Y);
+        ground[i] = T.FLOORSTONE; height[i] = 0; obj[i] = O.STAIRS; stair[i] = sdir; stairK[i] = STAIR_N - 1 - j; fl1[i] = 3;
+        for (const q of [-1, 1]) { const k2 = idx(X + sy * q, Y + sx * q); if (obj[k2] !== O.STAIRS) obj[k2] = O.NONE; }
+      }
+      for (let q = -1; q <= 1; q++) { const X = B.x + sx * (6 + STAIR_N) + sy * q, Y = B.y + sy * (6 + STAIR_N) + sx * q, i = idx(X, Y); if (ground[i] !== T.WATER) { ground[i] = T.STONE; obj[i] = O.NONE; } }
     } else if (B.kind === 'cave') {
       { const i = idx(CAVE_POS.x, CAVE_POS.y); ground[i] = T.STONE; height[i] = 0; obj[i] = O.CAVE; }
       for (let y = -Rr; y <= Rr; y++) for (let x = -Rr; x <= Rr; x++) { const d = Math.hypot(x, y), i = idx(B.x + x, B.y + y); if (d < 2 || d > Rr || obj[i] !== O.NONE || ground[i] === T.CLIFF) continue; const h = H(x, y, 912); obj[i] = h < 0.12 ? O.BONES : h < 0.17 ? O.ROCK : h < 0.2 ? O.RUBBLE : O.NONE; }
@@ -601,9 +620,13 @@ function generateWorld() {
   for (const b of BUILDINGS) reserve(b.x - 1, b.y - 1, b.x + b.w, b.y + b.h);
   const houses = [];
   const roadDist = (px, py) => { let best = 99; for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) { const xx = Math.round(px) + dx, yy = Math.round(py) + dy; if (inb(xx, yy) && rdir[idx(xx, yy)] && bld[idx(xx, yy)] < 0) best = Math.min(best, Math.abs(dx) + Math.abs(dy)); } return best; };
-  for (let k = 0; k < 12000 && houses.length < 12; k++) {
-    const x = x0 + 3 + Math.floor(R(k, 3, 700) * (x1 - x0 - 10)), y = y0 + 3 + Math.floor(R(k, 4, 700) * (y1 - y0 - 10));
-    if (x + 6 > KEEP.x0 - 15 && x < KEEP.x1 + 15 && y + 6 > KEEP.y0 - 15 && y < KEEP.y1 + 15) continue;   // praça aberta em volta do castelo
+  // 1ª rodada: cidade toda (até 12 casas); 2ª rodada: até 3 casas extras no lado oeste (canto superior esquerdo da tela)
+  for (let k = 0, cap = 12; k < 16000; k++) {
+    if (k === 12000) cap = houses.length + 3;
+    if (houses.length >= cap) { if (k < 12000) { k = 11999; continue; } break; }
+    const west = k >= 12000;
+    const x = west ? x0 + 3 + Math.floor(R(k, 3, 700) * (C - 16 - x0)) : x0 + 3 + Math.floor(R(k, 3, 700) * (x1 - x0 - 10)), y = west ? C - 24 + Math.floor(R(k, 4, 700) * 30) : y0 + 3 + Math.floor(R(k, 4, 700) * (y1 - y0 - 10));
+    { const km = west ? 3 : 15; if (x + 6 > KEEP.x0 - km && x < KEEP.x1 + km && y + 6 > KEEP.y0 - km && y < KEEP.y1 + km) continue; }   // praça aberta em volta do castelo
     const nearKeep = x + 6 > KEEP.x0 - 19 && x < KEEP.x1 + 19 && y + 6 > KEEP.y0 - 19 && y < KEEP.y1 + 19, rr = R(k, 1, 700);
     const ai = nearKeep || rr < 0.55 ? Math.floor(R(k, 8, 700) * 4) : rr < 0.93 ? 4 + Math.floor(R(k, 8, 700) * 4) : 8 + Math.floor(R(k, 8, 700) * 2), T0 = HOUSE_TYPES[ai];
     let bestHb = null, bestD = 99;

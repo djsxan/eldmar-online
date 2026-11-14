@@ -6,7 +6,7 @@
 // ============================================================
 const FLOOR_H = 24;
 const FLOOR_PX = 176;                      // altura da muralha (≈ 9 m)
-const CLIFF_H = [0, 40, 68, 96, 124];       // alturas dos penhascos
+const CLIFF_H = [0, 40, 68, 96, 124, 176];   // 5 = mesa do dragão (mesma altura da muralha)       // alturas dos penhascos
 const TPAL = {                              // folhagem por clima
   0: ['#1f3a1a', '#2d5224', '#3e6a2e', '#55853a', '#79a650'],   // carvalho dos campos
   1: ['#22401f', '#30582a', '#447234', '#5e8e40', '#86b25a'],   // selvagem, mais vivo
