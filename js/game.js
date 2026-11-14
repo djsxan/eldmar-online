@@ -33,6 +33,7 @@ const IDLE_SETS = {
   fruit: ['look', 'wave', 'look', 'stretch'], executioner: ['look', 'polish', 'look', 'stretch'], priest: ['pray', 'read', 'look', 'pray'], merchant: ['look', 'wave', 'kick', 'look'], innkeeper: ['drink', 'look', 'wave', 'drink'], guard: ['salute', 'look', 'kick', 'look'], captain: ['look', 'salute', 'polish', 'look'],
 };
 function updateIdle(e, now) {
+  if (e.npDead || e.npDown) { e.idleAnim = null; return; }
   if (e.walking || (e.anim && now - e.anim.t0 < 700) || e.downed || (e.cast && e.cast.end > now)) { e.idleT = now; e.idleAnim = null; return; }
   if (e.idleAnim) { if (now - e.idleAnim.t0 > e.idleAnim.dur) { e.idleAnim = null; e.idleT = now; e.idleWait = 3500 + Math.random() * 6000; } return; }
   if (now - e.idleT > e.idleWait) {
@@ -140,7 +141,7 @@ function clientOnServer(m) {
     case 'carry': { const c = G.players[m.by]; if (c) c.carrying = m.id || null; break; }
     case 'respawned': showBanner('Capela da Aurora', 'Você despertou nas ruínas e perdeu metade da experiência do nível.', true); break;
     case 'chestopen': showBanner('Baú do chefe', '+' + m.gold + ' de ouro, 2 poções e ' + m.items.filter(k => LOOT[k]).map(k => LOOT[k].name).join(', ')); break;
-    case 'dev': if (m.ok) { G.dev = true; G.noclip = true; G.me.skin = 'weaver'; showBanner('O Tecelão desperta', 'F2 abre o painel do criador'); buildDevPanel(); } else showToast('Senha do criador incorreta.'); break;
+    case 'dev': if (m.ok && m.mode === 'normal') { G.devTools = true; showBanner('Modo criador', 'Vocação normal · F2 abre o painel'); buildDevPanel(); } else if (m.ok) { G.dev = true; G.noclip = true; G.me.skin = 'weaver'; showBanner('O Tecelão desperta', 'F2 abre o painel do criador'); buildDevPanel(); } else showToast('Senha do criador incorreta.'); break;
     case 'shake': G.shake = Math.max(G.shake, m.s || 6); break;
     case 'tele': G.teles.push({ ...m, t0: now }); break;
     case 'fires': for (const [x, y, r, ms] of m.l) { const t = Math.round(y) * MAP_W + Math.round(x); G.fires.push({ x, y, r, z: m.z != null ? m.z : (WORLD.ground[t] === T.CLIFF && WORLD.fl1[t] > 0 ? 1 : 0), t0: now + (m.ms || 0), until: now + ms }); } if (!m.nb) G.breaths.push({ t0: now, ms: 650 }); break;
@@ -660,12 +661,13 @@ const NPC_DIALOG = {
 function npcUnderMouse(mx, my) {
   const S = SCALE;
   for (const n of NPCS) {
-    const e = G.npcs[n.id], p = iso(e.rx, e.ry), sx = (p.sx + G.view.ox) * S, sy = (p.sy + G.view.oy) * S;
+    const e = G.npcs[n.id]; if (e.npDead || e.npDown || e.onBackBy) continue; const p = iso(e.rx, e.ry), sx = (p.sx + G.view.ox) * S, sy = (p.sy + G.view.oy) * S;
     if (mx > sx - 16 * S && mx < sx + 16 * S && my > sy - 72 * S && my < sy + 6 * S) return n;
   }
   return null;
 }
 function openDialog(id) {
+  { const e = G.npcs[id]; if (e && (e.npDead || e.npDown)) { showToast(e.npDead ? e.name + ' está morto.' : e.name + ' está caído.'); return; } }
   const n = NPCS.find(q => q.id === id), def = NPC_DIALOG[n.id === 'captain' ? 'captain' : n.kind];
   G.dialog = { id };
   $('dlg-name').textContent = n.name;
@@ -767,7 +769,7 @@ function standUp() {
 }
 canvas.addEventListener('mousedown', e => {
   if (!G.started) return;
-  if (inCombatZone() && !(G.dev && G.devPlace) && !interactHere(e)) {
+  if (inCombatZone() && !((G.dev || G.devTools) && G.devPlace) && !interactHere(e)) {
     const me = G.me; $('chat-input').blur();
     if (e.button === 3 || e.button === 4) { e.preventDefault(); strike('under'); return; }
     if (e.button === 2) { G.parrying = true; Net.send({ t: 'parry', on: 1, a: me.fa ?? 0 }); return; }
@@ -784,7 +786,7 @@ canvas.addEventListener('mousedown', e => {
       strike(dx < -4 ? 'slashL' : dx > 4 ? 'slashR' : e.clientX < mx ? 'slashL' : 'slashR'); return;
     }
   }
-  if (G.dev && G.devPlace) { if (e.button === 2) { G.devPlace = null; return; } const w = screenToWorld(e.clientX, e.clientY); Net.send({ t: 'dev', a: 'summon', kind: G.devPlace.kind, v: G.devPlace.v, x: w.x, y: w.y }); return; }
+  if ((G.dev || G.devTools) && G.devPlace) { if (e.button === 2) { G.devPlace = null; return; } const w = screenToWorld(e.clientX, e.clientY); Net.send({ t: 'dev', a: 'summon', kind: G.devPlace.kind, v: G.devPlace.v, x: w.x, y: w.y }); return; }
   $('chat-input').blur();
   const me = G.me;
   const mon = monsterUnderMouse(e.clientX, e.clientY);
@@ -868,8 +870,9 @@ window.addEventListener('keydown', e => {
   if (k === 'r' && G.me.downed) { if (!PERMADEATH || window.confirm('Desistir é MORTE PERMANENTE: seu personagem será apagado. Tem certeza?')) Net.send({ t: 'giveup' }); return; }
   if (k === 'f' && !e.repeat && openNearChest(1.8)) return;
   if (k === 'f' && !e.repeat && G.me && (G.me.carrying || G.me.dragMode === 'arms' || G.me.dragMode === 'foot') && STAGE.x >= 0 && dist(G.me.x, G.me.y, STAGE.x, STAGE.y) < 3.4) { Net.send({ t: 'exec' }); return; }
-  if (k === 'f' && !e.repeat && typeof grabKeyDown === 'function' && !nearCorpse() && grabKeyDown()) return;   // segurar F: menu radial (puxar / carregar / agarrar)
+  if (k === 'h' && !e.repeat && typeof grabKeyDown === 'function') { grabKeyDown(); return; }   // segurar H: menu radial (puxar / carregar / agarrar / soltar)
   if (k === 'f' && !e.repeat && !nearestDowned()) { const c = nearCorpse(); if (c) { G.loot = { id: c.id, t0: performance.now() }; G.keys.add('f'); return; } }
+  if (k === 'f' && !e.repeat && typeof nearStove === 'function' && nearStove() && !nearestDowned()) { openCook(); return; }
   if (k === 'f' && !e.repeat && !nearestDowned() && !nearCorpse() && survivalAction()) return;
   if (k === 'f' && !e.repeat && (G.me.arw || []).length && !nearestDowned() && !nearCorpse()) { Net.send({ t: 'pullarrow' }); return; }   // arrancar flecha cravada
   if (k === 'f' && !e.repeat && inCombatZone() && !nearestDowned() && !nearCorpse() && !(G.chests || []).some(c => c.mine && !c.open && dist(c.x, c.y, G.me.x, G.me.y) < 1.8)) { Net.send({ t: 'kick', a: G.me.fa ?? 0 }); return; }
@@ -880,7 +883,7 @@ window.addEventListener('keydown', e => {
   if (k === 'v' && !e.repeat) { if (G.me.sleep) { getUp(); return; } if (G.me.sit) standUp(); else if (!G.me.walking) sitDown(null); return; }
   if (k === 'i' && !e.repeat) { togglePanel('inv'); return; }
   if (k === 'b' && !e.repeat) { Net.send({ t: 'band' }); return; }
-  if (k === 'f2' && G.dev) { e.preventDefault(); $('devpanel').classList.toggle('hidden'); return; }
+  if (k === 'f2' && (G.dev || G.devTools)) { e.preventDefault(); $('devpanel').classList.toggle('hidden'); return; }
   if (k === 'escape' && G.devPlace) { G.devPlace = null; showToast('Colocação cancelada.'); return; }
   if (k === 'j' && !e.repeat) { togglePanel('journal'); return; }
   if (k === 'k' && !e.repeat) { togglePanel('tree'); return; }
@@ -907,7 +910,7 @@ window.addEventListener('keyup', e => {
   const k = e.key.toLowerCase();
   G.keys.delete(k);
   if (k === 't' && G.wheel) closeEmoteWheel(true);
-  if (k === 'f' && typeof grabKeyUp === 'function' && grabKeyUp()) return;
+  if (k === 'h' && typeof grabKeyUp === 'function' && grabKeyUp()) return;
   if (k === 'f' && G.reviving && !G.reviveSticky) { Net.send({ t: 'revive', id: G.reviving, on: false }); G.reviving = null; }
 });
 window.addEventListener('blur', () => G.keys.clear());
@@ -924,7 +927,9 @@ function frame() {
   if (G.started) {
     updateLocal(now, dt); updateFalls(now); updateLooting(now); if (typeof updateLife === 'function') updateLife(now);
     bowUpdate(now);
+    if (G.me.dragMode === 'arms') { let t = null, bd = 2.2; for (const id in G.players) { const q = G.players[id]; if (q !== G.me && q.dragged && q.downed) { const d = dist(q.rx, q.ry, G.me.x, G.me.y); if (d < bd) { bd = d; t = q; } } } for (const id in G.npcs) { const q = G.npcs[id]; if (q.dragged) { const d = dist(q.rx, q.ry, G.me.x, G.me.y); if (d < bd) { bd = d; t = q; } } } if (t) G.me.dir = dirFromVec(t.rx - G.me.x, t.ry - G.me.y, G.me.dir); }   // anda de costas olhando o corpo
     if (typeof updateNpcMotion === 'function') updateNpcMotion(now, dt);
+    if (typeof npcReactions === 'function') npcReactions(now);
     if (G.reviveSticky && (G.me.walking || !G.reviving)) { if (G.reviving) Net.send({ t: 'revive', id: G.reviving, on: false }); G.reviving = null; G.reviveSticky = false; }
     if (G.shootHeld && inCombatZone() && now - (G.shootT || 0) > 220) { G.shootT = now; Net.send({ t: 'shoot', a: G.me.fa ?? 0, id: G.target || 0 }); }
     { // luta com o dragão: a câmera se afasta devagar para caber tudo na tela (só se o zoom não foi mudado à mão)
@@ -1048,7 +1053,7 @@ function lockLobby(b) { for (const el of document.querySelectorAll('#lobby butto
 function helloMsg() {
   const name = $('name').value.trim() || 'Aventureiro';
   const saved = loadChars()[charKey(name, chosenClass)] || {};
-  return { t: 'hello', dev: G.devPw || undefined, name, color: chosenColor, cls: chosenClass, skin: chosenSkin[chosenClass], lvl: saved.lvl, xp: saved.xp, gold: saved.gold, pots: saved.pots, food: saved.food, water: saved.water, infect: saved.infect, tree: saved.tree, use: saved.use, hasSkin: saved.hasSkin, body: saved.body, bleed: saved.bleed, lost: saved.lost, pro: saved.pro, inv: saved.inv, quests: saved.quests, qdone: saved.qdone };
+  return { t: 'hello', dev: G.devPw || undefined, devMode: G.devMode || 'weaver', name, color: chosenColor, cls: chosenClass, skin: chosenSkin[chosenClass], lvl: saved.lvl, xp: saved.xp, gold: saved.gold, pots: saved.pots, food: saved.food, water: saved.water, infect: saved.infect, tree: saved.tree, use: saved.use, hasSkin: saved.hasSkin, body: saved.body, bleed: saved.bleed, lost: saved.lost, pro: saved.pro, inv: saved.inv, quests: saved.quests, qdone: saved.qdone };
 }
 function showRoom(code) { $('room-code').textContent = Net.offline ? 'offline' : code; }
 function createRoom(code = 'S1', tries = 0) {
@@ -1331,7 +1336,7 @@ $('pz-quit').addEventListener('click', () => { try { saveChar(); saveFog && G.fo
 applySettings();
 
 // ---------- modo criador: O Tecelão ----------
-if (/[?&]criador\b/.test(location.search)) { const pw = window.prompt('Senha do Tecelão:'); if (pw) G.devPw = pw; }
+if (/[?&]criador\b/.test(location.search)) { const pw = window.prompt('Senha do Tecelão:'); if (pw) { G.devPw = pw; G.devMode = window.confirm('Como você quer entrar?\n\nOK = como O Tecelão (voa, invisível, não se fere)\nCancelar = com a vocação escolhida, normal (toma dano e luta), mas com o painel do criador no F2') ? 'weaver' : 'normal'; } }
 function buildDevPanel() {
   if ($('devpanel')) return;
   const d = document.createElement('div'); d.id = 'devpanel'; d.className = 'gpanel';
@@ -1360,7 +1365,7 @@ function buildDevPanel() {
   $('dv-pobj').onclick = () => { G.devPlace = { kind: 'obj', v: $('dv-obj').value }; showToast('Clique no chão para colocar.'); };
   // viajar clicando no mapa
   $('wm-canvas').addEventListener('click', e => {
-    if (!G.dev) return;
+    if (!G.dev && !G.devTools) return;
     const cv = $('wm-canvas'), r = cv.getBoundingClientRect(), size = r.width, s = size / (MAP_W * Math.SQRT2) * 1.02;
     const a = (e.clientX - r.left - size / 2) / Math.SQRT1_2, b2 = (e.clientY - r.top - size / 2) / Math.SQRT1_2;
     devTp((a + b2) / 2 / s + MAP_W / 2, (b2 - a) / 2 / s + MAP_H / 2); toggleWorldMap();
@@ -1389,7 +1394,7 @@ function updateNeeds() {
   if (me.sick > 0) out.push(['🤢', 'Enjoado', 1]);
   el.innerHTML = out.map(([i, t, s]) => '<span class="nd s' + s + '" title="' + t + '">' + i + '</span>').join('');
   document.body.classList.toggle('cold', (me.cold || 0) > 50); document.body.classList.toggle('fever', !!me.infect);
-  const pr = $('prompt'); if (!G.loot && !nearCorpse()) { const raw = me.inv && (me.inv.venison || me.inv.pork); const hv = nearHarvest(), exN = me.carrying && STAGE.x >= 0 && dist(me.x, me.y, STAGE.x, STAGE.y) < 3.4; const txt = exN ? 'F: entregar ao carrasco (execução)' : hv >= 0 ? (WORLD.obj[hv] === O.BERRY ? 'F: colher frutas' : 'F: colher erva') : raw && nearFireC() ? 'F: assar a carne' : nearWaterC() && (me.water ?? 100) < 98 ? 'F: beber' : ''; if (txt) { pr.textContent = txt; pr.classList.remove('hidden'); } else pr.classList.add('hidden'); }
+  const pr = $('prompt'); if (!G.loot && !nearCorpse()) { const raw = me.inv && (me.inv.venison || me.inv.pork); const stN = typeof nearStove === 'function' && nearStove(), hv = nearHarvest(), exN = me.carrying && STAGE.x >= 0 && dist(me.x, me.y, STAGE.x, STAGE.y) < 3.4; const txt = exN ? 'F: entregar ao carrasco (execução)' : stN ? 'F: cozinhar' : hv >= 0 ? (WORLD.obj[hv] === O.BERRY ? 'F: colher frutas' : 'F: colher erva') : raw && nearFireC() ? 'F: assar a carne' : nearWaterC() && (me.water ?? 100) < 98 ? 'F: beber' : ''; if (txt) { pr.textContent = txt; pr.classList.remove('hidden'); } else pr.classList.add('hidden'); }
   if ($('pz-use') && typeof useHtml === 'function') $('pz-use').innerHTML = useHtml();
   if ($('pz-surv')) $('pz-surv').innerHTML = '<div><b>Fome</b> ' + Math.round(100 - (me.food ?? 100)) + '% · <b>Sede</b> ' + Math.round(100 - (me.water ?? 100)) + '% · <b>Frio</b> ' + Math.round(me.cold || 0) + '%</div><div><b>Infecção</b> ' + ['nenhuma', 'febre', 'grave'][me.infect || 0] + (me.sick > 0 ? ' · <b>enjoado</b>' : '') + '</div><div class="gp-note">Coma e beba, fique perto do fogo à noite, trate feridas graves com bandagem. A morte é permanente.</div>';
 }
@@ -1537,10 +1542,10 @@ function prebakeCity(done) {
 // ============================================================
 //  RODA DE EMOJIS (segurar T, soltar sobre um): saudar, dançar, apontar
 // ============================================================
-const EMOTES = [{ k: 'salute', n: 'Saudar', i: '✋' }, { k: 'dance', n: 'Dançar', i: '💃' }, { k: 'point', n: 'Apontar', i: '👉' }];
+const EMOTES = [{ k: 'salute', n: 'Saudar', i: '✋' }, { k: 'dance', n: 'Dançar', i: '💃' }, { k: 'point', n: 'Apontar', i: '👉' }, { k: 'cheer', n: 'Ânimo', i: '🙌' }, { k: 'surprise', n: 'Surpresa', i: '😮' }, { k: 'adore', n: 'Adoração', i: '🙏' }, { k: 'anger', n: 'Raiva', i: '😠' }, { k: 'fear', n: 'Medo', i: '😨' }, { k: 'sad', n: 'Tristeza', i: '😢' }];
 (function () {
   const w = document.createElement('div'); w.id = 'emote-wheel'; w.className = 'hidden';
-  w.innerHTML = EMOTES.map((e, i) => '<div class="ew-opt" data-i="' + i + '" style="--a:' + (i * 120 - 90) + 'deg"><span>' + e.i + '</span><b>' + e.n + '</b></div>').join('') + '<div class="ew-hint">solte sobre um emoji</div>';
+  w.innerHTML = EMOTES.map((e, i) => '<div class="ew-opt" data-i="' + i + '" style="--a:' + (i * 360 / EMOTES.length - 90) + 'deg"><span>' + e.i + '</span><b>' + e.n + '</b></div>').join('') + '<div class="ew-hint">solte sobre um emoji</div>';
   document.body.appendChild(w);
   const st = document.createElement('style');
   st.textContent = '#emote-wheel{position:fixed;left:50%;top:50%;width:0;height:0;z-index:30}#emote-wheel.hidden{display:none}#emote-wheel .ew-opt{position:absolute;width:86px;height:86px;margin:-43px;border-radius:50%;transform:rotate(var(--a)) translate(105px) rotate(calc(-1 * var(--a)));background:radial-gradient(#3a2e22ee,#14100cee);box-shadow:0 0 0 2px #8a6a2a;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#f0d890;font:700 12px Cinzel,serif;cursor:pointer;transition:transform .1s,box-shadow .1s}#emote-wheel .ew-opt span{font-size:30px}#emote-wheel .ew-opt.on{box-shadow:0 0 0 3px #f0d890,0 0 18px #f0c060;transform:rotate(var(--a)) translate(105px) rotate(calc(-1 * var(--a))) scale(1.12)}#emote-wheel .ew-hint{position:absolute;left:-90px;width:180px;top:150px;text-align:center;font:italic 13px Alegreya,serif;color:#e8dcc0;text-shadow:0 1px 3px #000}#btn-emote{position:fixed;top:316px;right:12px;z-index:5;width:36px;height:36px;border-radius:50%;border:0;font-size:18px;cursor:pointer;background:radial-gradient(#3a302a,#141010);box-shadow:0 0 0 1px #000,0 0 0 3px #8a6a2a;display:none}body.touch #btn-emote{display:block}';

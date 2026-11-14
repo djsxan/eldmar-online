@@ -128,16 +128,27 @@ const ACTS = {
   point_k: [[0, {}], [0.2, { aA: [1.55, 0.05, 0.05], wp: 1.6, tw: -0.25, ht: 0.05 }], [0.8, { aA: [1.55, 0.05, 0.05], wp: 1.6, tw: -0.25, ht: 0.05 }], [1, {}]],
   dance: [[0, { aA: [2.6, 0.7, 0.4], aB: [0.5, 0.6, 1.2], tw: 0.35, lA: [0.4, -0.6], kn: -0.2, ht: 0.1 }], [0.25, { aA: [1.4, 0.9, 0.9], aB: [1.4, 0.9, 0.9], tw: 0, kn: -0.45 }], [0.5, { aA: [0.5, 0.6, 1.2], aB: [2.6, 0.7, 0.4], tw: -0.35, lB: [0.4, -0.6], kn: -0.2, ht: -0.1 }], [0.75, { aA: [1.4, 0.9, 0.9], aB: [1.4, 0.9, 0.9], tw: 0, kn: -0.45 }], [1, { aA: [2.6, 0.7, 0.4], aB: [0.5, 0.6, 1.2], tw: 0.35, lA: [0.4, -0.6], kn: -0.2, ht: 0.1 }]],
   // ---- arco: puxar a corda (quadro = quanto já puxou), soltar e pegar outra flecha na aljava (sobre o ombro) ----
-  bowdraw: [[0, { aA: [1.5, 0, 0], aB: [1.4, 0.05, -0.4], tw: 0.42, pull: 0.12, tl: -0.04 }], [1, { aA: [1.57, 0, 0], aB: [1.25, 0.12, -2.4], tw: 0.56, pull: 1, tl: -0.08 }]],
-  loose: [[0, { aA: [1.57, 0, 0], aB: [1.25, 0.12, -2.4], tw: 0.56, pull: 1, tl: -0.08 }], [0.12, { aA: [1.68, 0, 0], aB: [0.85, 0.6, -2.8], tw: 0.62, pull: 0, tl: -0.12 }], [0.55, { aA: [1.6, 0, 0], aB: [0.8, 0.6, -2.6], tw: 0.55, pull: 0 }], [1, {}]],
+  // puxada: a mão sai da corda junto ao arco, o braço abre de lado na altura do ombro e termina com o cotovelo para trás e a mão no rosto
+  bowdraw: [[0, { aA: [1.52, 0, 0], aB: [1.45, 0.1, 0.3], tw: 0.45, pull: 0.12, tl: -0.04 }], [0.5, { aA: [1.56, 0, 0], aB: [0.2, 1.45, 1.9], tw: 0.55, pull: 0.55, tl: -0.05 }], [1, { aA: [1.57, 0, 0], aB: [-1.3, 0.45, 2.7], tw: 0.6, pull: 1, tl: -0.05 }]],
+  loose: [[0, { aA: [1.57, 0, 0], aB: [-1.3, 0.45, 2.7], tw: 0.6, pull: 1, tl: -0.05 }], [0.12, { aA: [1.66, 0, 0], aB: [-1.55, 0.6, 2.0], tw: 0.62, pull: 0, tl: -0.08 }], [0.55, { aA: [1.6, 0, 0], aB: [-1.4, 0.55, 1.8], tw: 0.58, pull: 0 }], [1, {}]],
   nock: [[0, {}], [0.3, { aB: [2.9, 0.35, 2.6], harrow: 1, ht: -0.1, tw: -0.25 }], [0.55, { aB: [2.2, 0.25, 1.5], harrow: 1, tw: 0.1 }], [0.82, { aA: [1.45, 0, 0], aB: [1.4, 0.05, -0.4], harrow: 0, pull: 0.08, tw: 0.4 }], [1, { aA: [1.4, 0, 0], aB: [1.3, 0.05, -0.3], pull: 0.08, tw: 0.35 }]],
+  // ---- emoções ----
+  cheer: [[0, {}], [0.2, { aA: [2.9, 0.4, 0.6], aB: [2.9, 0.4, 0.6], ht: -0.25, mouth: 1, tl: -0.1 }], [0.4, { aA: [2.5, 0.5, 1.2], aB: [2.5, 0.5, 1.2], kn: -0.25 }], [0.6, { aA: [3.0, 0.4, 0.5], aB: [3.0, 0.4, 0.5], ht: -0.3, mouth: 1 }], [0.8, { aA: [2.5, 0.5, 1.2], aB: [2.5, 0.5, 1.2], kn: -0.2 }], [1, {}]],
+  surprise: [[0, {}], [0.15, { aA: [1.3, 0.25, 2.2], aB: [1.3, 0.25, 2.2], tl: -0.25, ht: -0.2, mouth: 1 }], [0.7, { aA: [1.2, 0.25, 2.0], aB: [1.2, 0.25, 2.0], tl: -0.2, ht: -0.15, mouth: 1 }], [1, {}]],
+  adore: [[0, {}], [0.25, { lA: [1.55, -1.6], lB: [-0.15, -1.95], tl: 0.35, ht: 0.35, aA: [1.0, -0.1, 1.6], aB: [1.0, -0.1, 1.6] }], [0.85, { lA: [1.55, -1.6], lB: [-0.15, -1.95], tl: 0.55, ht: 0.5, aA: [1.1, -0.1, 1.7], aB: [1.1, -0.1, 1.7] }], [1, {}]],
+  anger: [[0, {}], [0.2, { aA: [1.7, 0.3, 2.3], aB: [0.4, 0.3, 1.8], tl: 0.2, ht: 0.1, mouth: 1 }], [0.35, { aA: [2.3, 0.3, 2.0], tl: 0.22 }], [0.5, { aA: [1.7, 0.3, 2.3] }], [0.65, { aA: [2.3, 0.3, 2.0], tl: 0.25, mouth: 1 }], [0.8, { aA: [1.7, 0.3, 2.3] }], [1, {}]],
+  fear: [[0, {}], [0.2, { kn: -0.6, tl: 0.35, aA: [1.6, 0.1, 2.4], aB: [1.6, 0.1, 2.4], ht: 0.3, lA: [0.6, -0.9], lB: [0.4, -0.8] }], [0.5, { kn: -0.65, tl: 0.4, aA: [1.66, 0.12, 2.45], aB: [1.6, 0.1, 2.4], ht: 0.32, lA: [0.6, -0.9], lB: [0.4, -0.8] }], [0.85, { kn: -0.6, tl: 0.35, aA: [1.6, 0.1, 2.4], aB: [1.62, 0.1, 2.4], ht: 0.3, lA: [0.6, -0.9], lB: [0.4, -0.8] }], [1, {}]],
+  sad: [[0, {}], [0.3, { tl: 0.25, ht: 0.6, aA: [1.4, 0.1, 2.5], aB: [0.1, 0.05, 0.2] }], [0.85, { tl: 0.28, ht: 0.65, aA: [1.45, 0.1, 2.55], aB: [0.1, 0.05, 0.2] }], [1, {}]],
+  // ---- casa: mexer a panela e varrer ----
+  cook: [[0, { aA: [1.1, 0.15, 1.0], aB: [0.9, 0.1, 1.5], tl: 0.22, ht: 0.3 }], [0.25, { aA: [1.15, 0.38, 1.1], aB: [0.9, 0.1, 1.5], tl: 0.22, ht: 0.3 }], [0.5, { aA: [1.22, 0.15, 1.2], aB: [0.9, 0.1, 1.5], tl: 0.22, ht: 0.3 }], [0.75, { aA: [1.15, -0.08, 1.1], aB: [0.9, 0.1, 1.5], tl: 0.22, ht: 0.3 }], [1, { aA: [1.1, 0.15, 1.0], aB: [0.9, 0.1, 1.5], tl: 0.22, ht: 0.3 }]],
+  sweep: [[0, { aA: [0.85, 0.12, 0.5], aB: [0.55, 0.15, 1.0], tl: 0.3, tw: 0.45, ht: 0.3, broom: 1 }], [0.5, { aA: [0.85, 0.12, 0.5], aB: [0.55, 0.15, 1.0], tl: 0.34, tw: -0.45, ht: 0.3, broom: 1 }], [1, { aA: [0.85, 0.12, 0.5], aB: [0.55, 0.15, 1.0], tl: 0.3, tw: 0.45, ht: 0.3, broom: 1 }]],
   // ---- beber: do cantil (gole com a cabeça para trás) e com as mãos num riacho/poça (ajoelhado) ----
   drinkb: [[0, {}], [0.18, { aA: [1.7, 0.15, 2.2], bot: 1, ht: -0.05 }], [0.32, { aA: [2.45, 0.1, 2.55], bot: 1, ht: -0.5, tl: -0.08 }], [0.78, { aA: [2.5, 0.1, 2.55], bot: 1, ht: -0.55, tl: -0.1 }], [0.9, { aA: [1.6, 0.15, 2.1], bot: 1 }], [1, { bot: 0 }]],
   scoop: [[0, {}], [0.22, { lA: [1.55, -1.6], lB: [-0.15, -1.95], tl: 0.75, ht: 0.45, aA: [0.55, 0.2, 0.35], aB: [0.55, 0.2, 0.35] }], [0.45, { lA: [1.55, -1.6], lB: [-0.15, -1.95], tl: 0.85, ht: 0.5, aA: [0.25, 0.12, 0.25], aB: [0.25, 0.12, 0.25] }], [0.7, { lA: [1.55, -1.6], lB: [-0.15, -1.95], tl: 0.3, ht: -0.15, aA: [1.55, 0.3, 2.35], aB: [1.55, 0.3, 2.35] }], [0.85, { lA: [1.55, -1.6], lB: [-0.15, -1.95], tl: 0.3, ht: -0.15, aA: [1.55, 0.3, 2.35], aB: [1.55, 0.3, 2.35] }], [1, {}]],
   // ---- reação ao golpe ----
   hurt: [[0, {}], [0.25, { tl: -0.38, aA: [0.7, 0.55, 0.6], aB: [0.7, 0.55, 0.6], ht: -0.45, kn: -0.35 }], [1, {}]],
 };
-const ACT_MS = { loose: 350, nock: 800, drinkb: 1600, scoop: 1500, hurt_head: 420, hurt_leg: 420, getup: 650, kick: 520, execute: 720, quiver: 760, turnshot: 950, dualcast: 560, turncast: 950, salute: 1200, point: 1300, dance: 900, hurt: 300, swing: 440, bash: 560, spin: 560, block: 650, warcry: 700, shoot: 440, double: 620, pierce: 640, rain: 560, dash: 560, bolt: 400, fireball: 520, nova: 620, heal: 680, meteor: 720, cast: 600, bite: 320 };
+const ACT_MS = { cheer: 1400, surprise: 1000, adore: 2600, anger: 1400, fear: 1600, sad: 2200, cook: 3000, sweep: 1400, loose: 350, nock: 800, drinkb: 1600, scoop: 1500, hurt_head: 420, hurt_leg: 420, getup: 650, kick: 520, execute: 720, quiver: 760, turnshot: 950, dualcast: 560, turncast: 950, salute: 1200, point: 1300, dance: 900, hurt: 300, swing: 440, bash: 560, spin: 560, block: 650, warcry: 700, shoot: 440, double: 620, pierce: 640, rain: 560, dash: 560, bolt: 400, fireball: 520, nova: 620, heal: 680, meteor: 720, cast: 600, bite: 320 };
 const IDLES = {
   look: [[0, {}], [0.25, { hw: 0.6 }], [0.6, { hw: -0.6 }], [1, {}]],
   stretch: [[0, {}], [0.4, { aA: [3.0, 0.3, 0.2], aB: [3.0, 0.3, 0.2], tl: -0.12, mouth: 1, wp: 3.1 }], [0.7, { aA: [3.0, 0.3, 0.2], aB: [3.0, 0.3, 0.2], tl: -0.12, wp: 3.1 }], [1, {}]],
@@ -167,7 +178,7 @@ function mixField(base, a, b, t, key) {
 // calcula a pose final (ângulos) a partir de caminhada + ação + idle
 function buildPose(cls, P) {
   const base = BASE[cls] || BASE.knight;
-  const Q = { aA: base.aA.slice(), aB: base.aB.slice(), wp: base.wp, tl: base.tl, tw: 0, lA: [0.04, -0.06], lB: [-0.04, -0.06], kn: 0, drop: 0, ht: 0, hw: 0, mouth: 0, pull: 0, glow: 0, bot: 0, harrow: 0 };
+  const Q = { aA: base.aA.slice(), aB: base.aB.slice(), wp: base.wp, tl: base.tl, tw: 0, lA: [0.04, -0.06], lB: [-0.04, -0.06], kn: 0, drop: 0, ht: 0, hw: 0, mouth: 0, pull: 0, glow: 0, bot: 0, harrow: 0, broom: 0 };
   if (P.walk >= 0) {
     // ciclo de passada: a perna de apoio fica quase reta; o joelho dobra quando a perna avança
     const ph = P.walk / 12 * Math.PI * 2;
@@ -194,7 +205,7 @@ function buildPose(cls, P) {
   else if (P.drag === 'grip') { Q.aA = [1.3, 0.05, 1.25]; Q.aB = [1.3, 0.05, 1.25]; Q.tl += 0.1; }
   const apply = (keys, p) => {
     const { a, b, t } = sampleKeys(keys, p);
-    for (const k of ['aA', 'aB', 'wp', 'tl', 'tw', 'lA', 'lB', 'kn', 'drop', 'ht', 'hw', 'mouth', 'pull', 'glow', 'yaw', 'bot', 'harrow']) {
+    for (const k of ['aA', 'aB', 'wp', 'tl', 'tw', 'lA', 'lB', 'kn', 'drop', 'ht', 'hw', 'mouth', 'pull', 'glow', 'yaw', 'bot', 'harrow', 'broom']) {
       if (a[k] == null && b[k] == null) continue;
       const v = mixField(Q, a, b, t, k);
       if (v !== undefined) Q[k] = v;

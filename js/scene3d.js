@@ -491,7 +491,9 @@ function mGuillotine(v) {
   if (v) o.add(mk(new THREE.CircleGeometry(0.35, 14).rotateX(-Math.PI / 2).translate(0, 0.81, z0 + 0.3), smat(null, '#5a0c0c', { rough: 0.3 })));
   return o;
 }
-const NATURE = { guil: [mGuillotine, 1.0], oak: [mOak, 2.15], birch: [mBirch, 2.0], willow: [mWillow, 2.05], fern: [mFern, 1.15], roots: [mRoots, 1.0], shrooms: [mShrooms, 0.95], berry: [mBerry, 1.05], herb: [mHerb, 1.0], boulder: [mBoulder, 1.15] };
+// banquinho de madeira (três pés e assento redondo)
+function mStool() { const o = grp(), W = WOOD(); o.add(mk(new THREE.CylinderGeometry(0.2, 0.2, 0.06, 14).translate(0, 0.46, 0), W)); for (let k = 0; k < 3; k++) { const a = k * 2.09, l = mk(new THREE.CylinderGeometry(0.025, 0.03, 0.46, 6).translate(0, 0.23, 0), DWOOD()); l.position.set(Math.cos(a) * 0.13, 0, Math.sin(a) * 0.13); l.rotation.set(Math.sin(a) * 0.12, 0, -Math.cos(a) * 0.12); o.add(l); } return o; }
+const NATURE = { guil: [mGuillotine, 1.0], stool: [mStool, 1.0], oak: [mOak, 2.15], birch: [mBirch, 2.0], willow: [mWillow, 2.05], fern: [mFern, 1.15], roots: [mRoots, 1.0], shrooms: [mShrooms, 0.95], berry: [mBerry, 1.05], herb: [mHerb, 1.0], boulder: [mBoulder, 1.15] };
 function natureSprite(kind, v) { const N = NATURE[kind]; if (!N || !S3.ok) return null; return scen3('nt|' + kind + '|' + v, () => { const g = N[0](v); g.scale.setScalar(N[1]); return g; }); }
 function rockGeo(seed, r, sx, sy, sz) {
   const g = new THREE.IcosahedronGeometry(r, 2), p = g.attributes.position, R = rng(seed), off = [R() * 9, R() * 9, R() * 9];
@@ -1369,6 +1371,12 @@ function mInterior(b, fl = 0) {
       case 'bed': g.add(wbox(0.9, 0.3, f.h - 0.15, 0, 0.15, 0, W_(), 2)); g.add(mk(new THREE.BoxGeometry(0.82, 0.14, f.h - 0.3).translate(0, 0.37, 0.02), cloth('#e8e0cc'))); g.add(mk(new THREE.BoxGeometry(0.86, 0.06, (f.h - 0.3) * 0.6).translate(0, 0.46, 0.2), cloth(['#7a2a2a', '#2a4a7a', '#3a6a3a'][f.i % 3]))); g.add(mk(new THREE.BoxGeometry(0.5, 0.1, 0.25).translate(0, 0.48, -(f.h - 0.3) / 2 + 0.15), cloth('#f4eedc'))); g.add(wbox(0.9, 0.7, 0.08, 0, 0.35, -(f.h - 0.15) / 2, DW(), 2)); break;
       case 'bunk': for (const y of [0.15, 1.0]) { g.add(wbox(0.85, 0.12, f.h - 0.2, 0, y + 0.12, 0, W_(), 2)); g.add(mk(new THREE.BoxGeometry(0.78, 0.1, f.h - 0.35).translate(0, y + 0.24, 0), cloth('#9a8a6a'))); } for (const [px, pz] of [[-0.4, -(f.h - 0.2) / 2], [0.4, -(f.h - 0.2) / 2], [-0.4, (f.h - 0.2) / 2], [0.4, (f.h - 0.2) / 2]]) g.add(wbox(0.06, 1.4, 0.06, px, 0.7, pz, DW(), 2)); break;
       case 'fireplace': { const fx = backZ ? 0 : -0.25, fz = backZ ? -0.25 : 0; g.add(wbox(backZ ? 0.95 : 0.5, 1.5, backZ ? 0.5 : 0.95, fx, 0.75, fz, smat('brick', '#8a8478', { bump: 1.4 }), 1.5)); g.add(mk(new THREE.BoxGeometry(backZ ? 0.55 : 0.08, 0.5, backZ ? 0.08 : 0.55).translate(fx + (backZ ? 0 : 0.22), 0.35, fz + (backZ ? 0.22 : 0)), smat(null, '#140c06'))); g.add(mk(new THREE.ConeGeometry(0.18, 0.34, 6).translate(fx + (backZ ? 0 : 0.2), 0.3, fz + (backZ ? 0.2 : 0)), smat(null, '#ff9a30', { emissive: '#ff7a10', ei: 2.2 }))); g.add(wbox(backZ ? 1.1 : 0.62, 0.1, backZ ? 0.62 : 1.1, fx, 1.0, fz, smat('stoneblock', '#9a948a'), 2)); const pl = new THREE.PointLight(0xff9a40, 1.6, 4.5); pl.position.set(fx + (backZ ? 0 : 0.5), 0.6, fz + (backZ ? 0.5 : 0)); g.add(pl); break; }
+      case 'stove': {   // fogão a lenha de ferro: corpo escuro, boca com brasa, chapa, panela fumegante e cano
+        const iron = smat(null, '#2e2a28', { metal: 0.6, rough: 0.5 }), dz = backZ ? -0.12 : 0, dx = backX ? -0.12 : 0;
+        g.add(mk(new THREE.BoxGeometry(0.8, 0.72, 0.62).translate(dx, 0.36, dz), iron)); g.add(mk(new THREE.BoxGeometry(0.84, 0.05, 0.66).translate(dx, 0.74, dz), smat(null, '#1e1c1a', { metal: 0.7, rough: 0.4 })));
+        g.add(mk(new THREE.BoxGeometry(0.34, 0.18, 0.02).translate(dx, 0.3, dz + 0.32), smat(null, '#ff7a2a', { emissive: '#ff5a10', ei: 1.4 })));
+        g.add(mk(new THREE.CylinderGeometry(0.17, 0.14, 0.2, 14).translate(dx - 0.12, 0.86, dz), smat(null, '#5a5650', { metal: 0.8, rough: 0.35 })));
+        g.add(mk(new THREE.CylinderGeometry(0.06, 0.06, 1.1, 8).translate(dx + 0.25, 1.3, dz - 0.18), iron)); break; }
       case 'barrel': { const br = mBarrel(); br.scale.setScalar(0.75); g.add(br); break; }
       case 'crate': { const cr = mCrate(); cr.scale.setScalar(0.8); g.add(cr); break; }
       case 'chest': g.add(wbox(0.7, 0.42, 0.45, 0, 0.21, 0, W_(), 2)); g.add(mk(new THREE.CylinderGeometry(0.225, 0.225, 0.7, 10, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).translate(0, 0.42, 0), W_())); for (const x of [-0.25, 0.25]) g.add(mk(new THREE.BoxGeometry(0.05, 0.5, 0.47).translate(x, 0.3, 0), IRON())); break;

@@ -160,6 +160,7 @@ function hostOnClient(from, m) {
     if (m.dev && typeof crypto !== 'undefined' && crypto.subtle) crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(m.dev))).then(buf => {
       const h = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
       if (h !== DEV_HASH || !S.players[from]) { Net.toOne(from, { t: 'dev', ok: 0 }); return; }
+      if (m.devMode === 'normal') { np.devPowers = true; Net.toOne(from, { t: 'dev', ok: 1, mode: 'normal' }); return; }   // criador com a vocação normal (toma dano, monstros atacam), mas com o painel
       np.dev = true; np.skin = 'weaver'; np.devHidden = false; Net.toOne(from, { t: 'dev', ok: 1 }); Net.toAll({ t: 'pinfo', p: pinfo(np) });
     });
     Net.toOne(from, { t: 'welcome', you: from, x: np.x, y: np.y, players: Object.values(S.players).map(pinfo), objs: S.objMods || {} });
@@ -184,6 +185,7 @@ function hostOnClient(from, m) {
     case 'loose': bowLoose(p, m); break;
     case 'pullarrow': pullArrow(p); break;
     case 'grab': startGrab(p, m); break;
+    case 'cookat': cookAt(p, String(m.r)); break;
     case 'release': stopDrag(p); break;
     case 'struggle': if (!tiedStruggle(p)) struggle(p); break;
     case 'untie': untie(p, m); break;
@@ -258,7 +260,7 @@ function hostOnClient(from, m) {
       break;
     }
     case 'dev': {
-      if (!p.dev) break;
+      if (!p.dev && !p.devPowers) break;
       const x = +m.x, y = +m.y;
       if (m.a === 'summon' && isFinite(x) && isFinite(y) && inBounds(Math.round(x), Math.round(y))) {
         const t = Math.round(y) * MAP_W + Math.round(x), top = WORLD.ground[t] === T.CLIFF && WORLD.fl1[t] > 0;
@@ -512,8 +514,9 @@ function useItem(p, k) {
   if (k === 'water') { drinkCanteen(p, now, true); return; }
   if (!p.inv[k]) return;
   const take = () => { if (--p.inv[k] <= 0) delete p.inv[k]; };
-  if (FOOD[k]) { take(); p.food = Math.min(100, p.food + FOOD[k] * (1 + useBonus(p, 'cook'))); if (k === 'cookedmeat') p.water = Math.max(0, p.water - 5); if ((k === 'venison' || k === 'pork') && Math.random() < 0.3) { p.sickUntil = now + 120000; tell(p, 'A carne crua caiu mal. Você está enjoado (sede dobrada por 2 min).'); } else tell(p, 'Você comeu ' + LOOT[k].name.toLowerCase() + '.'); }
+  if (FOOD[k]) { take(); p.food = Math.min(100, p.food + FOOD[k] * (1 + useBonus(p, 'cook'))); if (k === 'stew') { p.water = Math.min(100, (p.water ?? 100) + 20); p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * 0.15)); } if (k === 'cookedmeat') p.water = Math.max(0, p.water - 5); if ((k === 'venison' || k === 'pork') && Math.random() < 0.3) { p.sickUntil = now + 120000; tell(p, 'A carne crua caiu mal. Você está enjoado (sede dobrada por 2 min).'); } else tell(p, 'Você comeu ' + LOOT[k].name.toLowerCase() + '.'); }
   else if (k === 'ointment') { take(); p.infect = 0; p.infT = 0; tell(p, 'O unguento arde, mas a febre baixa.'); }
+  else if (k === 'tea') { take(); p.water = Math.min(100, (p.water ?? 100) + 35); p.infect = Math.max(0, (p.infect || 0) - 1); tell(p, 'O chá quente acalma e mata a sede.'); }
   else if (k === 'herb') { take(); useGain(p, 'aid', 1); p.infect = Math.max(0, (p.infect || 0) - 1); p.infT = 0; for (const b of BODY_PARTS) if (p.bleed[b] > 0 && p.bleed[b] <= 0.6) p.bleed[b] = 0; tell(p, 'A erva amarga acalma a febre e estanca os cortes leves.'); }
   else if (k === 'firewood') {
     const tx = Math.round(p.x + Math.cos(p.fa || 0)), ty = Math.round(p.y + Math.sin(p.fa || 0)), t = ty * MAP_W + tx;
@@ -626,7 +629,7 @@ function revivePlayer(p, frac, by) {
 }
 function respawnTemple(p) {
   if (p.arrows && p.arrows.length) { p.arrows = []; near(p.x, p.y, { t: 'unstick', k: 'p', id: p.id, all: 1 }); }
-  if (PERMADEATH && !p.dev) { permaDeath(p, p.decap ? 'decapitado' : 'sangrando no chão'); return; }
+  if (PERMADEATH && !p.dev && !p.devPowers) { permaDeath(p, p.decap ? 'decapitado' : 'sangrando no chão'); return; }
   if (p.carriedBy && S.players[p.carriedBy]) S.players[p.carriedBy].carrying = null;
   p.carriedBy = null; p.downed = null; p.revive = null;
   p.xp = Math.floor(p.xp / 2);
@@ -796,7 +799,7 @@ function npcAction(p, m) {
     say(`${qty}x ${ITEMS[m.item].name}. Boa caçada, e volte inteiro.`);
   } else if (n.id === 'merchant' && m.a === 'sell') {
     let total = 0, n2 = 0;
-    for (const k in p.inv) { if (!LOOT[k] || (m.item && m.item !== k) || (!m.item && ['bread', 'cookedmeat', 'ointment', 'firewood', 'berries', 'herb', 'apple'].includes(k))) continue; total += LOOT[k].price * p.inv[k]; n2 += p.inv[k]; delete p.inv[k]; }
+    for (const k in p.inv) { if (!LOOT[k] || (m.item && m.item !== k) || (!m.item && ['bread', 'cookedmeat', 'ointment', 'firewood', 'berries', 'herb', 'apple', 'stew', 'pie', 'tea'].includes(k))) continue; total += LOOT[k].price * p.inv[k]; n2 += p.inv[k]; delete p.inv[k]; }
     if (!n2) { say('Você não tem nada que me interesse agora.'); return; }
     p.gold += total;
     say(`Fechado: ${n2} ${n2 > 1 ? 'itens' : 'item'} por ${total} de ouro. Traga mais quando puder.`);
@@ -1682,6 +1685,21 @@ function tiedStruggle(p) {
   return true;
 }
 
+// ---------------- cozinha ----------------
+function cookAt(p, r) {
+  const rc = RECIPES[r], now = now_(); if (!rc || p.downed || now < (p.cookT || 0)) return;
+  const st = KITCHENS.find(k => dist(k.x, k.y, p.x, p.y) < 1.9); if (!st) { tell(p, 'Precisa estar perto de um fogão.'); return; }
+  const has = () => Object.entries(rc.need).every(([k, n]) => k === 'meat' ? (p.inv.venison || 0) + (p.inv.pork || 0) >= n : (p.inv[k] || 0) >= n);
+  if (!has()) { tell(p, 'Faltam ingredientes.'); return; }
+  p.cookT = now + 3200; const x0 = p.x, y0 = p.y;
+  near(p.x, p.y, { t: 'anim', w: 'p', id: p.id, a: 'cook', ms: 3000, tx: st.x, ty: st.y });
+  setTimeout(() => {
+    if (!S.players[p.id] || p.downed || dist(p.x, p.y, x0, y0) > 0.6) { tell(p, 'Você saiu do fogão e a comida passou do ponto.'); return; }
+    if (!has()) return;
+    for (const [k, n] of Object.entries(rc.need)) { if (k === 'meat') { let left = n; for (const mk of ['venison', 'pork']) { const t = Math.min(left, p.inv[mk] || 0); p.inv[mk] -= t; left -= t; if (!p.inv[mk]) delete p.inv[mk]; } } else { p.inv[k] -= n; if (!p.inv[k]) delete p.inv[k]; } }
+    p.inv[rc.out] = (p.inv[rc.out] || 0) + 1; useGain(p, 'cook', 2); Net.toOne(p.id, { t: 'loot', k: rc.out }); tell(p, rc.name + ' pronto!'); sendStat(p);
+  }, 3000);
+}
 // ---------------- progressão por uso e habilidades da árvore ----------------
 function useGain(p, k, amt) {
   if (!USE[k] || !p || p.dev || !(amt > 0)) return; p.use = p.use || {};

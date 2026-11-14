@@ -279,6 +279,7 @@ function heroPoseFor(e, now) {
   if (e.dragMode && e.dragMode !== 'back') P.drag = e.dragMode;
   P.dir = e.dir || 0;
   if (e.custP && !e.walking) { Object.assign(P, e.custP); if (P.sit) P.walk = -1; return P; }
+  if (e.custP && e.custP.sweep && e.walking) P.act = e.custP.act;
   if (e.walking) { P.walk = Math.floor(e.walkDist * (e.cls === 'knight' ? 8.5 : 9.5) / (e.running ? 1.45 : 1)) % 12; if (e.running) P.run = 1; }
   if (e.anim) { const t = actProg(e.anim, now); if (t >= 0 && ACTS[e.anim.a]) P.act = { k: e.anim.a, f: Math.min(11, Math.floor(t * 12)) }; }
   if (!P.act && typeof bowPose === 'function') { const bp = bowPose(e, now); if (bp) P.act = bp; }
@@ -327,6 +328,13 @@ function drawWeaverAura(ctx, sx, sy, now) {
   }
   ctx.restore();
   G.lights.push({ x: sx, y: sy - 30, r: 80, c: '235,245,255', a: 0.85 });
+}
+// altura do tablado do cadafalso (com a rampa da escada na frente)
+function stageLift(x, y) {
+  if (STAGE.x < 0) return 0; const dx = x - STAGE.x, dy = y - STAGE.y, H = 0.82 * (typeof HV !== 'undefined' ? HV : 25);
+  if (Math.abs(dx) <= 1.5 && Math.abs(dy) <= 1.5) return H;
+  if (Math.abs(dx) < 0.6 && dy > 1.5 && dy < 2.35) return H * (1 - (dy - 1.5) / 0.85);
+  return 0;
 }
 function drawHeroEntity(ctx, e, sx, sy, now) {
   if (R3.ok && e.tied && !e.isNpc && typeof drawTied === 'function') { drawTied(ctx, e, sx, sy, now); e._spr = null; return; }
@@ -507,6 +515,8 @@ const CASTS = new Set([O.OAK, O.BIRCH, O.WILLOW, O.BOULDER, O.BERRY, O.TREE, O.P
 function objSprite(o, x, y) {
   const h = hash2(x, y, 17), v = Math.floor(h * 3), i = y * MAP_W + x, z = WORLD.zone[i];
   switch (o) {
+    case O.STOOL: return natureSprite('stool', 0) || smallSprite('crate');
+    case O.STAGEFLOOR: return null;
     case O.GUILLOTINE: return natureSprite('guil', G.bladeAt && performance.now() >= G.bladeAt && performance.now() < G.bladeAt + 5000 ? 1 : 0) || smallSprite('cart');
     case O.OAK: return natureSprite('oak', v & 1) || treeSprite(v, 1, 3);
     case O.BIRCH: return natureSprite('birch', v & 1) || treeSprite(v, 1, 1);
@@ -829,7 +839,8 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     if (sx < -100 || sx > vw + 100 || sy < -40 || sy > vh + 200) return;
     const efl = e.fl || 0, ebi = (e.z || 0) < 0.5 ? (efl > 0 ? (e.fb ?? bldAt(e.rx, e.ry)) : bldAt(e.rx, e.ry)) : -1;
     if (efl > 0 && !(ebi === inB0 && efl === myFl)) return;       // quem está em outro andar não aparece
-    const it = { d: e.rx + e.ry, k: kind, e, sx, sy: sy - (ebi >= 0 ? flRaise(BUILDINGS[ebi], efl) + (e.lift ? e.lift * flRaise(BUILDINGS[ebi], 1) : 0) : 0), tx: e.rx, ty: e.ry };
+    const stH = typeof stageLift === 'function' ? stageLift(e.rx, e.ry) : 0;
+    const it = { d: stH ? Math.max(e.rx + e.ry, STAGE.x + STAGE.y + 0.6) : e.rx + e.ry, k: kind, e, sx, sy: sy - stH - (ebi >= 0 ? flRaise(BUILDINGS[ebi], efl) + (e.lift ? e.lift * flRaise(BUILDINGS[ebi], 1) : 0) : 0), tx: e.rx, ty: e.ry };
     if ((e.z || 0) < 0.5 && inB0 >= 0 && ebi === inB0 && efl === myFl) it.inside = true;
     if ((e.alt || 0) > 0.5) sky.push(it); else if ((e.z || 0) >= 0.5) { if (!hideUpper) upper.push(it); } else items.push(it);
   };
@@ -956,7 +967,8 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     if (it.k === 1) {
       drawMonsterEntity(ctx, e, it.sx, it.sy, now); if (e.carrying && G.players[e.carrying]) drawCarried(ctx, G.players[e.carrying], it.sx, it.sy - (MON[e.type].big ? 20 : 0)); if (e.arrows && !FALLS['m' + e.id]) drawStuck(ctx, e, it.sx, it.sy, now);
     } else if (it.k === 3) {
-      if (typeof drawNpcState === 'function' && drawNpcState(ctx, e, it.sx, it.sy, now)) return;
+      if (typeof drawNpcState === 'function' && drawNpcState(ctx, e, it.sx, it.sy, now)) { if (e.npDead && !e.onBackBy) labels.push({ sx: it.sx, sy: it.sy - 22, name: e.name + ' (morto)', color: '#8a8a8a', npc: e, e }); return; }
+      if (typeof drawNpcBubble === 'function') drawNpcBubble(ctx, e, it.sx, it.sy, now);
       drawHeroEntity(ctx, e, it.sx, it.sy, now); if (e.arrows) drawStuck(ctx, e, it.sx, it.sy, now);
       if (e.carrying && G.players[e.carrying]) drawCarried(ctx, G.players[e.carrying], it.sx, it.sy);
       labels.push({ sx: it.sx, sy: it.sy - (R3.ok ? 56 : 78), name: e.name, color: '#b8e0a8', npc: e, e });

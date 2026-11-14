@@ -18,45 +18,74 @@ function polyAt(P, d, rev) {
 }
 function pathBetween(a, b) { const p = findPath(a[0], a[1], b[0], b[1], 0, 1); return polyOf([a].concat(p || []).concat([b])); }
 
+// tile livre DENTRO da casa ao lado de um ponto (a cama, a cadeira, o fogão) — o caminho passa pela porta
+function interiorSpot(bi, x, y) {
+  let best = null, bd = 9;
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const tx = Math.round(x) + dx, ty = Math.round(y) + dy; if (!inBounds(tx, ty) || WORLD.bld[ty * MAP_W + tx] !== bi || !canStandZ(tx, ty, 0, 0.25)) continue; const d = Math.hypot(tx - x, ty - y); if (d < bd) { bd = d; best = [tx, ty]; } }
+  return best;
+}
+function pathVia(a, via, end) { const p = findPath(a[0], a[1], via[0], via[1], 0, 0); return polyOf([a].concat(p || []).concat([via]).concat(end ? [end] : [])); }
+
 // ---------- preparação (na primeira vez que o mundo existe) ----------
 function lifeInit() {
   if (LIFE.ok !== null) return LIFE.ok;
   LIFE.ok = false;
   const n = NPCS.find(q => q.id === 'fruit'); if (!n || !WORLD.seats) return false;
   const sx = n.stall[0], sy = n.stall[1], free = (x, y) => canStandZ(x, y, 0, 0.25) && !BLOCKING.has(WORLD.obj[Math.round(y) * MAP_W + Math.round(x)]);
-  // atrás da barraca (lado do castelo), um banquinho ao lado e dois pontos para arrumar as frutas
   const pickSpot = list => list.map(([dx, dy]) => [sx + dx, sy + dy]).find(([x, y]) => free(x, y)) || [sx, sy + 1];
   LIFE.stand = pickSpot([[0, -1], [0, 1], [-1, 0], [1, 0]]);
   const back = LIFE.stand[1] < sy ? -1 : 1;
-  LIFE.stool = pickSpot([[1, back], [-1, back], [1.2, back * 0.4], [-1.2, back * 0.4]]);
+  LIFE.stool = FRUIT_STOOL.x >= 0 ? [FRUIT_STOOL.x, FRUIT_STOOL.y] : pickSpot([[1, back], [-1, back]]);   // o banquinho de verdade, ao lado da barraca
   LIFE.arr = [pickSpot([[-0.8, back * 0.8], [-1, 0]]), pickSpot([[0.8, back * 0.8], [1, 0]])];
   LIFE.faceStall = dirFromVec(sx - LIFE.stand[0], sy - LIFE.stand[1], 0);
-  // casa ao lado: a casa mais perto da barraca, com cama e cadeira
   let home = -1, bd = 1e9;
   BUILDINGS.forEach((b, bi) => { if (b.kind !== 'house' || !BEDS.some(q => q.bi === bi)) return; const d = Math.hypot(b.x + b.w / 2 - sx, b.y + b.h / 2 - sy); if (d < bd) { bd = d; home = bi; } });
   if (home < 0) return false;
-  LIFE.home = home; LIFE.bed = BEDS.find(q => q.bi === home); LIFE.seat = WORLD.seats.find(q => q.bi === home) || null;
-  LIFE.pB = pathBetween(LIFE.stand, [LIFE.bed.x, LIFE.bed.y]);
-  LIFE.pS = LIFE.seat ? pathBetween(LIFE.stand, [LIFE.seat.x, LIFE.seat.y]) : null;
+  LIFE.home = home; LIFE.bed = BEDS.find(q => q.bi === home); LIFE.seat = WORLD.seats.find(q => q.bi === home) || null; LIFE.stove = KITCHENS.find(q => q.bi === home) || null;
+  const bedIn = interiorSpot(home, LIFE.bed.x, LIFE.bed.y);
+  LIFE.pB = bedIn ? pathVia(LIFE.stand, bedIn, [LIFE.bed.x, LIFE.bed.y]) : polyOf([LIFE.stand, [LIFE.bed.x, LIFE.bed.y]]);
+  const seatIn = LIFE.seat && interiorSpot(home, LIFE.seat.x, LIFE.seat.y);
+  LIFE.pS = seatIn ? pathVia(LIFE.stand, seatIn, [LIFE.seat.x, LIFE.seat.y]) : null;
+  LIFE.stoveIn = LIFE.stove ? interiorSpot(home, LIFE.stove.x, LIFE.stove.y) : null;
+  LIFE.pK = LIFE.stoveIn ? pathVia(LIFE.stand, LIFE.stoveIn) : (bedIn ? pathVia(LIFE.stand, bedIn) : null);
+  // volta da faxina: os cantos livres da casa
+  const b = BUILDINGS[home], cells = [];
+  for (let y = b.y; y < b.y + b.h; y++) for (let x = b.x; x < b.x + b.w; x++) if (WORLD.bld[y * MAP_W + x] === home && canStandZ(x, y, 0, 0.25)) cells.push([x, y]);
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2, corner = (sx2, sy2) => cells.slice().sort((p, q) => (Math.hypot(q[0] - cx, q[1] - cy) * 0.3 - ((q[0] - cx) * sx2 + (q[1] - cy) * sy2)) - (Math.hypot(p[0] - cx, p[1] - cy) * 0.3 - ((p[0] - cx) * sx2 + (p[1] - cy) * sy2)))[0];
+  const loop = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)].filter(Boolean);
+  LIFE.pSweep = loop.length >= 2 ? polyOf(loop.concat([loop[0]])) : null;
+  const kIn = LIFE.stoveIn || bedIn; LIFE.pBedFromK = kIn && bedIn ? polyOf([kIn, bedIn, [LIFE.bed.x, LIFE.bed.y]]) : null;
   LIFE.pStool = polyOf([LIFE.stand, LIFE.stool]); LIFE.pA = polyOf([LIFE.stand, LIFE.arr[0], LIFE.arr[1], LIFE.stand]);
   LIFE.ok = true; return true;
 }
 
 // ---------- onde a fruteira está agora ----------
+// 6h acorda e vai à feira · 12h almoça em casa · 17h30 volta para casa · cozinha · varre · 21h30 dorme
 function sellerState(now) {
   const hh = gameHour(), wall = Date.now();
-  const dB = LIFE.pB.len / SELL_SPEED / HOUR_S, dS = LIFE.pS ? LIFE.pS.len / SELL_SPEED / HOUR_S : 0;
+  const T = P => P ? P.len / SELL_SPEED / HOUR_S : 0;
   const walk = (P, k, rev) => { const q = polyAt(P, k * P.len, rev); return { x: q.x, y: q.y, dir: dirFromVec(q.dx, q.dy, 0), walking: true, wd: k * P.len }; };
   const bedDir = dirFromVec(LIFE.bed.dx, LIFE.bed.dy, 0);
-  const SLEEP = 21.5, WAKE = 6;
+  const WAKE = 6, SLEEP = 21.5, HOME = 17.5, COOK_END = 19.5, SWEEP_END = 21.0;
+  const dB = T(LIFE.pB), dS = T(LIFE.pS), dK = T(LIFE.pK), dBK = T(LIFE.pBedFromK);
+  const inn = (a, b) => hh >= a && hh < b;
   if (hh >= SLEEP || hh < WAKE) return { x: LIFE.bed.x, y: LIFE.bed.y, dir: bedDir, cust: { down: true }, away: 'Zzz... (ela está dormindo em casa. A feira abre de manhã.)' };
   if (hh < WAKE + dB) return Object.assign(walk(LIFE.pB, (hh - WAKE) / dB, true), { away: 'Já vou, já vou! Deixa eu abrir a barraca.' });
-  if (hh >= SLEEP - dB) return Object.assign(walk(LIFE.pB, (hh - (SLEEP - dB)) / dB, false), { away: 'Por hoje chega! Volte amanhã cedo.' });
   if (LIFE.pS) {
-    if (hh >= 12 - dS && hh < 12) return Object.assign(walk(LIFE.pS, (hh - (12 - dS)) / dS, false), { away: 'Hora do almoço! Já volto.' });
-    if (hh >= 12 && hh < 13) return { x: LIFE.seat.x, y: LIFE.seat.y, dir: LIFE.seat.dir, cust: { sit: 'c', eat: ((wall / 3500) % 1) }, away: 'Estou almoçando, querido. Volte daqui a pouco.' };
-    if (hh >= 13 && hh < 13 + dS) return Object.assign(walk(LIFE.pS, (hh - 13) / dS, true), { away: 'Hora do almoço! Já volto.' });
+    if (inn(12 - dS, 12)) return Object.assign(walk(LIFE.pS, (hh - (12 - dS)) / dS, false), { away: 'Hora do almoço! Já volto.' });
+    if (inn(12, 13)) return { x: LIFE.seat.x, y: LIFE.seat.y, dir: LIFE.seat.dir, cust: { sit: 'c', eat: ((wall / 3500) % 1) }, away: 'Estou almoçando, querido. Volte daqui a pouco.' };
+    if (inn(13, 13 + dS)) return Object.assign(walk(LIFE.pS, (hh - 13) / dS, true), { away: 'Hora do almoço! Já volto.' });
   }
+  if (LIFE.pK && hh >= HOME) {
+    const closed = 'A feira fechou por hoje. Volte amanhã cedo!';
+    if (inn(HOME, HOME + dK)) return Object.assign(walk(LIFE.pK, (hh - HOME) / dK, false), { away: closed });
+    const kp = LIFE.pK.pts[LIFE.pK.pts.length - 1];
+    if (inn(HOME + dK, COOK_END) && LIFE.stove) return { x: kp[0], y: kp[1], dir: dirFromVec(LIFE.stove.x - kp[0], LIFE.stove.y - kp[1], 0), cust: { act: { k: 'cook', f: Math.floor(((wall / 1200) % 1) * 12) } }, away: 'Estou cozinhando a janta. Cheirinho bom, né?', steam: 1 };
+    if (inn(LIFE.stove ? COOK_END : HOME + dK, SWEEP_END) && LIFE.pSweep) { const k = ((hh - COOK_END) * HOUR_S * 0.45 / LIFE.pSweep.len) % 1, q = polyAt(LIFE.pSweep, Math.max(0, k) * LIFE.pSweep.len); return { x: q.x, y: q.y, dir: dirFromVec(q.dx, q.dy, 0), walking: true, slow: 1, wd: k * LIFE.pSweep.len, cust: { sweep: 1, act: { k: 'sweep', f: Math.floor(((wall / 1400) % 1) * 12) } }, away: 'Deixa eu varrer a casa antes de dormir.' }; }
+    if (LIFE.pBedFromK && hh >= SWEEP_END) return Object.assign(walk(LIFE.pBedFromK, Math.min(1, (hh - SWEEP_END) / Math.max(0.05, dBK)), false), { away: 'Já vou deitar. Boa noite!' });
+    return { x: kp[0], y: kp[1], dir: 0, away: closed };
+  }
+  if (!LIFE.pK && hh >= SLEEP - dB) return Object.assign(walk(LIFE.pB, (hh - (SLEEP - dB)) / dB, false), { away: 'Por hoje chega! Volte amanhã cedo.' });
   // na barraca: vende, arruma as frutas, senta no banquinho para fumar cachimbo
   const SEG = 24000, act = LIFE.act || ['sell', 'arrange', 'sell', 'smoke'][Math.floor(wall / SEG) % 4], t = (wall % SEG) / 1000;
   const at = (p, dir, cust) => ({ x: p[0], y: p[1], dir, cust });
@@ -64,12 +93,12 @@ function sellerState(now) {
     const segs = [[0, 2, 'w', 0, 1 / 3], [2, 8, 'p', 0], [8, 10, 'w', 1 / 3, 2 / 3], [10, 16, 'p', 1], [16, 18, 'w', 2 / 3, 1]];
     for (const [a, b, k, u, v] of segs) if (t >= a && t < b) {
       if (k === 'w') { const kk = u + (v - u) * (t - a) / (b - a); const q = polyAt(LIFE.pA, kk * LIFE.pA.len); return { x: q.x, y: q.y, dir: dirFromVec(q.dx, q.dy, 0), walking: true, wd: kk * LIFE.pA.len }; }
-      const p = LIFE.arr[u]; return at(p, dirFromVec(NPCS.find(q => q.id === 'fruit').stall[0] - p[0], NPCS.find(q => q.id === 'fruit').stall[1] - p[1], 0), { idle: { k: 'polish', f: Math.floor(((wall / 3000) % 1) * 12) } });
+      const p = LIFE.arr[u], st = NPCS.find(q => q.id === 'fruit').stall; return at(p, dirFromVec(st[0] - p[0], st[1] - p[1], 0), { idle: { k: 'polish', f: Math.floor(((wall / 3000) % 1) * 12) } });
     }
   }
   if (act === 'smoke') {
     if (t < 1.5) { const q = polyAt(LIFE.pStool, t / 1.5 * LIFE.pStool.len); return { x: q.x, y: q.y, dir: dirFromVec(q.dx, q.dy, 0), walking: true, wd: t }; }
-    if (t < 22) return at(LIFE.stool, LIFE.faceStall, { sit: 'c', smk: (wall / 4200) % 1, stool: 1 });
+    if (t < 22) return at(LIFE.stool, LIFE.faceStall, { sit: 'c', smk: (wall / 4200) % 1 });
     { const q = polyAt(LIFE.pStool, (t - 22) / 2 * LIFE.pStool.len, true); return { x: q.x, y: q.y, dir: dirFromVec(q.dx, q.dy, 0), walking: true, wd: t }; }
   }
   return at(LIFE.stand, LIFE.faceStall, null);
@@ -78,12 +107,12 @@ function updateLife(now) {
   if (!lifeInit()) return;
   const e = G.npcs.fruit; if (!e || e.npDown || e.npDead || e.dragged || e.onBackBy) return;
   const s = sellerState(now);
-  e.x = e.rx = s.x; e.y = e.ry = s.y; e.dir = s.dir;
+  e.x = e.rx = s.x; e.y = e.ry = s.y; if (!(e.lookUntil > now)) e.dir = s.dir;
   e.walking = !!s.walking; if (s.walking) e.walkDist = s.wd || 0;
   e.custP = s.cust || null; e.sleepB = s.cust && s.cust.down ? 1 : null;
   LIFE.atStall = !s.away; LIFE.busyText = s.away || '';
-  // fumaça do cachimbo depois de cada tragada
   if (s.cust && s.cust.smk != null) { const ph = s.cust.smk; if (ph > 0.42 && ph < 0.5 && Math.random() < 0.5) { const p = iso(e.rx, e.ry); spawnPart('smoke', p.sx + 3, p.sy - 34); } }
+  if (s.steam && Math.random() < 0.06 && LIFE.stove) { const p = iso(LIFE.stove.x, LIFE.stove.y); spawnPart('smoke', p.sx, p.sy - 30); }
 }
 
 // ---------- desenhos: banquinho e "Zzz" ----------

@@ -43,3 +43,28 @@ function drawTied(ctx, e, sx, sy, now) {
   ctx.restore();
 }
 function tiedNear() { const me = G.me; for (const id in G.players) { const q = G.players[id]; if (q !== me && q.tied && dist(q.rx, q.ry, me.x, me.y) < 1.8) return q; } return null; }
+
+// ---------- reação ao Tecelão: surpresa, depois adoração ou ânimo, e curiosidade (seguem com o olhar) ----------
+const REACT_RANGE = 7, REACT_CD = 60000, LOOK_MS = 12000;
+function weaverNear(e) { for (const id in G.players) { const q = G.players[id]; if (q.skin === 'weaver' && q.visible !== false && dist(q.rx, q.ry, e.rx, e.ry) < REACT_RANGE) return q; } return null; }
+function npcReactions(now) {
+  for (const id in G.npcs) {
+    const e = G.npcs[id]; if (e.npDead || e.npDown || e.dragged || e.onBackBy || e.sleepB || (e.custP && e.custP.down)) continue;
+    const w = weaverNear(e);
+    if (w && now - (e.reactT || -1e9) > REACT_CD) {
+      e.reactT = now; e.lookAt = w.id; e.lookUntil = now + LOOK_MS;
+      e.anim = { a: 'surprise', t0: now, ms: 1000 }; e.bubble = { t: '!', until: now + 1400 };
+      const next = e.kind === 'guard' || e.kind === 'captain' ? 'adore' : Math.random() < 0.55 ? 'adore' : 'cheer';
+      later(1100, () => { if (e.npDead || e.npDown) return; e.anim = { a: next, t0: performance.now(), ms: ACT_MS[next] }; e.bubble = { t: next === 'adore' ? '✦' : '♪', until: performance.now() + 2400 }; });
+    }
+    if (e.lookUntil > now) {   // curiosos: viram para ele enquanto ele estiver por perto
+      const q = G.players[e.lookAt]; if (q && dist(q.rx, q.ry, e.rx, e.ry) < REACT_RANGE + 3) { if (!e.walking) e.dir = dirFromVec(q.rx - e.rx, q.ry - e.ry, e.dir); if (!e.anim || now - e.anim.t0 > (e.anim.ms || 900)) { if (Math.random() < 0.004) e.bubble = { t: '?', until: now + 1200 }; } } else e.lookUntil = 0;
+    }
+  }
+}
+function drawNpcBubble(ctx, e, sx, sy, now) {
+  if (!e.bubble || now > e.bubble.until) return;
+  const k = 1 - Math.max(0, (e.bubble.until - now - 200) / 1200), y = sy - 70 - Math.sin(Math.min(1, k * 3) * Math.PI) * 3;
+  ctx.save(); ctx.font = 'bold 12px serif'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,248,225,0.95)'; ctx.strokeStyle = 'rgba(40,24,10,0.9)'; ctx.lineWidth = 3;
+  ctx.strokeText(e.bubble.t, sx, y); ctx.fillText(e.bubble.t, sx, y); ctx.restore();
+}

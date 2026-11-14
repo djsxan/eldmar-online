@@ -37,14 +37,15 @@ function bowPose(e, now) {
 }
 
 // ---------- desenho: flechas voando, cravadas no corpo e no chão, mira ----------
-function arrowShaft(ctx, bx, by, dx, dy, L, up) {
+function arrowShaft(ctx, bx, by, dx, dy, L, up, head) {
   const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
   const ex = bx - dx * L, ey = by - dy * L - (up || 0);
-  ctx.strokeStyle = '#3e2a16'; ctx.lineWidth = 2.2; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ex, ey); ctx.stroke(); ctx.strokeStyle = '#8a6438'; ctx.lineWidth = 1.1; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ex, ey); ctx.stroke();
+  ctx.lineCap = 'round'; ctx.strokeStyle = 'rgba(40,26,14,0.55)'; ctx.lineWidth = 1.15; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ex, ey); ctx.stroke(); ctx.strokeStyle = '#b08a5a'; ctx.lineWidth = 0.55; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ex, ey); ctx.stroke();
+  if (head) { ctx.fillStyle = '#9aa0a6'; ctx.beginPath(); ctx.moveTo(bx + dx * 2.2, by + dy * 2.2); ctx.lineTo(bx - dy * 0.8, by + dx * 0.8); ctx.lineTo(bx + dy * 0.8, by - dx * 0.8); ctx.fill(); }
   const fx = ex - bx, fy = ey - by, fl = Math.hypot(fx, fy) || 1, ux = fx / fl, uy = fy / fl;
-  ctx.strokeStyle = '#ece4d0'; ctx.lineWidth = 1; ctx.beginPath();
-  ctx.moveTo(ex - ux * 2, ey - uy * 2); ctx.lineTo(ex + ux * 1 - uy * 2, ey + uy * 1 + ux * 2);
-  ctx.moveTo(ex - ux * 2, ey - uy * 2); ctx.lineTo(ex + ux * 1 + uy * 2, ey + uy * 1 - ux * 2); ctx.stroke();
+  ctx.lineWidth = 0.7; ctx.beginPath(); ctx.strokeStyle = '#d8d2c2';
+  ctx.moveTo(ex - ux * 3, ey - uy * 3); ctx.lineTo(ex - uy * 1.3, ey + ux * 1.3); ctx.moveTo(ex - ux * 3, ey - uy * 3); ctx.lineTo(ex + uy * 1.3, ey - ux * 1.3); ctx.stroke();
+  ctx.strokeStyle = '#a8302a'; ctx.beginPath(); ctx.moveTo(ex - ux * 1.5, ey - uy * 1.5); ctx.lineTo(ex, ey); ctx.stroke();
 }
 function drawStuck(ctx, e, sx, sy, now, lyingDir) {
   if (!e.arrows || !e.arrows.length) return;
@@ -74,8 +75,8 @@ function drawBowTop(ctx, now) {
     const x = A.x + A.vx * t, y = A.y + A.vy * t, h = A.h + A.vz * t - 0.5 * A.g * t * t, vz = A.vz - A.g * t;
     const p = iso(x, y), sx = p.sx + ox, sy = p.sy + oy - h * 25;
     const dx = (A.vx - A.vy) * 32, dy = (A.vx + A.vy) * 16 - vz * 25 * 0.5;
-    ctx.save(); ctx.globalAlpha = 0.25; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; const l = Math.hypot(dx, dy) || 1; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx - dx / l * 26, sy - dy / l * 26); ctx.stroke(); ctx.restore();
-    arrowShaft(ctx, sx + dx / l * 6, sy + dy / l * 6, dx, dy, 15, 0);
+    ctx.save(); ctx.globalAlpha = 0.12; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.6; const l = Math.hypot(dx, dy) || 1; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx - dx / l * 26, sy - dy / l * 26); ctx.stroke(); ctx.restore();
+    arrowShaft(ctx, sx + dx / l * 6, sy + dy / l * 6, dx, dy, 15, 0, true);
   }
   // mira do arqueiro: anel que enche com a puxada e treme quando o braço cansa
   if (isArcher() && G.mouseW && inCombatZone()) {

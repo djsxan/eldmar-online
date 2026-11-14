@@ -329,6 +329,7 @@ function applyPose(R, Q, P, walkPh) {
   // cantil na mão (e a arma some enquanto bebe)
   { const b = (Q.bot || 0) > 0.5; if (b && !R.bottle) { const g = new THREE.Group(), lm = mat('#6a4a2a', 'leather'); g.add(mesh(capG(0.035, 0.07), lm, 0, -0.05, 0.02)); g.add(mesh(cylG(0.012, 0.016, 0.04, 8), mat('#3a2a1a', 'wood'), 0, 0.0, 0.02)); R.A.hand.add(g); R.bottle = g; }
     if (R.bottle) R.bottle.visible = b; if (R.weapon && !R.weapon.bow) R.weapon.obj.visible = !b; }
+  { const bm = (Q.broom || 0) > 0.5; if (bm && !R.broom) { const g = new THREE.Group(), wd = mat('#7a5a34', 'wood'); g.add(mesh(cylG(0.012, 0.012, 1.15, 6), wd, 0, -0.2, 0)); const br = mesh(coneG(0.09, 0.26, 8), mat('#c8a860', 'cloth'), 0, -0.85, 0); br.rotation.x = Math.PI; g.add(br); g.rotation.x = 0.5; R.A.hand.add(g); R.broom = g; } if (R.broom) R.broom.visible = bm; if (bm && R.weapon && !R.weapon.bow) R.weapon.obj.visible = false; }
   { const ha = (Q.harrow || 0) > 0.5; if (ha && !R.harrow) { const g = new THREE.Group(); g.add(mesh(cylG(0.006, 0.006, 0.72, 5), mat('#6a4a2a', 'wood'), 0, -0.02, 0)); g.add(mesh(coneG(0.014, 0.05, 4), mat('#8a8f96', 'metal'), 0, 0.36, 0)); for (const s of [-1, 1]) { const f = mesh(boxG(0.003, 0.08, 0.03), mat('#e8e0cc', 'cloth'), s * 0.008, -0.34, 0); g.add(f); } R.B.hand.add(g); R.harrow = g; } if (R.harrow) R.harrow.visible = ha; }
   { const pp = (Q.pipe || 0) > 0.5; if (pp && !R.pipe) { const g = new THREE.Group(), wd = mat('#4a2e1a', 'wood'); g.add(mesh(cylG(0.006, 0.006, 0.12, 6), wd, 0, -0.02, 0.06)); g.children[0].rotation.x = Math.PI / 2; g.add(mesh(cylG(0.018, 0.014, 0.035, 8), wd, 0, 0.0, 0.12)); R.A.hand.add(g); R.pipe = g; } if (R.pipe) R.pipe.visible = pp; }
   // arco e escudo seguem a mão, mas ficam "de pé" (orientados pelo tronco)
@@ -460,11 +461,11 @@ MON_LOOK.orcchief = () => ({ ...MON_LOOK.orc(), accent: tone('#9a1a14'), trim: t
 MON_LOOK.cryptlord = () => ({ ...MON_LOOK.skeleton(), head: 'circlet', weapon: 'darkblade', accent: tone('#3a1a4a'), trim: tone('#c8a850'), capeTone: tone('#2a1a3a') });
 // O Tecelão de Sxan: manto cinza esfarrapado com fios de ouro, capuz sem rosto, olhos de luz
 // O Tecelão: entidade careca, pele pálida, olhos brancos de luz, todo de branco e descalço
-const WEAVER_LOOK = () => ({ skin: tone('#dcd8d0'), hair: null, armor: 'robe', body: tone('#f6f4ee'), body2: tone('#e6e2d8'), accent: tone('#ffffff'), legs: tone('#f2f0ea'), boots: tone('#dcd8d0'), trim: tone('#ffffff'), head: 'none', weapon: null });
+const WEAVER_LOOK = () => ({ skin: tone('#efcfb6'), hair: null, armor: 'cloth', body: tone('#f7f7f4'), body2: tone('#e4e4e0'), accent: tone('#ffffff'), legs: tone('#ececea'), boots: tone('#efcfb6'), trim: tone('#d8d8d4'), head: 'none', weapon: null });
 function weaverExtras(R) {
   const S = 1.12, h = R.head, glow = mat('#ffffff', 'gem', { emissive: '#ffffff', emissiveIntensity: 5 });
   for (const s of [-1, 1]) h.add(mesh(sphG(0.02 * S), glow, s * 0.036 * S, 0.015 * S, 0.093 * S));
-  const ring = mesh(torG(0.17 * S, 0.004 * S), mat('#ffffff', 'gem', { emissive: '#eef4ff', emissiveIntensity: 3, transparent: true, opacity: 0.75 }), 0, 0.1 * S, -0.05 * S); ring.rotation.x = Math.PI / 2 - 0.35; h.add(ring);
+
   return;
   h.add(mesh(sphG(0.095 * S), mat('#050404', 'cloth'), 0, -0.01 * S, 0.035 * S));
   for (const s of [-1, 1]) h.add(mesh(sphG(0.016 * S), mat('#fff0b0', 'gem', { emissive: '#ffd060', emissiveIntensity: 3.5 }), s * 0.036 * S, 0.012 * S, 0.11 * S));

@@ -65,7 +65,9 @@ function drawGripBar(ctx, now) {
 }
 // corpo puxado: deitado (de costas pelos braços, de bruços pelo pé), cabeça/pés para o lado de quem puxa
 function dragDir(e) {
-  if (e._dpx != null) { const mx = e.rx - e._dpx, my = e.ry - e._dpy; if (mx * mx + my * my > 0.0002) e._dA = Math.atan2(my, mx); }
+  let dr = null, bd = 2.2; for (const id in G.players) { const q = G.players[id]; if (q === e || !(q.dragMode === 'arms' || q.dragMode === 'foot')) continue; const d = dist(q.rx, q.ry, e.rx, e.ry); if (d < bd) { bd = d; dr = q; } }
+  if (dr) { const a = Math.atan2(dr.ry - e.ry, dr.rx - e.rx); e._dA = a; }   // de costas: pés para longe de quem puxa; de bruços: cabeça para longe (pés com quem puxa)
+  else if (e._dpx != null) { const mx = e.rx - e._dpx, my = e.ry - e._dpy; if (mx * mx + my * my > 0.0002) e._dA = Math.atan2(my, mx); }
   e._dpx = e.rx; e._dpy = e.ry;
   const a = e._dA ?? 0; return dirFromVec(-Math.cos(a), -Math.sin(a), e.dir || 0);
 }

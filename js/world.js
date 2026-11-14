@@ -12,16 +12,18 @@ const O = {
   REEDS: 10, LILY: 11, STUMP: 12, DEADTREE: 13, GRAVE: 14, BONES: 15, TENT: 16, CAMPFIRE: 17, FENCE: 18,
   TORCH: 19, BARREL: 20, CRATE: 21, HAY: 22, WELL: 23, STALL: 24, BENCH: 25, BANNER: 26, LOG: 27,
   FLOWERBED: 28, SPIKES: 29, WALL: 30, TOWER: 31, PART: 32, GATE: 33, STAIRS: 34, RUBBLE: 35, RUBBLEBIG: 36,
-  STATUE: 37, BRAZIER: 38, DUMMY: 39, WATERFALL: 40, LOWWALL: 41, IVY: 42, ANVIL: 43, WEAPONRACK: 44, CART: 45, TABLE: 46, CAVE: 47, HOARD: 48, ARMORPILE: 49, RUINTOWER: 50, OAK: 51, BIRCH: 52, WILLOW: 53, FERN: 54, ROOTS: 55, SHROOMS: 56, BERRY: 57, HERB: 58, BOULDER: 59, GUILLOTINE: 60,
+  STATUE: 37, BRAZIER: 38, DUMMY: 39, WATERFALL: 40, LOWWALL: 41, IVY: 42, ANVIL: 43, WEAPONRACK: 44, CART: 45, TABLE: 46, CAVE: 47, HOARD: 48, ARMORPILE: 49, RUINTOWER: 50, OAK: 51, BIRCH: 52, WILLOW: 53, FERN: 54, ROOTS: 55, SHROOMS: 56, BERRY: 57, HERB: 58, BOULDER: 59, GUILLOTINE: 60, STOOL: 61, STAGEFLOOR: 62,
 };
 const BLOCKING = new Set([O.TREE, O.PINE, O.ROCK, O.FOUNTAIN, O.STUMP, O.DEADTREE, O.GRAVE, O.TENT,
   O.CAMPFIRE, O.FENCE, O.BARREL, O.CRATE, O.HAY, O.WELL, O.STALL, O.LOG, O.SPIKES,
-  O.WALL, O.TOWER, O.PART, O.RUBBLEBIG, O.CAVE, O.HOARD, O.RUINTOWER, O.OAK, O.BIRCH, O.WILLOW, O.BOULDER, O.GUILLOTINE, O.STATUE, O.BRAZIER, O.DUMMY, O.WATERFALL, O.LOWWALL, O.ANVIL, O.WEAPONRACK, O.CART, O.TABLE]);
+  O.WALL, O.TOWER, O.PART, O.RUBBLEBIG, O.CAVE, O.HOARD, O.RUINTOWER, O.OAK, O.BIRCH, O.WILLOW, O.BOULDER, O.GUILLOTINE, O.STOOL, O.STATUE, O.BRAZIER, O.DUMMY, O.WATERFALL, O.LOWWALL, O.ANVIL, O.WEAPONRACK, O.CART, O.TABLE]);
 // objetos soltos que dá para pegar e arremessar (dano base)
 const THROWABLE = { [O.BARREL]: 18, [O.CRATE]: 20, [O.ROCK]: 26 };
 // objetos rasteiros (vão direto para o chão pré-desenhado)
-const FLAT = new Set([O.FLOWER, O.LILY, O.FLOWERBED, O.BONES, O.RUBBLE, O.IVY]);
+const FLAT = new Set([O.FLOWER, O.LILY, O.FLOWERBED, O.BONES, O.RUBBLE, O.IVY, O.STAGEFLOOR]);
 const BEDS = [];
+const KITCHENS = [];   // fogões (casas e taverna): { x, y, bi }
+const FRUIT_STOOL = { x: -1, y: -1 };
 const STAGE = { x: -1, y: -1 };   // cadafalso da guilhotina (centro do tablado 3x3)   // camas do térreo (onde dá para deitar e dormir): { x, y, dx, dy (travesseiro -> pés), bi }
 const DIRS8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 
@@ -176,7 +178,7 @@ function interiorLayout0(b, fl = 0) {
     return { F, npc: null };
   }
   if (k === 'house') {
-    put('bed', 0, 0, { h: 2 }); put('fireplace', w - 2, 0); put('barrel', w - 1, 0); put('chest', 1, 0);
+    put('bed', 0, 0, { h: 2 }); put('fireplace', w - 2, 0); put('stove', w - 1, 0); put('chest', 1, 0); if (h >= 5) put('barrel', w - 1, 1);
     if (put('table', w - 2, h - 3)) { put('chair', w - 1, h - 3, { seat: 5 }); put('chair', w - 3, h - 3, { seat: 1 }); }
     put('shelf', 0, h - 2); if (h >= 5) put('crate', 0, h - 1);
     put('rug', dc, 1, { block: false });
@@ -191,7 +193,7 @@ function interiorLayout0(b, fl = 0) {
     for (let j = 0; j < 3; j++) put('rack', w - 1, j);
     put('trough', 0, 2, { w: 2 });
   } else if (k === 'tavern') {
-    npcAt(1, 0); put('barrel', 0, 0); put('barrel', 2, 0); put('counter', 0, 1, { w: 3 }); put('fireplace', w - 2, 0); put('shelf', 3, 0);
+    npcAt(1, 0); put('barrel', 0, 0); put('barrel', 2, 0); put('counter', 0, 1, { w: 3 }); put('fireplace', w - 2, 0); put('shelf', 3, 0); put('stove', 4, 0) || put('stove', w - 1, 1);
     for (const [ti, tj] of [[5, 2], [1, 3], [5, 4]]) if (put('table', ti, tj)) { put('chair', ti - 1, tj, { seat: 1 }); put('chair', ti + 1, tj, { seat: 5 }); }
   } else if (k === 'temple') {
     put('altar', dc - 1, 0, { w: 3 }); npcAt(dc, 1); put('candles', 1, 0); put('candles', w - 2, 0);
@@ -786,7 +788,7 @@ function generateWorld() {
       for (let yy = cy - 1; yy <= cy + 2 && ok; yy++) for (let xx = cx - 1; xx <= cx + 1 && ok; xx++) { const i = idx(xx, yy); if (bld[i] !== -1 || BLOCKING.has(obj[i]) || ground[i] === T.WATER || rdir[i] && yy > cy + 1) ok = false; }
       if (ok) best = [cx, cy];
     }
-    if (best) { const [cx, cy] = best; for (let yy = cy - 1; yy <= cy + 1; yy++) for (let xx = cx - 1; xx <= cx + 1; xx++) obj[idx(xx, yy)] = O.PART; obj[idx(cx, cy)] = O.GUILLOTINE; obj[idx(cx, cy + 2)] = O.NONE; STAGE.x = cx; STAGE.y = cy; } }
+    if (best) { const [cx, cy] = best; for (let yy = cy - 1; yy <= cy + 1; yy++) for (let xx = cx - 1; xx <= cx + 1; xx++) obj[idx(xx, yy)] = O.STAGEFLOOR; obj[idx(cx, cy)] = O.GUILLOTINE; obj[idx(cx, cy + 2)] = O.NONE; STAGE.x = cx; STAGE.y = cy; } }
   for (const [x, y, o] of [[C - 4, KEEP.y1 - 3, O.FLOWERBED], [C + 5, KEEP.y1 - 3, O.FLOWERBED], [C - 1, KEEP.y1 - 2, O.BRAZIER], [C + 2, KEEP.y1 - 2, O.BRAZIER], [C - 6, KEEP.y1 - 2, O.BENCH], [C + 7, KEEP.y1 - 2, O.BENCH], [C - 4, KEEP.y1 - 6, O.STATUE], [C + 5, KEEP.y1 - 6, O.STATUE]]) decoAny(x, y, o);
   // catedral: cemitério e jardim
   const T0 = BUILDINGS[0];
@@ -819,6 +821,7 @@ function generateWorld() {
     obj[i] = r < 0.025 ? O.TREE : r < 0.05 ? O.BUSH : r < 0.15 ? O.TALLGRASS : r < 0.22 ? O.FLOWER : O.NONE;
   }
   for (const n of NPCS) obj[idx(Math.round(n.x), Math.round(n.y))] = O.NONE;
+  { const fr = NPCS.find(n => n.id === 'fruit'); if (fr) for (const [dx, dy] of [[1, -1], [-1, -1], [1, 1], [-1, 1], [2, -1]]) { const x = fr.stall[0] + dx, y = fr.stall[1] + dy, i = idx(x, y); if (bld[i] < 0 && obj[i] === O.NONE && !(x === Math.round(fr.x) && y === Math.round(fr.y))) { obj[i] = O.STOOL; FRUIT_STOOL.x = x; FRUIT_STOOL.y = y; break; } } }
   for (let k = seats.length - 1; k >= 0; k--) if (seats[k].bi < 0) seats.splice(k, 1);
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (obj[idx(x, y)] === O.BENCH) seats.push({ x, y, dir: 7, h: 0.45, bi: -1 });
 
@@ -828,6 +831,7 @@ function generateWorld() {
 // mobília -> obstáculos (PART) e assentos, no quadro do mundo
 function placeFurniture(b, bi, f, obj, seats, idx) {
   if (f.t === 'stairup' || f.t === 'stairdown') return;
+  if (f.t === 'stove') { const [x, y] = bLocal(b, f.i, f.j); KITCHENS.push({ x, y, bi }); }
   if (f.t === 'bed') { const [px, py] = bLocal(b, f.i + (f.w - 1) / 2, f.j), [fx, fy] = bLocal(b, f.i + (f.w - 1) / 2, f.j + f.h - 1); BEDS.push({ x: (px + fx) / 2, y: (py + fy) / 2, dx: fx - px, dy: fy - py, bi }); }
   for (let a = 0; a < f.w; a++) for (let c = 0; c < f.h; c++) { const [x, y] = bLocal(b, f.i + a, f.j + c); if (f.block) obj[idx(x, y)] = O.PART; }
   if (!f.seat) return;
