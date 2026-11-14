@@ -3,8 +3,8 @@
 //  Mexa aqui para balancear o jogo.
 // ============================================================
 const GAME_NAME = 'World of Sxan';
-const VERSION = 'v1.12.0';
-const VERSION_NAME = 'Natureza';
+const VERSION = 'v1.13.0';
+const VERSION_NAME = 'O Dragão';
 
 const PLAYER_SPEED = 2.7;          // tiles por segundo (1 tile ≈ 2 m)
 // configurações do jogador (menu de pausa)
@@ -120,7 +120,7 @@ const MON = {
   orcchief: { thrower: true, name: 'Grukk, Chefe Orc',  hp: 750, dmg: [16, 30], xp: 420, gold: [60, 100], speed: 1.9, atk: 1400, aggro: 7, big: true, boss: true, base: 'orc', trophy: 'orcbanner' },
   cryptlord: { name: 'Senhor da Cripta', hp: 620, dmg: [14, 26], xp: 400, gold: [40, 80], speed: 1.7, atk: 1350, aggro: 7, big: true, boss: true, base: 'skeleton', trophy: 'cryptcrown' },
   deserterchief: { name: 'Capitão Varrick', hp: 680, dmg: [15, 28], xp: 410, gold: [70, 120], speed: 2.0, atk: 1250, aggro: 7, big: true, boss: true, base: 'deserter', trophy: 'insignia' },
-  dragon:   { name: 'Drakhar, o Flagelo Rubro', hp: 2800, dmg: [30, 48], xp: 1600, gold: [150, 260], speed: 1.5, atk: 1700, aggro: 6, big: true, boss: true, dragon: true, rad: 2.4, trophy: 'dragonscale' },
+  dragon:   { name: 'Drakhar, o Flagelo Rubro', hp: 3400, dmg: [32, 50], xp: 2000, gold: [180, 300], speed: 2.1, atk: 1700, aggro: 6, big: true, boss: true, dragon: true, rad: 3.6, trophy: 'dragonscale' },
   elderslime: { name: 'Lodo Ancião',     hp: 480, dmg: [10, 20], xp: 300, gold: [0, 0],   speed: 1.1, atk: 1600, aggro: 6, big: true, boss: true, base: 'slime', cs: 1.9, trophy: 'slimecore' },
 };
 for (const k in MON) MON[k].speed *= 0.75; // escala nova do mundo

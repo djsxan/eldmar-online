@@ -141,10 +141,13 @@ function clientOnServer(m) {
     case 'dev': if (m.ok) { G.dev = true; G.noclip = true; G.me.skin = 'weaver'; showBanner('O Tecelão desperta', 'F2 abre o painel do criador'); buildDevPanel(); } else showToast('Senha do criador incorreta.'); break;
     case 'shake': G.shake = Math.max(G.shake, m.s || 6); break;
     case 'tele': G.teles.push({ ...m, t0: now }); break;
-    case 'fires': for (const [x, y, r, ms] of m.l) G.fires.push({ x, y, r, z: m.z || 0, t0: now + (m.ms || 0), until: now + ms }); G.breaths.push({ t0: now, ms: 650 }); break;
+    case 'fires': for (const [x, y, r, ms] of m.l) { const t = Math.round(y) * MAP_W + Math.round(x); G.fires.push({ x, y, r, z: m.z != null ? m.z : (WORLD.ground[t] === T.CLIFF && WORLD.fl1[t] > 0 ? 1 : 0), t0: now + (m.ms || 0), until: now + ms }); } if (!m.nb) G.breaths.push({ t0: now, ms: 650 }); break;
+    case 'jet': { const e = G.monsters[m.id]; if (e) e.jet = { ...m, t0: now }; break; }
+    case 'grab': { const e = G.players[m.id]; if (e) e.grab = { mid: m.mid, until: now + m.ms + 400 }; break; }
+    case 'burn': { const e = G.players[m.id]; if (e) e.burnUntil = m.ms ? now + m.ms : 0; break; }
     case 'fling': {
       const e = G.players[m.id]; if (!e) break;
-      e.fling = { t0: now, ms: m.ms, fx: m.fx, fy: m.fy, fz: m.fz, tx: m.tx, ty: m.ty, tz: m.tz, spin: Math.random() < 0.5 ? -1 : 1 };
+      e.grab = null; e.fling = { t0: now, ms: m.ms, fx: m.fx, fy: m.fy, fz: m.fz, tx: m.tx, ty: m.ty, tz: m.tz, spin: Math.random() < 0.5 ? -1 : 1 };
       if (m.id === G.myId) { G.path = null; G.pathGoal = null; G.climbing = null; G.shake = Math.max(G.shake, 8); flashDamage(); }
       break;
     }
@@ -206,12 +209,12 @@ function applySnapshot(m, now) {
   }
   for (const id in G.players) if (!seenP.has(id) && id !== G.myId) G.players[id].visible = false;
   const seenM = new Set();
-  for (const [id, ti, x100, y100, hp, flags, face, dg] of m.m) {
+  for (const [id, ti, x100, y100, hp, flags, face, dg, alt] of m.m) {
     seenM.add(id);
     const x = x100 / 100, y = y100 / 100;
     let e = G.monsters[id];
     if (!e) { const type = MON_TYPES[ti]; e = G.monsters[id] = mkEnt({ id, type, x, y, rx: x, ry: y, maxHp: MON[type].hp, visible: true }); }
-    e.hp = hp; e.flags = flags; e.face = face; e.lost = (flags >> 5) & 31; if (dg != null && dg >= 0) e.dg = dg;
+    e.hp = hp; e.flags = flags; e.face = face; e.lost = (flags >> 5) & 31; if (dg != null && dg >= 0) e.dg = dg; e.altT = (alt || 0) / 10;
     { const t = Math.round(y) * MAP_W + Math.round(x); e.z = WORLD.ground[t] === T.CLIFF && WORLD.fl1[t] > 0 ? 1 : 0; }
     e.buf.push({ t: now, x, y });
     if (e.buf.length > 6) e.buf.shift();
@@ -263,6 +266,7 @@ function updateLocal(now, dt) {
   const me = G.me;
   if (!me || me.carriedBy) { if (me) { me.walking = false; } return; }
   if (G.climbing) { stepClimb(now); return; }
+  if (me.grab && now < me.grab.until) { const d = G.monsters[me.grab.mid]; if (d) { me.x = me.rx = d.rx; me.y = me.ry = d.ry; } me.walking = false; G.path = null; return; }
   if (me.fling) { stepFling(me, now); return; }
   if (now < (G.floorWait || 0)) { me.walking = false; return; }
   if (document.activeElement && document.activeElement.tagName === 'INPUT') G.keys.clear();
@@ -464,7 +468,7 @@ function resize() {
   W = window.innerWidth; H = window.innerHeight;
   canvas.width = W * DPR; canvas.height = H * DPR;
   canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
-  if (!G.zoomUser) SCALE = clamp(H / 425 * 1.45 * (SET.zoom || 1), 1.8, 6.5);
+  G.baseScale = clamp(H / 425 * 1.45 * (SET.zoom || 1), 1.8, 6.5); if (!G.zoomUser) SCALE = G.baseScale * (G.dragonZoom || 1);
 }
 window.addEventListener('resize', resize);
 resize();
@@ -872,6 +876,11 @@ function frame() {
   let cam = lobbyCam;
   if (G.started) {
     updateLocal(now, dt); updateFalls(now); updateLooting(now);
+    { // luta com o dragão: a câmera se afasta devagar para caber tudo na tela (só se o zoom não foi mudado à mão)
+      let near = false; for (const id in G.monsters) { const q = G.monsters[id]; if (MON[q.type].dragon && !q.dieAt && !(q.flags & 4) && dist(q.rx, q.ry, G.me.rx, G.me.ry) < 22) near = true; }
+      G.dragonZoom = (G.dragonZoom || 1) + ((near ? 0.6 : 1) - (G.dragonZoom || 1)) * Math.min(1, dt * 1.2);
+      if (!G.zoomUser && G.baseScale) SCALE = G.baseScale * G.dragonZoom;
+    }
     for (const id in G.players) { const e = G.players[id]; if (id !== G.myId) { if (e.fling) stepFling(e, now); else interp(e, now); } updateIdle(e, now); bleed(e, now); }
     for (const id in G.monsters) { const q = G.monsters[id]; if (q.dieAt && !q._pool && now > q.dieAt && !NO_BLOOD.has(q.type)) { q._pool = 1; addBlood(q.rx, q.ry, q.z || 0, MON[q.type].big ? 1.3 : 0.8, 60000); } }
     for (const id in G.monsters) { const m = G.monsters[id]; interp(m, now); if (m.dieAt && now > m.dieAt + 650) delete G.monsters[id]; }
@@ -1279,7 +1288,7 @@ function buildDevPanel() {
   const goto = [['Cidadela', CENTER, CENTER + 6]].concat(BASTIONS.map(b => [b.name, b.x, b.y]));
   d.innerHTML = '<div class="gp-head"><span>O Tecelão</span><button class="gp-x" data-close="devpanel">✕</button></div>' +
     '<div class="gp-sub">Poderes</div><div class="dv-row"><label><input type="checkbox" id="dv-noclip" checked> Atravessar paredes</label><label><input type="checkbox" id="dv-hide"> Invisível</label></div>' +
-    '<div class="dv-row"><button id="dv-fog">Revelar mapa</button><button id="dv-heal">Curar</button><button id="dv-clear">Limpar área</button></div>' +
+    '<div class="dv-row"><button id="dv-fog">Revelar mapa</button><button id="dv-heal">Curar</button><button id="dv-clear">Limpar área</button><button id="dv-drag">Dragão voar</button></div>' +
     '<div class="dv-row">Hora: <button data-t="">Real</button><button data-t="day">Dia</button><button data-t="night">Noite</button></div>' +
     '<div class="gp-sub">Ir para</div><div class="dv-row dv-wrap">' + goto.map((g2, i) => '<button data-g="' + i + '">' + g2[0] + '</button>').join('') + '</div>' +
     '<div class="gp-sub">Invocar</div><div class="dv-row"><select id="dv-mon">' + monOpts + '</select><button id="dv-pmon">Colocar monstro</button></div>' +
@@ -1292,6 +1301,7 @@ function buildDevPanel() {
   $('dv-fog').onclick = () => { if (G.fog) { G.fog.fill(1); showToast('Mapa revelado.'); } };
   $('dv-heal').onclick = () => Net.send({ t: 'dev', a: 'heal' });
   $('dv-clear').onclick = () => Net.send({ t: 'dev', a: 'clear' });
+  $('dv-drag').onclick = () => { Net.send({ t: 'dev', a: 'dragon' }); showToast('O dragão levantou voo para patrulhar.'); };
   d.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { G.devTime = b.dataset.t || null; });
   d.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { const g2 = goto[+b.dataset.g]; devTp(g2[1], g2[2] + 3); });
   $('dv-pmon').onclick = () => { G.devPlace = { kind: 'mon', v: $('dv-mon').value }; showToast('Clique no chão para colocar.'); };

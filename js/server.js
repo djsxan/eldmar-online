@@ -242,13 +242,16 @@ function hostOnClient(from, m) {
       } else if (m.a === 'clear') { for (const id in S.monsters) { const q = S.monsters[id]; if (dist(q.x, q.y, p.x, p.y) < 12) { delete S.monsters[id]; near(q.x, q.y, { t: 'mdie', id: q.id, d: 0 }); } } }
       else if (m.a === 'heal') { p.hp = p.maxHp; p.mp = p.maxMp; sendStat(p); }
       else if (m.a === 'hide') p.devHidden = !!m.on;
+      else if (m.a === 'dragon') { const dm = Object.values(S.monsters).find(q => MON[q.type].dragon); if (dm) { dm.sleep = false; dm.aggro = null; startPatrol(dm, now_()); } }
       else if (m.a === 'tp' && isFinite(x) && isFinite(y)) { p.x = clamp(x, 1, MAP_W - 2); p.y = clamp(y, 1, MAP_H - 2); p.z = +m.z || 0; p.fl = 0; p.fb = -1; Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: p.z, fl: 0, fb: -1 }); }
       break;
     }
     case 'atk': playerStrike(p, m.k, +m.a, now_()); break;
     case 'parry': if (m.on) { if (p.atk && !p.atk.done && p.cst >= FEINT_COST) { p.cst -= FEINT_COST; p.atk = null; } if (!p.atk && !p.downed && now_() >= (p.stunUntil || 0)) p.parry = { t0: now_(), a: +m.a || 0 }; } else p.parry = null; break;
     case 'parrya': if (p.parry && isFinite(+m.a)) p.parry.a = +m.a; break;
-    case 'dodge': { const now = now_(); const lg = (p.lost || 0) & ~(p.pro || 0) & 24; if (lg || now < (p.knockUntil || 0) || p.downed || now < (p.dodgeCd || 0) || p.cst < DODGE.cost || now < (p.stunUntil || 0)) break; p.cst -= DODGE.cost; p.dodgeCd = now + DODGE.cd; p.dodgeUntil = now + DODGE.iframe; p.dodgeAllow = now + DODGE.ms + 400; p.parry = null; if (p.atk && !p.atk.done) p.atk = null; near(p.x, p.y, { t: 'anim', w: 'p', id: p.id, a: 'dash', ms: DODGE.ms + 120 }); sendStat(p); break; }
+    case 'dodge': { const now = now_(); const lg = (p.lost || 0) & ~(p.pro || 0) & 24; if (lg || now < (p.knockUntil || 0) || p.downed || now < (p.dodgeCd || 0) || p.cst < DODGE.cost || now < (p.stunUntil || 0)) break; p.cst -= DODGE.cost; p.dodgeCd = now + DODGE.cd; p.dodgeUntil = now + DODGE.iframe; p.dodgeAllow = now + DODGE.ms + 400; p.parry = null; if (p.atk && !p.atk.done) p.atk = null; near(p.x, p.y, { t: 'anim', w: 'p', id: p.id, a: 'dash', ms: DODGE.ms + 120 }); sendStat(p);
+      if (p.burnUntil > now) { p.burnUntil -= 3000; if (p.burnUntil <= now + 400) extinguish(p, 'Você rola no chão e apaga o fogo.'); else near(p.x, p.y, { t: 'burn', id: p.id, ms: p.burnUntil - now }); }
+      break; }
     case 'kick': playerKick(p, +m.a || 0, now_()); break;
     case 'duel': p.duel = !!m.on; break;
     case 'aim': if (['head', 'torso', 'legs'].includes(m.z)) p.aim = m.z; break;
@@ -296,7 +299,7 @@ function hostOnClient(from, m) {
 
 function handleMove(p, m) {
   if (p.carriedBy) return;
-  if (now_() < (p.flungUntil || 0) || now_() < (p.knockUntil || 0)) return;   // voando / derrubado
+  if (p.grabbed || now_() < (p.flungUntil || 0) || now_() < (p.knockUntil || 0)) return;   // voando / derrubado
   if (p.dev) { const x = +m.x, y = +m.y; if (isFinite(x) && isFinite(y)) { p.x = clamp(x, 1, MAP_W - 2); p.y = clamp(y, 1, MAP_H - 2); p.z = +m.z || 0; p.dir = m.d | 0; p.walking = !!m.w; p.lastMv = now_(); } return; }
   const now = now_();
   const x = +m.x, y = +m.y;
@@ -970,7 +973,7 @@ function pvpHit(p, q, A, now) {
 function resolvePlayerStrike(p, A, now) {
   { const B0 = STRIKES[A.k]; let n = 0; for (const q of Object.values(S.players)) { if (n >= (B0.multi || 1) || !pvpOk(p, q) || !inArc(p.x, p.y, A.a, q.x, q.y, A.reach, A.arc, 0.3)) continue; pvpHit(p, q, A, now); n++; } if (n) return; }
   const B = STRIKES[A.k], M = MELEE[p.cls] || MELEE.knight;
-  const targets = Object.values(S.monsters).filter(q => Math.abs((q.z || 0) - (p.z || 0)) < 0.5 && inArc(p.x, p.y, A.a, q.x, q.y, A.reach, A.arc, MON[q.type].rad || 0.3)).sort((a, b) => dist(a.x, a.y, p.x, p.y) - dist(b.x, b.y, p.x, p.y)).slice(0, B.multi || 1);
+  const targets = Object.values(S.monsters).filter(q => Math.abs((q.z || 0) - (p.z || 0)) < 0.5 && (q.alt || 0) < 1.2 && inArc(p.x, p.y, A.a, q.x, q.y, A.reach, A.arc, MON[q.type].rad || 0.3)).sort((a, b) => dist(a.x, a.y, p.x, p.y) - dist(b.x, b.y, p.x, p.y)).slice(0, B.multi || 1);
   for (const q of targets) {
     const MM = MON_MELEE[q.type], facing = Math.abs(angDiff(Math.atan2(p.y - q.y, p.x - q.x), q.atk ? q.atk.a : Math.atan2(p.y - q.y, p.x - q.x))) < 1.2;
     if (MM && MM.blk && !q.atk && facing && now > (q.guardBreak || 0) && now >= (q.stunUntil || 0) && Math.random() < MM.blk) {   // o inimigo bloqueou
@@ -1017,69 +1020,246 @@ function combatTick(p, now, dt) {
 // ---------------- DRAGÃO ----------------
 const angDiff = (a, b) => { let d = (a - b) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
 function dragonDir(m) { const dx = Math.cos(m.ang), dy = Math.sin(m.ang); return dirFromVec(dx, dy, 0); }
+const DRG_MS = { bite: 700, breath: 2000, tail: 900, roar: 1300, takeoff: 1100, land: 800 };
+const DRG = { bite: 5.4, tail: 7.2, bMin: 3.6, bMax: 12.5, bLen: 11.5, mouth: 2.8, circR: 8, altAir: 5, altStrafe: 2.4, fly: 7, strafe: 10, altPatrol: 6.5 };
+// o dragão caça qualquer um fora da cidade — inclusive o Tecelão, a não ser que esteja invisível
+const dragonCan = p => p && !p.downed && !p.grabbed && !(p.dev && p.devHidden) && !inSafe(p.x, p.y) && !(p.fl > 0) && now_() >= (p.flungUntil || 0);
+function flyTo(m, x, y, alt, speed, dt) {
+  const dx = x - m.x, dy = y - m.y, d = Math.hypot(dx, dy), s = Math.min(d, speed * dt);
+  if (d > 0.01) { m.x += dx / d * s; m.y += dy / d * s; const want = Math.atan2(dy, dx); m.ang += Math.max(-dt * 3, Math.min(dt * 3, angDiff(want, m.ang))); }
+  m.alt += Math.max(-dt * 4.5, Math.min(dt * 4.5, alt - m.alt));
+  return d < 0.6 && Math.abs(m.alt - alt) < 0.15;
+}
+function dragonAnim(m, a, tx, ty) { anim('m', m, a, tx, ty); m.busyUntil = now_() + DRG_MS[a]; }
+function landedZ(m) { const t = tileAt(m.x, m.y); m.z = WORLD.ground[t] === T.CLIFF && WORLD.fl1[t] > 0 ? 1 : 0; }
 function dragonThink(m, players, now, dt) {
-  const d = MON[m.type];
-  const onTop = p => p && !p.dev && !p.downed && p.z >= 0.5 && dist(p.x, p.y, m.homeX, m.homeY) < 8;
-  const near0 = players.filter(onTop);
+  const d = MON[m.type]; m.alt = m.alt || 0;
+  const tg = players.filter(p => dragonCan(p) && dist(p.x, p.y, m.x, m.y) < 24);
   if (m.sleep) {
-    // acorda com quem chega perto (agachado chega mais perto) ou com barulho (correr, lutar) num raio maior
+    if (!m.patrolAt) m.patrolAt = now + 360000 + Math.random() * 300000;
+    if (now >= m.patrolAt) { startPatrol(m, now); return; }
     const noisy = p => (p.running && p.walking) || now - p.lastCombat < 2500;
-    const wake = m.aggro || near0.some(p => dist(p.x, p.y, m.x, m.y) < (p.crouch ? 2.2 : 4.5)) || players.some(p => !p.dev && !p.downed && !p.crouch && noisy(p) && dist(p.x, p.y, m.x, m.y) < 10);
+    const wake = m.aggro || tg.some(p => dist(p.x, p.y, m.x, m.y) < (p.crouch ? 3.2 : 6.5)) || tg.some(p => !p.crouch && noisy(p) && dist(p.x, p.y, m.x, m.y) < 14);
     if (!wake) return;
-    m.sleep = false; m.nextRoar = now + 300; m.busyUntil = now + 300;
+    m.sleep = false; m.mode = 'ground'; m.groundSince = now; m.nextRoar = now + 300; m.busyUntil = now + 300; m.airHp = [0.75, 0.5, 0.25];
   }
-  if (!near0.length) {
-    m.idleSince = m.idleSince || now;
-    if (now - m.idleSince > 15000) {   // ninguém em cima: volta ao ninho, recupera e dorme
-      if (dist(m.x, m.y, m.homeX, m.homeY) > 0.4) { moveToward(m, m.homeX, m.homeY, d.speed * dt * 0.6); m.ang = Math.atan2(m.homeY - m.y, m.homeX - m.x); return; }
-      m.sleep = true; m.hp = d.hp; m.aggro = null; m.idleSince = 0;
-    }
-    return;
-  }
-  m.idleSince = 0;
-  // fúria abaixo de 30%: mais rápido, sopro mais largo, olhos e garganta brilhando
+  if (!m.mode) m.mode = 'ground';
   const fury = m.hp < d.hp * 0.3; if (fury && !m.fury) { m.fury = true; near(m.x, m.y, { t: 'shake', s: 10 }); sys(d.name + ' entra em fúria!'); }
   const cdk = fury ? 0.6 : 1;
+  if (m.mode === 'patrol') return dragonPatrol(m, players, tg, now, dt);
+  if (m.mode === 'home') {
+    if (m.aggro && tg.some(p => p.id === m.aggro)) { m.mode = 'air'; m.airUntil = now + 2500; return; }
+    const back = dist(m.x, m.y, m.homeX, m.homeY) < 0.6;
+    if (!back) { flyTo(m, m.homeX, m.homeY, DRG.altAir, DRG.fly, dt); return; }
+    if (!flyTo(m, m.homeX, m.homeY, 0, DRG.fly, dt)) return;
+    m.alt = 0; landedZ(m); m.mode = null; m.sleep = true; m.hp = d.hp; m.aggro = null; m.fury = false; m.idleSince = 0;
+    if (!m.patrolAt || m.patrolAt < now) m.patrolAt = now + 720000 + Math.random() * 360000; return;
+  }
+  if (m.mode !== 'ground') return dragonAir(m, tg, now, dt, cdk);
+  // ---------- no chão ----------
   if (now < (m.busyUntil || 0)) return;
-  const tgt = near0.find(p => p.id === m.aggro) || near0.slice().sort((a, b) => dist(a.x, a.y, m.x, m.y) - dist(b.x, b.y, m.x, m.y))[0];
+  if (!tg.length) { m.idleSince = m.idleSince || now; if (now - m.idleSince > 12000) { m.mode = 'home'; dragonAnim(m, 'takeoff', m.x, m.y); } return; }
+  m.idleSince = 0;
+  const tgt = tg.find(p => p.id === m.aggro) || tg.slice().sort((a, b) => dist(a.x, a.y, m.x, m.y) - dist(b.x, b.y, m.x, m.y))[0];
   m.aggro = tgt.id;
-  const dd = dist(m.x, m.y, tgt.x, tgt.y), want = Math.atan2(tgt.y - m.y, tgt.x - m.x);
+  const dd = dist(m.x, m.y, tgt.x, tgt.y), want = Math.atan2(tgt.y - m.y, tgt.x - m.x), sameZ = Math.abs((tgt.z || 0) - (m.z || 0)) < 0.5;
   const turn = angDiff(want, m.ang); m.ang += Math.max(-dt * 1.8, Math.min(dt * 1.8, turn));
+  // levanta voo: de tempos em tempos, quando perde vida (75/50/25%) ou quando não alcança o alvo (em cima/embaixo da rocha, longe)
+  const hpCross = m.airHp && m.airHp.length && m.hp < d.hp * m.airHp[0];
+  if (hpCross || now - m.groundSince > 17000 + (m.id % 5) * 1000 || (!sameZ && dd > 3) || dd > 16) {
+    if (hpCross) m.airHp.shift();
+    m.mode = 'takeoff'; m.airActs = 0; dragonAnim(m, 'takeoff', tgt.x, tgt.y); near(m.x, m.y, { t: 'shake', s: 4 });
+    for (const p of players) if (!p.downed && dist(p.x, p.y, m.x, m.y) < 5 && Math.abs((p.z || 0) - (m.z || 0)) < 0.5) { p.slowUntil = now + 1200; sendStat(p); }
+    return;
+  }
   // rugido: assusta (lentidão) e treme a tela
   if (now >= (m.nextRoar || 0)) {
-    m.nextRoar = now + 16000 + Math.random() * 6000; m.busyUntil = now + DRAGON_MS.roar;
-    anim('m', m, 'roar', tgt.x, tgt.y);
-    for (const p of near0) if (dist(p.x, p.y, m.x, m.y) < 8) { p.slowUntil = now + 2500; sendStat(p); }
+    m.nextRoar = now + 16000 + Math.random() * 6000; dragonAnim(m, 'roar', tgt.x, tgt.y);
+    for (const p of tg) if (dist(p.x, p.y, m.x, m.y) < 11) { p.slowUntil = now + 2500; sendStat(p); }
     near(m.x, m.y, { t: 'shake', s: 9 }); return;
   }
   // golpe de cauda: quem está atrás ou dos lados voa longe
-  const flank = near0.filter(p => dist(p.x, p.y, m.x, m.y) < 4.4 && Math.abs(angDiff(Math.atan2(p.y - m.y, p.x - m.x), m.ang)) > 1.5);
+  const flank = tg.filter(p => sameZ && dist(p.x, p.y, m.x, m.y) < DRG.tail && Math.abs(angDiff(Math.atan2(p.y - m.y, p.x - m.x), m.ang)) > 1.5);
   if (flank.length && now >= (m.cdTail || 0)) {
-    m.cdTail = now + 5500 * cdk; m.busyUntil = now + DRAGON_MS.tail; anim('m', m, 'tail', flank[0].x, flank[0].y);
-    setTimeout(() => { if (!S.monsters[m.id]) return; for (const p of Object.values(S.players)) { if (p.downed || p.z < 0.5 || dist(p.x, p.y, m.x, m.y) > 4.6 || Math.abs(angDiff(Math.atan2(p.y - m.y, p.x - m.x), m.ang)) < 1.1) continue; damagePlayer(p, rint(24, 38), m, 0); if (!p.downed) flingPlayer(p, m.x, m.y, 6); } }, 430);
+    m.cdTail = now + 5500 * cdk; dragonAnim(m, 'tail', flank[0].x, flank[0].y);
+    setTimeout(() => { if (!S.monsters[m.id]) return; for (const p of Object.values(S.players)) { if (p.downed || Math.abs((p.z || 0) - (m.z || 0)) > 0.5 || dist(p.x, p.y, m.x, m.y) > DRG.tail + 0.3 || Math.abs(angDiff(Math.atan2(p.y - m.y, p.x - m.x), m.ang)) < 1.1) continue; damagePlayer(p, rint(24, 38), m, 0); if (!p.downed) flingPlayer(p, m.x, m.y, 7); } }, 430);
     return;
   }
-  // sopro de fogo: avisa no chão, depois queima o cone e deixa o chão em chamas
-  if (dd > 3.0 && dd < 8.5 && Math.abs(turn) < 0.5 && now >= (m.cdBreath || 0)) {
-    m.cdBreath = now + 9000 * cdk; m.busyUntil = now + DRAGON_MS.breath; m.ang = want;
-    anim('m', m, 'breath', tgt.x, tgt.y);
-    const a0 = want, x0 = m.x + Math.cos(a0) * 2.2, y0 = m.y + Math.sin(a0) * 2.2;
-    const bw = fury ? 0.7 : 0.5; near(m.x, m.y, { t: 'tele', x: x0, y: y0, z: 1, a: a0, len: 7.5, w: bw, ms: 1050 });
-    setTimeout(() => {
-      if (!S.monsters[m.id]) return;
-      for (const p of Object.values(S.players)) { if (p.downed) continue; const ax = p.x - x0, ay = p.y - y0, l = Math.hypot(ax, ay); if (l > 7.5 || Math.abs(angDiff(Math.atan2(ay, ax), a0)) > bw) continue; damagePlayer(p, rint(38, 56), m, 0); }
-      const list = []; for (let k = 1; k <= 6; k++) { const r = k * 1.15, sp = (Math.random() - 0.5) * r * 0.5; list.push([x0 + Math.cos(a0) * r - Math.sin(a0) * sp, y0 + Math.sin(a0) * r + Math.cos(a0) * sp, 0.9 + k * 0.08, 5000]); }
-      S.fires = (S.fires || []).concat(list.map(([x, y, r, ms]) => ({ x, y, r, until: now_() + ms })));
-      near(m.x, m.y, { t: 'fires', l: list, z: 1, ms: 520 });
-    }, 1050);
-    return;
-  }
+  // sopro: inspira, depois um jato que VARRE na frente (de um lado para o outro), incendiando o mato
+  if (dd > DRG.bMin && dd < DRG.bMax && Math.abs(turn) < 0.5 && now >= (m.cdBreath || 0)) { m.cdBreath = now + 9000 * cdk; m.ang = want; dragonBreath(m, want, fury); return; }
   // mordida
-  if (dd <= 3.4) {
-    if (now >= m.nextAtk && Math.abs(turn) < 0.8) { m.nextAtk = now + 1800 * cdk; m.busyUntil = now + 500; anim('m', m, 'bite', tgt.x, tgt.y); setTimeout(() => { if (S.monsters[m.id] && !tgt.downed && dist(tgt.x, tgt.y, m.x, m.y) < 3.7) damagePlayer(tgt, rint(d.dmg[0], d.dmg[1]), m, 0); }, 380); }
+  if (dd <= DRG.bite) {
+    if (sameZ && now >= m.nextAtk && Math.abs(turn) < 0.8) { m.nextAtk = now + 1800 * cdk; dragonAnim(m, 'bite', tgt.x, tgt.y); m.busyUntil = now + 500; setTimeout(() => { if (S.monsters[m.id] && !tgt.downed && dist(tgt.x, tgt.y, m.x, m.y) < DRG.bite + 0.4) damagePlayer(tgt, rint(d.dmg[0], d.dmg[1]), m, 0); }, 380); }
     return;
   }
   moveToward(m, tgt.x, tgt.y, d.speed * dt * (fury ? 1.35 : 1));
+}
+function dragonBreath(m, a, fury) {
+  dragonAnim(m, 'breath', 0, 0); m.busyUntil = now_() + DRG_MS.breath;
+  const side = Math.random() < 0.5 ? 1 : -1, sw = fury ? 0.95 : 0.75, a0 = a - side * sw, a1 = a + side * sw, wind = 700, ms = 1300;
+  const x0 = m.x + Math.cos(a) * DRG.mouth, y0 = m.y + Math.sin(a) * DRG.mouth;
+  near(m.x, m.y, { t: 'tele', x: x0, y: y0, z: m.z || 0, a, len: DRG.bLen, w: sw, ms: wind, nf: 1 });
+  setTimeout(() => {
+    if (!S.monsters[m.id]) return;
+    near(m.x, m.y, { t: 'jet', id: m.id, a0, a1, ms, d0: DRG.mouth, len: DRG.bLen });
+    const hitAt = {};
+    for (let k = 0; k <= 13; k++) setTimeout(() => {
+      if (!S.monsters[m.id]) return;
+      const now = now_(), ang = a0 + (a1 - a0) * (k / 13); m.ang = ang;
+      const mx = m.x + Math.cos(ang) * DRG.mouth, my = m.y + Math.sin(ang) * DRG.mouth;
+      for (const p of Object.values(S.players)) {
+        if (p.downed || now < (hitAt[p.id] || 0)) continue;
+        const ax = p.x - mx, ay = p.y - my, l = Math.hypot(ax, ay); if (l > DRG.bLen || Math.abs(angDiff(Math.atan2(ay, ax), ang)) > 0.22 + 0.6 / (l + 1)) continue;
+        hitAt[p.id] = now + 350; damagePlayer(p, rint(12, 18), m, 0); ignitePlayer(p, now);
+      }
+      const list = []; igniteTile(mx + Math.cos(ang) * DRG.bLen * (0.4 + Math.random() * 0.6), my + Math.sin(ang) * DRG.bLen * (0.4 + Math.random() * 0.6), now, list, true); if (list.length) near(m.x, m.y, { t: 'fires', l: list, nb: 1 });
+    }, k * 100);
+  }, wind);
+}
+// ---------- no ar ----------
+function dragonAir(m, tg, now, dt, cdk) {
+  const tgt = tg.find(p => p.id === m.aggro) || tg[0];
+  if (m.mode === 'takeoff') { flyTo(m, m.x, m.y, DRG.altAir, 0, dt); if (m.alt > DRG.altAir - 0.3) { m.mode = 'air'; m.airUntil = now + 3500 + Math.random() * 1500; m.circA = Math.atan2(m.y - (tgt ? tgt.y : m.y), m.x - (tgt ? tgt.x : m.x)); } return; }
+  if (m.mode === 'carry') return dragonCarry(m, now, dt);
+  if (!tgt && m.mode !== 'strafe') { m.lostT = m.lostT || now; if (now - m.lostT > 6000) { m.mode = 'home'; m.lostT = 0; } else flyTo(m, m.x + Math.cos(m.ang) * 3, m.y + Math.sin(m.ang) * 3, DRG.altAir, DRG.fly * 0.6, dt); return; }
+  m.lostT = 0; if (tgt) m.aggro = tgt.id;
+  if (m.mode === 'air') {
+    // circula em volta do alvo, com a sombra passando por cima dele
+    m.circA = (m.circA || 0) + dt * (DRG.fly / DRG.circR) * 0.8;
+    flyTo(m, tgt.x + Math.cos(m.circA) * DRG.circR, tgt.y + Math.sin(m.circA) * DRG.circR, DRG.altAir, DRG.fly, dt);
+    if (now < m.airUntil) return;
+    m.airActs = (m.airActs || 0) + 1;
+    if (m.airActs > 2 + (m.fury ? 1 : 0)) return dragonStartLand(m, tgt, now);
+    if (Math.random() < 0.62) dragonStartStrafe(m, tgt, now, 'air'); else dragonStartDive(m, tgt, now);
+    return;
+  }
+  if (m.mode === 'strafe') {
+    const R = m.run, done = flyTo(m, R.x1, R.y1, DRG.altStrafe, now < R.go ? DRG.fly : DRG.strafe, dt);
+    if (now >= R.go) {
+      if (!R.jet) { R.jet = true; near(m.x, m.y, { t: 'jet', id: m.id, a0: R.a, a1: R.a, ms: Math.round(R.len / DRG.strafe * 1000) + 300, d0: 2.6, len: 2.6, air: 1 }); }
+      const fx = m.x + Math.cos(R.a) * 4, fy = m.y + Math.sin(R.a) * 4, along = (fx - R.sx) * Math.cos(R.a) + (fy - R.sy) * Math.sin(R.a);
+      if (along > 0 && along < R.len) {
+        const list = []; igniteTile(fx, fy, now, list, true); (S.fires = S.fires || []).push({ x: fx, y: fy, r: 1.1, until: now + 3500 }); list.push([fx, fy, 1.2, 3500]); near(fx, fy, { t: 'fires', l: list, nb: 1 });
+        for (const p of Object.values(S.players)) { if (p.downed || R.hit[p.id] || dist(p.x, p.y, fx, fy) > 1.6) continue; if (now < (p.dodgeUntil || 0)) { near(p.x, p.y, { t: 'whiff', id: p.id }); continue; } R.hit[p.id] = 1; damagePlayer(p, rint(28, 40), m, 0); ignitePlayer(p, now); }
+      }
+    }
+    if (done || now > R.until) { m.mode = R.after; m.airUntil = now + 2500 + Math.random() * 1500; if (R.after === 'patrol') m.pi = Math.min(m.pi, m.route.length - 1); }
+    return;
+  }
+  if (m.mode === 'dive') {
+    const D = m.dive, k = Math.min(1, (now - D.t0) / D.ms);
+    m.x = D.fx + (D.tx - D.fx) * k; m.y = D.fy + (D.ty - D.fy) * k; m.alt = DRG.altAir + (0.9 - DRG.altAir) * k; m.ang = Math.atan2(D.ty - D.fy, D.tx - D.fx);
+    if (k < 1) return;
+    const p = S.players[D.id];
+    if (p && dragonCan(p) && dist(p.x, p.y, D.tx, D.ty) < 1.7 && now >= (p.dodgeUntil || 0)) {
+      if (p.carrying) dropCarried(p); p.grabbed = m.id; p.sit = null; m.mode = 'carry'; m.carry = { id: p.id, until: now + 2300 };
+      near(m.x, m.y, { t: 'grab', id: p.id, mid: m.id, ms: 2300 }); damagePlayer(p, rint(10, 16), m, 0); tell(p, 'O dragão te agarrou!');
+    } else { if (p) near(p.x, p.y, { t: 'whiff', id: p.id }); m.mode = 'air'; m.airUntil = now + 2000; near(m.x, m.y, { t: 'shake', s: 3 }); }
+    return;
+  }
+  if (m.mode === 'land') {
+    const L = m.landAt; if (!flyTo(m, L.x, L.y, dist(m.x, m.y, L.x, L.y) < 2.5 ? 0 : 1.5, DRG.fly, dt)) return;
+    m.alt = 0; landedZ(m); m.mode = 'ground'; m.groundSince = now; dragonAnim(m, 'land', tgt ? tgt.x : m.x, tgt ? tgt.y : m.y);
+    near(m.x, m.y, { t: 'shake', s: 12 });
+    for (const p of Object.values(S.players)) { if (p.downed || p.grabbed || Math.abs((p.z || 0) - (m.z || 0)) > 0.5 || dist(p.x, p.y, m.x, m.y) > 4.8) continue; damagePlayer(p, rint(18, 28), m, 0); if (!p.downed) knockPlayer(p, { x: m.x, y: m.y }, now); }
+  }
+}
+function dragonStartStrafe(m, tgt, now, after) {
+  const a = Math.atan2(tgt.y - m.y, tgt.x - m.x), sx = tgt.x - Math.cos(a) * 5, sy = tgt.y - Math.sin(a) * 5, len = 14;
+  m.mode = 'strafe'; m.run = { a, sx, sy, len, x1: tgt.x + Math.cos(a) * 11, y1: tgt.y + Math.sin(a) * 11, go: now + 900, until: now + 5000, hit: {}, after };
+  near(tgt.x, tgt.y, { t: 'tele', k: 'strip', x: sx, y: sy, a, len, w: 1.5, ms: 1100, z: 0 });
+}
+function dragonStartDive(m, tgt, now) {
+  m.mode = 'dive'; m.dive = { id: tgt.id, t0: now, ms: 1200, fx: m.x, fy: m.y, tx: tgt.x, ty: tgt.y };
+  near(tgt.x, tgt.y, { t: 'tele', k: 'ring', x: tgt.x, y: tgt.y, r: 1.7, ms: 1200, z: tgt.z || 0 });
+}
+function dragonStartLand(m, tgt, now) {
+  let L = null;
+  if ((tgt.z || 0) >= 0.5 && dist(tgt.x, tgt.y, m.homeX, m.homeY) < 10) L = { x: m.homeX, y: m.homeY };
+  else for (let k = 0; k < 12 && !L; k++) { const a = Math.atan2(m.y - tgt.y, m.x - tgt.x) + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.5, x = tgt.x + Math.cos(a) * 6.5, y = tgt.y + Math.sin(a) * 6.5, t = tileAt(x, y); if (inBounds(Math.round(x), Math.round(y)) && WORLD.ground[t] !== T.WATER && WORLD.ground[t] !== T.CLIFF && !inSafe(x, y)) L = { x, y }; }
+  m.mode = 'land'; m.landAt = L || { x: tgt.x, y: tgt.y };
+  near(m.landAt.x, m.landAt.y, { t: 'tele', k: 'ring', x: m.landAt.x, y: m.landAt.y, r: 4.8, ms: 1300, z: 0 });
+}
+function dragonCarry(m, now, dt) {
+  const C = m.carry, p = S.players[C.id];
+  flyTo(m, m.x + Math.cos(m.ang) * 4, m.y + Math.sin(m.ang) * 4, 6, 5.5, dt);
+  if (!m._edge) { const nx = m.x + Math.cos(m.ang) * 3, ny = m.y + Math.sin(m.ang) * 3; if (!inBounds(Math.round(nx), Math.round(ny)) || inSafe(nx, ny)) m.ang += Math.PI * 0.6; }
+  if (p) { p.x = m.x; p.y = m.y; p.lastMv = now; }
+  if (now < C.until && p && p.grabbed === m.id) return;
+  if (p && p.grabbed === m.id) dragonDrop(p, m.alt);
+  m.mode = 'air'; m.airUntil = now + 2500; m.carry = null;
+}
+// solta quem estava nas garras: cai do alto, se machuca e fica no chão
+function dragonDrop(p, alt) {
+  p.grabbed = null;
+  let best = null;
+  for (let r = 0; r < 6 && !best; r += 0.5) for (let k = 0; k < 8 && !best; k++) { const a = k * Math.PI / 4, x = p.x + Math.cos(a) * r, y = p.y + Math.sin(a) * r; if (!inBounds(Math.round(x), Math.round(y))) continue; const t = tileAt(x, y), top = WORLD.ground[t] === T.CLIFF && WORLD.fl1[t] > 0; if (top && canStandZ(x, y, 1, 0.22)) best = [x, y, 1]; else if (!top && WORLD.ground[t] !== T.CLIFF && canStand(x, y, 0, 0.22)) best = [x, y, 0]; }
+  const [tx, ty, tz] = best || [p.x, p.y, 0], ms = 750, fz = Math.max(1, (alt || 4) / 4);   // altura de voo (ALT_PX 44) em andares (176 px)
+  near(p.x, p.y, { t: 'fling', id: p.id, fx: p.x, fy: p.y, fz, tx, ty, tz, ms });
+  p.x = tx; p.y = ty; p.z = tz; p.flungUntil = now_() + ms + 900; p.lastMv = now_();
+  setTimeout(() => { if (!S.players[p.id] || p.downed) return; const wet = WORLD.ground[tileAt(p.x, p.y)] === T.WATER || WORLD.ground[tileAt(p.x, p.y)] === T.SHALLOW; damagePlayer(p, Math.round(p.maxHp * (wet ? 0.08 : 0.22)), null, 0); if (!p.downed && !wet) knockPlayer(p, { x: p.x + 0.5, y: p.y }, now_()); }, ms);
+}
+// ---------- patrulha: de tempos em tempos sobrevoa o mundo e ataca quem estiver no caminho, fora da cidade ----------
+function startPatrol(m, now) {
+  const a0 = Math.atan2(m.homeY - CENTER, m.homeX - CENTER), dir = Math.random() < 0.5 ? 1 : -1;
+  m.route = []; for (let k = 1; k <= 7; k++) { const a = a0 + dir * k * Math.PI * 2 / 8, r = 64 + Math.random() * 22; m.route.push([CENTER + Math.cos(a) * r, CENTER + Math.sin(a) * r]); }
+  m.pi = 0; m.patrolHit = {}; m.sleep = false; m.mode = 'patrol'; m.alt = 0; m.patrolAt = now + 720000 + Math.random() * 360000;
+  dragonAnim(m, 'takeoff', m.x, m.y); sys('Uma sombra imensa cruza o céu... ' + MON[m.type].name + ' saiu do covil para caçar.'); Net.toAll({ t: 'shake', s: 2 });
+}
+function dragonPatrol(m, players, tg, now, dt) {
+  if (now < (m.busyUntil || 0)) { flyTo(m, m.x, m.y, 2, 0, dt); return; }
+  if (m.aggro) { const a = tg.find(p => p.id === m.aggro); if (a) { m.mode = 'air'; m.airUntil = now + 2000; m.airActs = 0; return; } }
+  const wp = m.route[m.pi];
+  if (!wp) { m.mode = 'home'; return; }
+  if (flyTo(m, wp[0], wp[1], DRG.altPatrol, DRG.fly * 0.85, dt) || dist(m.x, m.y, wp[0], wp[1]) < 1.2) m.pi++;
+  const prey = tg.find(p => !m.patrolHit[p.id] && dist(p.x, p.y, m.x, m.y) < 10 && WORLD.zone[tileAt(p.x, p.y)] !== Z.OUTSKIRTS);
+  if (prey) { m.patrolHit[prey.id] = 1; dragonStartStrafe(m, prey, now, 'patrol'); }
+}
+
+// ---------- fogo: no corpo (role ou entre na água) e no mato (espalha) ----------
+function ignitePlayer(p, now) {
+  if (p.downed || !S.players[p.id]) return;
+  const was = now < (p.burnUntil || 0); p.burnUntil = now + 6000;
+  near(p.x, p.y, { t: 'burn', id: p.id, ms: 6000 });
+  if (!was) tell(p, 'Você está pegando fogo! Role (esquiva) ou entre na água.');
+}
+function extinguish(p, msg) { p.burnUntil = 0; near(p.x, p.y, { t: 'burn', id: p.id, ms: 0 }); if (msg) tell(p, msg); }
+const FLAMMABLE = new Set([O.TALLGRASS, O.BUSH, O.FERN, O.TREE, O.PINE, O.OAK, O.BIRCH, O.WILLOW, O.BERRY, O.HERB, O.LOG, O.ROOTS, O.FLOWER, O.REEDS, O.DEADTREE]);
+const BIG_FUEL = new Set([O.TREE, O.PINE, O.OAK, O.BIRCH, O.WILLOW, O.DEADTREE]);
+const raining = () => typeof weatherNow === 'function' && weatherNow().rain > 0.3;
+function igniteTile(x, y, now, list, force) {
+  x = Math.round(x); y = Math.round(y); if (!inBounds(x, y)) return;
+  const i = y * MAP_W + x; S.burn = S.burn || {}; S.burnt = S.burnt || {};
+  if (S.burn[i] || (S.burnt[i] || 0) > now || (S.burnN || 0) > 180) return;
+  const z = WORLD.zone[i], g = WORLD.ground[i], o = WORLD.obj[i];
+  if (z === Z.VILLAGE || z === Z.OUTSKIRTS || g === T.WATER || g === T.SHALLOW || g === T.SAND || WORLD.bld[i] >= 0) return;
+  const fuel = FLAMMABLE.has(o) ? (BIG_FUEL.has(o) ? 2 : 1) : (g === T.GRASS || g === T.FOREST) ? (force ? 0.6 : 0.4) : 0;
+  if (!fuel || (raining() && !force)) return;
+  const ms = (2500 + fuel * 3000) * (raining() ? 0.5 : 1);
+  S.burn[i] = { until: now + ms, spreadAt: now + 1200 + Math.random() * 1800, o }; S.burnN = (S.burnN || 0) + 1;
+  S.fires = S.fires || []; S.fires.push({ x, y, r: fuel >= 2 ? 1.2 : 0.8, until: now + ms });
+  list.push([x, y, fuel >= 2 ? 1.7 : fuel >= 1 ? 1.1 : 0.7, ms]);
+}
+function fireTick(now, players) {
+  if (S.burnN) {
+    const list = [], wet = raining();
+    for (const k in S.burn) {
+      const b = S.burn[k], i = +k, x = i % MAP_W, y = Math.floor(i / MAP_W);
+      if (!b.spread && now >= b.spreadAt) { b.spread = true; if (!wet) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const j = i + dy * MAP_W + dx; if (Math.random() < (FLAMMABLE.has(WORLD.obj[j]) ? 0.3 : 0.1)) igniteTile(x + dx, y + dy, now, list); } }
+      if (now < b.until) continue;
+      delete S.burn[k]; S.burnN--; S.burnt[i] = now + 600000;
+      if (b.o === WORLD.obj[i] && BIG_FUEL.has(b.o) && b.o !== O.DEADTREE) { setObj(i, O.DEADTREE); (S.objBack = S.objBack || []).push({ i, o: b.o, at: now + 600000 }); }
+      else if (b.o === WORLD.obj[i] && FLAMMABLE.has(b.o) && b.o !== O.DEADTREE) { setObj(i, O.NONE); (S.objBack = S.objBack || []).push({ i, o: b.o, at: now + 360000 }); }
+    }
+    if (list.length) { const [x, y] = list[0]; near(x, y, { t: 'fires', l: list, nb: 1 }, VIEW_RADIUS + 14); }
+  }
+  for (const p of players) {
+    if (p.grabbed && !S.monsters[p.grabbed]) dragonDrop(p, 4);
+    if (!p.burnUntil) continue;
+    if (p.downed || now >= p.burnUntil) { extinguish(p, p.downed ? null : 'O fogo se apagou.'); continue; }
+    const g = WORLD.ground[tileAt(p.x, p.y)]; if (g === T.WATER || g === T.SHALLOW) { extinguish(p, 'Você apaga o fogo na água.'); continue; }
+    if (now >= (p.burnDmgT || 0)) { p.burnDmgT = now + 650; damagePlayer(p, Math.max(3, Math.round(p.maxHp * 0.03)), null, 0); }
+  }
 }
 // arremesso realista: a pessoa voa em arco para longe e cai (pode cair da mesa)
 function flingPlayer(p, fx, fy, D) {
@@ -1117,7 +1297,8 @@ function hostTick() {
   for (const p of players) { bodyTick(p, now, dt); survivalTick(p, now, dt); combatTick(p, now, dt); }
   if (!S.bslots) initBastions();
   tickBastions(now);
-  if (S.fires && S.fires.length) { S.fires = S.fires.filter(f => f.until > now); for (const p of players) { if (p.downed || now < (p.burnT || 0)) continue; if (S.fires.some(f => dist(f.x, f.y, p.x, p.y) < f.r)) { p.burnT = now + 500; damagePlayer(p, 6, null, 0); } } }
+  if (S.fires && S.fires.length) { S.fires = S.fires.filter(f => f.until > now); for (const p of players) { if (p.downed || now < (p.burnT || 0)) continue; if (S.fires.some(f => dist(f.x, f.y, p.x, p.y) < f.r)) { p.burnT = now + 500; damagePlayer(p, 6, null, 0); if (Math.random() < 0.25) ignitePlayer(p, now); } } }
+  fireTick(now, players);
 
   for (const p of players) {
     if (p.downed) {
@@ -1175,7 +1356,7 @@ function hostTick() {
     }
     for (const m of mons) {
       if (Math.abs(m.x - r.x) > VIEW_RADIUS || Math.abs(m.y - r.y) > VIEW_RADIUS) continue;
-      ml.push([m.id, MON_TYPES.indexOf(m.type), Math.round(m.x * 100), Math.round(m.y * 100), m.hp, (m.slowUntil > now ? 1 : 0) | (m.stunUntil > now ? 2 : 0) | (m.sleep ? 4 : 0) | (m.fury ? 8 : 0) | ((m.lost || 0) << 5), m.face, MON[m.type].dragon ? dragonDir(m) : -1]);
+      ml.push([m.id, MON_TYPES.indexOf(m.type), Math.round(m.x * 100), Math.round(m.y * 100), m.hp, (m.slowUntil > now ? 1 : 0) | (m.stunUntil > now ? 2 : 0) | (m.sleep ? 4 : 0) | (m.fury ? 8 : 0) | ((m.lost || 0) << 5), m.face, MON[m.type].dragon ? dragonDir(m) : -1, Math.round((m.alt || 0) * 10)]);
     }
     const ch = []; for (const id in S.chests) { const c = S.chests[id]; if (Math.abs(c.x - r.x) <= VIEW_RADIUS && Math.abs(c.y - r.y) <= VIEW_RADIUS) ch.push([c.id, Math.round(c.x * 100), Math.round(c.y * 100), c.opened.has(r.id) ? 1 : 0, c.who.has(r.id) ? 1 : 0]); }
     const co = []; for (const id in S.corpses || {}) { const c = S.corpses[id]; if (Math.abs(c.x - r.x) <= VIEW_RADIUS && Math.abs(c.y - r.y) <= VIEW_RADIUS) co.push([c.id, MON_TYPES.indexOf(c.type), Math.round(c.x * 100), Math.round(c.y * 100), c.z, c.looted ? 1 : 0, Math.round(c.ix * 10), Math.round(c.iy * 10), c.lost || 0]); }
