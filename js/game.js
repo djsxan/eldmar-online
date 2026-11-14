@@ -338,7 +338,9 @@ function updateLocal(now, dt) {
     if (!keep) { let best = null, bd = rng2; for (const id in G.monsters) { const q = G.monsters[id]; if (q.dieAt || !q.visible || MON[q.type].beh) continue; const d = dist(me.x, me.y, q.rx, q.ry); if (d <= bd) { bd = d; best = q; } } if (best) setTarget(best.id); else if (cur && cur.dieAt) setTarget(null); }
   }
   const stF = (me.crouch ? 1 : 0) | (me.slide ? 2 : 0);
-  if (combatFacing() && G.mouseW) { const a = Math.atan2(G.mouseW.y - me.y, G.mouseW.x - me.x); me.fa = a; me.dir = dirFromVec(Math.cos(a), Math.sin(a), me.dir); if (G.parrying && now - (G.parryAT || 0) > 150) { G.parryAT = now; Net.send({ t: 'parrya', a }); } }
+  if (combatFacing() && G.mouseW) { let a = Math.atan2(G.mouseW.y - me.y, G.mouseW.x - me.x);
+    { let best = null, bd = 3.4; for (const id in G.monsters) { const q = G.monsters[id]; if (q.dieAt || !q.visible || Math.abs((q.z || 0) - (me.z || 0)) > 0.5) continue; const d = dist(q.rx, q.ry, me.x, me.y), aq = Math.atan2(q.ry - me.y, q.rx - me.x); let df = Math.abs(aq - a) % (Math.PI * 2); if (df > Math.PI) df = Math.PI * 2 - df; if (d < bd && df < 0.95) { bd = d; best = aq; } } if (best != null) a = best; }   /* assistência de mira: o inimigo perto, na direção do cursor */
+    me.fa = a; me.dir = dirFromVec(Math.cos(a), Math.sin(a), me.dir); if (G.parrying && now - (G.parryAT || 0) > 150) { G.parryAT = now; Net.send({ t: 'parrya', a }); } }
   if (now - me.sendT > 100 && (moved || me.walking !== me.sentWalk || stF !== me.sentSt || me.dir !== me.sentDir)) { me.sentDir = me.dir;
     me.sendT = now; me.sentWalk = me.walking; me.sentSt = stF;
     Net.send({ t: 'mv', x: Math.round(me.x * 100) / 100, y: Math.round(me.y * 100) / 100, z: Math.round(me.z * 100) / 100, d: me.dir, w: me.walking ? 1 : 0, r: running ? 1 : 0, c: me.crouch ? 1 : 0, sl: me.slide ? 1 : 0, ti: G.tired || (G.stam ?? STAM_MAX) < STAM_MAX * 0.3 ? 1 : 0 }, true);
@@ -656,9 +658,9 @@ function monsterUnderMouse(mx, my) {
   const S = SCALE;
   for (const id in G.monsters) {
     const e = G.monsters[id]; if (e.dieAt || !e.visible) continue;
-    const spr = monSprite(e.type, 0, -1), p = iso(e.rx, e.ry), sx = (p.sx + G.view.ox) * S, sy = (p.sy + G.view.oy) * S;
-    const hw = Math.max(18, spr.w * 0.4) * S;
-    if (mx > sx - hw && mx < sx + hw && my > sy - spr.ay * S && my < sy + 6 * S) { const d = e.rx + e.ry; if (d > bestD) { found = e; bestD = d; } }
+    const h = MON_H[e.type] || 60, p = iso(e.rx, e.ry), sx = (p.sx + G.view.ox) * S, sy = (p.sy + G.view.oy - (e.z || 0) * FLOOR_PX) * S;
+    const hw = Math.max(18, h * 0.42) * S;
+    if (mx > sx - hw && mx < sx + hw && my > sy - h * S && my < sy + 6 * S) { const d = e.rx + e.ry; if (d > bestD) { found = e; bestD = d; } }
   }
   return found;
 }

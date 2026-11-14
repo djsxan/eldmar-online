@@ -3,7 +3,7 @@
 //  Mexa aqui para balancear o jogo.
 // ============================================================
 const GAME_NAME = 'World of Sxan';
-const VERSION = 'v1.9.0';
+const VERSION = 'v1.9.1';
 const VERSION_NAME = 'Lâmina e Guarda';
 
 const PLAYER_SPEED = 2.7;          // tiles por segundo (1 tile ≈ 2 m)

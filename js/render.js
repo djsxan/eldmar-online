@@ -815,7 +815,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
       if (it.k === 0 && !it.cliff && CASTS.has(it.o)) { const s = objSprite(it.o, it.x, it.y); if (s) castShadow(s, it.sx, it.sy, sh, k); }
       else if (it.k === 0 && it.o === O.TOWER) { const p = iso(it.x - 0.5, it.y - 0.5); castShadow(towerSprite(WORLD.tvar[it.y * MAP_W + it.x], WORLD.toff[it.y * MAP_W + it.x]), p.sx + ox, p.sy + oy, sh, k); }
       else if (it.k === 4 && it.first) castShadow(it.sp, it.sx, it.sy, sh, k);
-      else if (it.k === 1 && !it.e.dieAt) castShadow(R3.ok ? monSprite3D(it.e.type, -1, -1, 0) : monSprite(it.e.type, 0, -1), it.sx, it.sy, sh, k);
+      else if (it.k === 1 && !it.e.dieAt) castShadow(R3.ok ? monSprite3D(it.e.type, -1, -1, 0) : monSprite(PAINT_AS[it.e.type] || it.e.type, 0, -1), it.sx, it.sy, sh, k);
       else if ((it.k === 2 || it.k === 3) && !it.e.downed) castShadow(R3.ok ? (it.e.isNpc ? npcSprite3D(it.e.kind, { dir: 0, walk: -1 }) : heroSprite3D(it.e.cls, it.e.skin, it.e.color, { dir: 0, walk: -1 })) : (it.e.isNpc ? npcSprite(it.e.kind, { view: 'S', walk: -1 }) : heroSprite(it.e.cls, it.e.skin, it.e.color, { view: 'S', walk: -1 })), it.sx, it.sy, sh, k);
     }
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = shAlpha; ctx.drawImage(shadowC, 0, 0); ctx.restore();

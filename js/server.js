@@ -92,9 +92,9 @@ function tickBastions(now) {
     if (m) { if (s.night && !night) { delete S.monsters[s.mid]; near(m.x, m.y, { t: 'mdie', id: m.id, d: 0 }); s.mid = null; } continue; }
     if (s.mid != null) { s.mid = null; s.deadAt = now; }          // morreu
     if (s.night && !night) continue;
-    if (s.deadAt && now - s.deadAt < (s.b.respawn && s.boss ? s.b.respawn : s.boss ? BOSS_RESPAWN : BASTION_RESPAWN)) continue;
+    if (s.deadAt && now - s.deadAt < (s.b.fast && !s.boss ? s.b.fast : s.b.respawn && s.boss ? s.b.respawn : s.boss ? BOSS_RESPAWN : BASTION_RESPAWN)) continue;
     const [x, y] = s.pos;
-    if (s.deadAt) { let busy = false; for (const id in S.players) if (dist(S.players[id].x, S.players[id].y, x, y) < 12) busy = true; if (busy) continue; }
+    if (s.deadAt && !s.b.fast) { let busy = false; for (const id in S.players) if (dist(S.players[id].x, S.players[id].y, x, y) < 12) busy = true; if (busy) continue; }
     const ox = s.patrol ? (s.off - 1) * 0.7 : 0;
     if (MON[s.type].dragon && s.deadAt) { sys('Um rugido ecoa das Terras Selvagens... o dragão voltou ao covil.'); Net.toAll({ t: 'shake', s: 3 }); }
     s.mid = spawnAt(s.type, x + ox, y, { bs: s.b.id, patrol: s.patrol ? { pts: s.patrol, i: 0 } : null, z: s.z || 0, sleep: !!MON[s.type].dragon, ang: Math.PI * 0.75 }); s.deadAt = 0;
@@ -361,7 +361,7 @@ function killMonster(m, p, delay) {
   const gold = rint(def.gold[0], def.gold[1]), drops = [];
   for (const [k, ch] of MON_LOOT[m.type] || []) if (Math.random() < ch) drops.push(k);
   if (Math.random() < 0.03) drops.push('gem');
-  if (m.type !== 'wisp') (S.corpses = S.corpses || {})[m.id] = { id: m.id, type: m.type, x: m.x, y: m.y, z: m.z || 0, gold, items: drops, looted: !gold && !drops.length, until: now_() + (def.dragon ? (BASTIONS.find(b => b.id === 'dragon') || {}).respawn || BOSS_RESPAWN : def.boss ? BOSS_RESPAWN : BASTION_RESPAWN), ix: m.x - p.x, iy: m.y - p.y };
+  if (m.type !== 'wisp') (S.corpses = S.corpses || {})[m.id] = { id: m.id, type: m.type, x: m.x, y: m.y, z: m.z || 0, gold, items: drops, looted: !gold && !drops.length, until: now_() + (m.bs && (BASTIONS.find(b => b.id === m.bs) || {}).fast ? 20000 : def.dragon ? (BASTIONS.find(b => b.id === 'dragon') || {}).respawn || BOSS_RESPAWN : def.boss ? BOSS_RESPAWN : BASTION_RESPAWN), ix: m.x - p.x, iy: m.y - p.y };
   if (def.boss) spawnChest(m);
   const group = Object.values(S.players).filter(q => !q.downed && dist(q.x, q.y, m.x, m.y) <= 10);
   if (!group.includes(p)) group.push(p);

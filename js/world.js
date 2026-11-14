@@ -275,6 +275,8 @@ const BASTIONS = TEST3D ? [] : [
   { id: 'crypt', name: 'Cripta das Colinas', kind: 'crypt', ...bpos(Math.PI / 2, 92), r: 9, mons: { skeleton: 9 }, boss: 'cryptlord', patrol: ['skeleton', 'skeleton'] },
   { id: 'fort', name: 'Fortim dos Desertores', kind: 'fort', ...bpos(-Math.PI / 2 + 0.6, 90), r: 9, mons: { bandit: 6, deserter: 4 }, boss: 'deserterchief', patrol: ['bandit', 'bandit', 'deserter'] },
   { id: 'pools', name: 'Poças do Pântano', kind: 'pools', ...bpos(0, 92), r: 9, mons: { slime: 7 }, boss: 'elderslime', night: { wisp: 4 } },
+  // TEMPORÁRIO (testes do combate): acampamento de bandidos logo depois do portão sul, repovoa rápido
+  { id: 'test', name: 'Acampamento de Bandidos (teste)', kind: 'testcamp', x: CENTER + 12, y: CENTER + 45, r: 5, mons: { bandit: 3, goblin: 2 }, fast: 15000, temp: true },
   { id: 'dragon', name: 'Covil do Dragão', kind: 'dragon', ...bpos(Math.PI / 4, 110), r: 9, mons: {}, boss: 'dragon', respawn: 1800000 },
   { id: 'cave', name: 'Caverna do Troll', kind: 'cave', x: CAVE_POS.x + Math.round(CAVE_POS.ux * 6), y: CAVE_POS.y + Math.round(CAVE_POS.uy * 6), r: 6, mons: {}, boss: 'troll' },
 ];
@@ -479,6 +481,8 @@ function generateWorld() {
         else if (d <= pr + 1.3 && obj[i] === O.NONE && H(px + x, py + y, 910) < 0.4) obj[i] = O.REEDS;
       }
       for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2 + 0.3; put(Math.round(Math.cos(a) * 7.5), Math.round(Math.sin(a) * 7.5), H(k, 5, 911) < 0.6 ? O.DEADTREE : O.MUSHROOM); }
+    } else if (B.kind === 'testcamp') {
+      for (const [x, y] of [[-2, -2], [2, -1]]) put(x, y, O.TENT); put(0, 1, O.CAMPFIRE); put(-3, 1, O.CRATE); put(3, 2, O.BARREL);
     } else if (B.kind === 'dragon') {
       // ruínas de fortaleza queimada: mesa de rocha (nível 1) com escadaria larga, chão chamuscado, árvores carbonizadas,
       // restos de cavaleiros, estrada com estandartes e tochas; no topo, torre de vigia em ruínas, muros caídos e o ninho com o tesouro
