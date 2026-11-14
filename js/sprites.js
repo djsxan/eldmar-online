@@ -189,6 +189,9 @@ function buildPose(cls, P) {
     Q.sway = Math.sin(ph) * (0.035 + heavy * 0.02);            // quadril balança para os lados
     Q.ht += Math.abs(Math.cos(ph)) * 0.03;
   }
+  if (P.drag === 'arms') { Q.aA = [0.7, 0.2, 0.25]; Q.aB = [0.7, 0.2, 0.25]; Q.tl -= 0.22; Q.wp = 0.4; }
+  else if (P.drag === 'foot') { Q.aB = [-0.6, 0.22, 0.1]; Q.tl += 0.22; }
+  else if (P.drag === 'grip') { Q.aA = [1.3, 0.05, 1.25]; Q.aB = [1.3, 0.05, 1.25]; Q.tl += 0.1; }
   const apply = (keys, p) => {
     const { a, b, t } = sampleKeys(keys, p);
     for (const k of ['aA', 'aB', 'wp', 'tl', 'tw', 'lA', 'lB', 'kn', 'drop', 'ht', 'hw', 'mouth', 'pull', 'glow', 'yaw', 'bot', 'harrow']) {

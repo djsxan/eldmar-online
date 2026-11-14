@@ -424,7 +424,7 @@ function applyLost(R, mask = 0, pro = 0) {
   if (R.shield) R.shield.visible = !lost('armB');
   for (const k in R.stumps) { R.stumps[k].visible = lost(k) && !pr(k); if (R.pegs[k]) R.pegs[k].visible = lost(k) && pr(k); }
 }
-function pose3Key(P) { return (P.dir | 0) + '|' + (P.walk >= 0 ? (P.run ? 'r' : 'w') + P.walk : '') + (P.act ? P.act.k + P.act.f : '') + (P.idle ? P.idle.k + P.idle.f : '') + (P.sit ? 's' + P.sit + (P.sv || '') : '') + (P.smk != null ? 'k' + Math.floor(P.smk * 8) : '') + (P.eat != null ? 'e' + Math.floor(P.eat * 8) : '') + (P.carry ? 'c' : '') + (P.down ? 'd' : '') + (P.cr ? 'K' : '') + (P.sl ? 'L' : '') + (P.hs ? 'h' + P.hs : '') + (P.br != null ? 'b' + P.br : '') + (P.limp ? 'm' + P.limp : '') + (P.armw ? 'W' : '') + (P.lost ? 'X' + P.lost + '_' + (P.pro || 0) : ''); }
+function pose3Key(P) { return (P.dir | 0) + '|' + (P.walk >= 0 ? (P.run ? 'r' : 'w') + P.walk : '') + (P.act ? P.act.k + P.act.f : '') + (P.idle ? P.idle.k + P.idle.f : '') + (P.sit ? 's' + P.sit + (P.sv || '') : '') + (P.smk != null ? 'k' + Math.floor(P.smk * 8) : '') + (P.eat != null ? 'e' + Math.floor(P.eat * 8) : '') + (P.carry ? 'c' : '') + (P.down ? 'd' + (P.prone ? 'p' : '') : '') + (P.drag ? 'D' + P.drag : '') + (P.cr ? 'K' : '') + (P.sl ? 'L' : '') + (P.hs ? 'h' + P.hs : '') + (P.br != null ? 'b' + P.br : '') + (P.limp ? 'm' + P.limp : '') + (P.armw ? 'W' : '') + (P.lost ? 'X' + P.lost + '_' + (P.pro || 0) : ''); }
 function heroSprite3D(cls, skin, color, P) {
   const lk = cls + ':' + skin + ':' + color;
   return cache3('h3|' + lk + '|' + pose3Key(P) , () => {
@@ -433,8 +433,8 @@ function heroSprite3D(cls, skin, color, P) {
     const Q = buildPose(cls, P);
     applyLost(R, P.lost || 0, P.pro || 0);
     applyPose(R, Q, P, P.walk >= 0 ? P.walk / 12 * Math.PI * 2 : 0);
-    return shoot3D(R, P.dir | 0, P.down ? -Math.PI / 2 : 0, P.sit === 'g');
-  }, 'h|' + lk + (P.down ? 'd' : '') + (P.dir | 0));
+    return shoot3D(R, P.dir | 0, P.down ? (P.prone ? Math.PI / 2 : -Math.PI / 2) : 0, P.sit === 'g');
+  }, 'h|' + lk + (P.down ? 'd' + (P.prone ? 'p' : '') : '') + (P.drag ? 'D' + P.drag : '') + (P.dir | 0));
 }
 function npcSprite3D(kind, P) {
   return cache3('n3|' + kind + '|' + pose3Key(P), () => {

@@ -275,7 +275,8 @@ function objSprite(o) { return o === O.BARREL ? smallSprite('barrel') : o === O.
 function actProg(an, now) { const ms = an.ms || ACT_MS[an.a] || 400, tt = now - an.t0; if (tt < 0 || tt >= ms) return -1; if (an.W) return tt < an.W ? 0.4 * tt / an.W : 0.4 + 0.6 * (tt - an.W) / Math.max(1, ms - an.W); return tt / ms; }
 function heroPoseFor(e, now) {
   const view0 = DIR_VIEW[e.dir || 0];
-  const P = { view: view0 === 'W' ? 'E' : view0, walk: -1, act: null, idle: null, sit: false, carry: !!(e.carrying || e.lifted) };
+  const P = { view: view0 === 'W' ? 'E' : view0, walk: -1, act: null, idle: null, sit: false, carry: !!(e.carrying || e.lifted || e.dragMode === 'back') };
+  if (e.dragMode && e.dragMode !== 'back') P.drag = e.dragMode;
   P.dir = e.dir || 0;
   if (e.custP && !e.walking) { Object.assign(P, e.custP); if (P.sit) P.walk = -1; return P; }
   if (e.walking) { P.walk = Math.floor(e.walkDist * (e.cls === 'knight' ? 8.5 : 9.5) / (e.running ? 1.45 : 1)) % 12; if (e.running) P.run = 1; }
@@ -328,6 +329,7 @@ function drawWeaverAura(ctx, sx, sy, now) {
   G.lights.push({ x: sx, y: sy - 30, r: 80, c: '235,245,255', a: 0.85 });
 }
 function drawHeroEntity(ctx, e, sx, sy, now) {
+  if (R3.ok && e.downed && e.dragged && !e.isNpc && typeof drawDragged === 'function') { drawDragged(ctx, e, sx, sy, now); e._spr = null; return; }
   if (R3.ok && e.exec && now < e.exec.t0 + e.exec.ms + 1500) {   // deitado na guilhotina, com a cabeça na luneta
     const s = heroSprite3D(e.cls, e.skin, e.color, { dir: 6, walk: -1, down: true, lost: e.lost || 0, pro: e.pro || 0 });
     ctx.imageSmoothingEnabled = true; pblit(ctx, woundOf(s, 3), sx, sy - 0.95 * (typeof HV !== 'undefined' ? HV : 25)); e._spr = null; return;
@@ -911,10 +913,10 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
   const drawItem = it => {
     if (it.gib) { const g = it.gib; ctx.imageSmoothingEnabled = true; if (it.gk >= 1 && !g.landed) { g.landed = 1; addBlood(g.x + g.dx * g.d, g.y + g.dy * g.d, g.z, 0.35, 300000); } ctx.save(); ctx.translate(it.sx, it.sy); ctx.rotate(g.rot + (it.gk < 1 ? g.spin * it.gk : g.spin)); pblit(ctx, g.s, 0, g.s.h * 0.12); ctx.restore(); return; }
     if (it.corpse) {
-      const c = it.corpse; let f = FALLS['m' + c.id];
+      const c = it.corpse; if (c.onBack) return; let f = FALLS['m' + c.id];
       const live = G.monsters[c.id]; if (!f && live && live.dieAt && now - live.dieAt < 1500) return;   // a queda ao vivo ainda vai começar
       if (!f && R3.ok) { f = startFall({ lost: c.lost || 0, key: 'm' + c.id, type: c.type, x: c.x, y: c.y, dir: c.id % 8, ix: c.ix, iy: c.iy, cls: 'knight', big: MON[c.type].big, force: 1 }); if (f) f.fromCorpse = true; }
-      if (f) { if (f.fromCorpse && !f.done && !f.staged) { for (let k = 0; k < 400 && !(f.mode === 'rag' ? ragStep(f) : rigidStep(f)); k++); } drawFall(ctx, f, it.sx, it.sy, now, 1, c.type !== 'dragon' && MON_LOOK[c.type] ? 2 : 0); }
+      if (f) { if (f.fromCorpse && !f.done && !f.staged) { for (let k = 0; k < 400 && !stepAny(f); k++); } drawFall(ctx, f, it.sx, it.sy, now, 1, c.type !== 'dragon' && MON_LOOK[c.type] ? 2 : 0); }
       { const ca = G.corpseArrows && G.corpseArrows[c.id]; if (ca) drawStuck(ctx, { arrows: ca.arrows, dir: ca.dir }, it.sx, it.sy, now, ca.dir); }
       if (!c.looted && dist(c.x, c.y, G.me.x, G.me.y) < 1.7) { const t = now / 300; for (let k = 0; k < 2; k++) dab(ctx, it.sx + Math.cos(t + k * 3) * 10, it.sy - 10 + Math.sin(t + k) * 4, 2, 2, '#ffe890'); }
       if (G.loot && G.loot.id === c.id) { const k = Math.min(1, (now - G.loot.t0) / 1300); ctx.strokeStyle = '#ffe890'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(it.sx, it.sy - 34, 9, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); ctx.stroke(); }
@@ -958,6 +960,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     } else {
       ctx.imageSmoothingEnabled = true; drawAuras(ctx, e, it.sx, it.sy, now); ctx.imageSmoothingEnabled = false;
       drawHeroEntity(ctx, e, it.sx, it.sy, now); if (e.arrows) drawStuck(ctx, e, it.sx, it.sy, now);
+      if (e.dragMode === 'back' && typeof drawBackCorpse === 'function') drawBackCorpse(ctx, e, it.sx, it.sy, now);
       heroExtras(e, it.sx, it.sy);
       if (e.burnUntil > now && typeof drawOnFire === 'function') drawOnFire(ctx, it.sx, it.sy, now, (e.x || 0) * 7.1);
       if (e.carrying && G.players[e.carrying]) drawCarried(ctx, G.players[e.carrying], it.sx, it.sy);
@@ -971,6 +974,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
   for (const it of upper) drawItem(it);
   for (const it of sky) drawItem(it);   // o dragão voando passa por cima de tudo
   if (typeof drawBowTop === 'function') drawBowTop(ctx, now);
+  if (typeof drawRadial === 'function') { drawRadial(ctx, now); drawGripBar(ctx, now); }
   // dentro de uma construção: a cidade escurece e o cômodo aparece cortado, com quem está dentro
   if (inside) {
     ctx.fillStyle = 'rgba(8,5,2,0.6)'; ctx.fillRect(-20, -20, vw + 40, vh + 40);

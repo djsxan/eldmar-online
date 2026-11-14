@@ -28,7 +28,7 @@ function fullStat(p) {
     pots: { hp: p.pots.hp, mp: p.pots.mp, band: p.pots.band || 0 }, body: p.body, bleed: p.bleed, food: Math.round(p.food ?? 100), water: Math.round(p.water ?? 100), cold: Math.round(p.cold || 0), infect: p.infect || 0, sick: Math.max(0, (p.sickUntil || 0) - now), hasSkin: !!p.hasSkin, lost: p.lost || 0, pro: p.pro || 0, knock: Math.max(0, (p.knockUntil || 0) - now), inv: { ...p.inv }, quests: { ...p.quests }, qdone: { ...p.qdone },
     buffs: Object.entries(p.buffs).filter(([, u]) => u > now).map(([k, u]) => [k, u - now]),
     cds: [0, 1, 2, 3].map(i => Math.max(0, (p.cds[i] || 0) - now)),
-    combat: now - p.lastCombat < OUT_OF_COMBAT_MS, cst: Math.round(p.cst ?? CST_MAX), cstMax: cstMaxOf(p), arw: (p.arrows || []).map(a => a.part), tree: p.tree || {}, use: p.use || {}, stun: Math.max(0, (p.stunUntil || 0) - now), rip: Math.max(0, (p.ripUntil || 0) - now), slow: Math.max(0, (p.slowUntil || 0) - now), downed: p.downed ? p.downed.until - now : 0,
+    combat: now - p.lastCombat < OUT_OF_COMBAT_MS, cst: Math.round(p.cst ?? CST_MAX), cstMax: cstMaxOf(p), esc: p.gripBy ? Math.round(p.esc || 0) : 0, arw: (p.arrows || []).map(a => a.part), tree: p.tree || {}, use: p.use || {}, stun: Math.max(0, (p.stunUntil || 0) - now), rip: Math.max(0, (p.ripUntil || 0) - now), slow: Math.max(0, (p.slowUntil || 0) - now), downed: p.downed ? p.downed.until - now : 0,
   };
 }
 function sendStat(p) { Net.toOne(p.id, fullStat(p)); }
@@ -183,6 +183,9 @@ function hostOnClient(from, m) {
     case 'draw': bowDraw(p, !!m.on); break;
     case 'loose': bowLoose(p, m); break;
     case 'pullarrow': pullArrow(p); break;
+    case 'grab': startGrab(p, m); break;
+    case 'release': stopDrag(p); break;
+    case 'struggle': struggle(p); break;
     case 'shoot': {
       const now = now_(); if (p.cls === 'knight' || p.downed || p.carrying || p.lifted || p.atk || p.casting || p.grabbed || now < p.nextAtk) break;
       const rng = CLASSES[p.cls].range + treeEff(p, 'range'), a = +m.a || 0, ok = q => q && Math.abs((q.z || 0) - (p.z || 0)) < 0.5 && (q.alt || 0) < 1.2 && dist(p.x, p.y, q.x, q.y) <= rng + (MON[q.type].rad || 0);
@@ -304,8 +307,8 @@ function hostOnClient(from, m) {
     }
     case 'emote': { const k = ['salute', 'dance', 'point'].includes(m.k) ? m.k : null; if (k && !p.downed) near(p.x, p.y, { t: 'emote', id: p.id, k }); break; }
     case 'exec': {   // entrega o condenado caído ao carrasco: deita na guilhotina, a lâmina cai e a cabeça rola (morte permanente)
-      const v = S.players[p.carrying]; if (!v || !v.downed || STAGE.x < 0 || v.execAt || dist(p.x, p.y, STAGE.x, STAGE.y) > 3.4) break;
-      dropCarried(p); const now = now_(); v.x = STAGE.x; v.y = STAGE.y; v.z = 0; v.execAt = now + 2600; v.downed.until = Math.max(v.downed.until, now + 12000);
+      const v = S.players[p.carrying] || (p.drag && p.drag.k === 'p' && p.drag.mode !== 'grip' ? S.players[p.drag.id] : null); if (!v || !v.downed || STAGE.x < 0 || v.execAt || dist(p.x, p.y, STAGE.x, STAGE.y) > 3.4) break;
+      if (p.carrying) dropCarried(p); else stopDrag(p); const now = now_(); v.x = STAGE.x; v.y = STAGE.y; v.z = 0; v.execAt = now + 2600; v.downed.until = Math.max(v.downed.until, now + 12000);
       near(STAGE.x, STAGE.y, { t: 'exec', id: v.id, x: STAGE.x, y: STAGE.y, ms: 2600 }); sys(p.name + ' levou ' + v.name + ' ao cadafalso!');
       setTimeout(() => { const q = S.players[v.id]; if (!q) return; q.execAt = 0; if (!q.downed) return; q.downed = null; severPlayer(q, 'head', { x: STAGE.x, y: STAGE.y + 1, name: 'o Carrasco' }); }, 2600);
       break;
@@ -328,7 +331,7 @@ function hostOnClient(from, m) {
 
 function handleMove(p, m) {
   if (p.carriedBy) return;
-  if (p.grabbed || now_() < (p.flungUntil || 0) || now_() < (p.knockUntil || 0)) return;
+  if (p.grabbed || p.dragBy || p.gripBy || now_() < (p.flungUntil || 0) || now_() < (p.knockUntil || 0)) return;
   if (p.sleep != null && m.w) p.sleep = null;   // voando / derrubado
   if (p.dev) { const x = +m.x, y = +m.y; if (isFinite(x) && isFinite(y)) { p.x = clamp(x, 1, MAP_W - 2); p.y = clamp(y, 1, MAP_H - 2); p.z = +m.z || 0; p.dir = m.d | 0; p.walking = !!m.w; p.lastMv = now_(); } return; }
   const now = now_();
@@ -595,6 +598,7 @@ function damagePlayer(p, raw, m, delay = 0, zone = null, exactPart = null) {
 
 // ---------------- caído (downed) ----------------
 function goDown(p, m) {
+  if (p.drag) stopDrag(p);
   p.lifted = null;
   p.hp = 0; p.downed = { until: now_() + DOWNED_MS }; p.target = null; p.casting = null; p.revive = null;
   if (p.carrying) dropCarried(p);
@@ -1462,6 +1466,77 @@ function arrowBleedTick(now) {
   for (const m of Object.values(S.monsters)) if (m.arrows) { m.hp -= m.arrows; if (m.hp <= 0) { const p = S.players[m.arrowBy]; if (p) killMonster(m, p, 0); else delete S.monsters[m.id]; } }
 }
 
+// ---------------- puxar (braços / pé), carregar nas costas e agarrão ----------------
+// peso: 0-1 vai em qualquer forma; 2 (gente, orc, cervo) nas costas só com fôlego; 3 (troll, chefes, dragão) não se move
+const WEIGHT = { rat: 0, toad: 0, slime: 0, spider: 0, wisp: 0, wolf: 1, goblin: 1, boar: 1, deer: 2, skeleton: 2, bandit: 2, deserter: 2, orc: 2, troll: 3, orcchief: 3, cryptlord: 3, deserterchief: 3, elderslime: 3, dragon: 3 };
+const dirVec = d => { const th = (d || 0) * Math.PI / 4, sx = Math.sin(th), sy = Math.cos(th), vx = (sx + 2 * sy) / 2, vy = (2 * sy - sx) / 2, l = Math.hypot(vx, vy) || 1; return [vx / l, vy / l]; };
+const dragTarget = (k, id) => k === 'p' ? S.players[id] : k === 'c' ? (S.corpses || {})[id] : k === 'n' ? (S.npcs || {})[id] : null;
+const weightOf = (k, t) => k === 'c' ? (WEIGHT[t.type] ?? 2) : 2;
+function startGrab(p, m) {
+  if (p.downed || p.drag || p.carrying || p.lifted || p.carriedBy || p.gripBy || p.dragBy) return;
+  const k = m.k, mode = m.mode, t = dragTarget(k, m.id);
+  if (!t || t === p || !['arms', 'foot', 'back', 'grip'].includes(mode) || dist(p.x, p.y, t.x, t.y) > 2.1) return;
+  const w = weightOf(k, t); if (w >= 3) { tell(p, 'Pesado demais para mover.'); return; }
+  const now = now_();
+  if (mode === 'grip') {   // agarrão em quem está de pé: só pelas costas ou em quem está atordoado/sem fôlego
+    if (k !== 'p' || t.downed || t.dev || t.gripBy || t.carriedBy) return;
+    const [fx, fy] = dirVec(t.dir), behind = (fx * (p.x - t.x) + fy * (p.y - t.y)) / (dist(p.x, p.y, t.x, t.y) || 1) < -0.25;
+    const weak = now < (t.stunUntil || 0) || now < (t.knockUntil || 0) || (t.cst ?? 99) < 25;
+    if (!behind && !weak) { tell(p, 'Só dá para agarrar pelas costas (ou quem está atordoado ou exausto).'); return; }
+    if ((p.cst ?? 0) < 40) { tell(p, 'Sem fôlego para agarrar.'); return; }
+    p.cst -= 25; t.gripBy = p.id; t.esc = 0; t.dragBy = p.id; t.atk = null; t.parry = null; t.drawT = null;
+    p.drag = { k, id: t.id, mode, w, a: Math.atan2(t.y - p.y, t.x - p.x) };
+    near(p.x, p.y, { t: 'drag', by: p.id, k, id: t.id, mode }); tell(t, 'Você foi agarrado! Aperte ESPAÇO várias vezes para se soltar.'); witnessCrime(p, p.x, p.y); sendStat(p); sendStat(t); return;
+  }
+  if ((k === 'p' || k === 'n') && (!t.downed || t.carriedBy || t.dragBy || t.execAt)) return;
+  if (k === 'c' && t.dragBy) return;
+  if (mode === 'back') {
+    if (w >= 2 && (p.cst ?? 0) < cstMaxOf(p) * 0.4) { tell(p, 'Sem fôlego para levantar esse peso.'); return; }
+    if (k === 'p') { p.carrying = t.id; t.carriedBy = p.id; t.revive = null; near(p.x, p.y, { t: 'carry', by: p.id, id: t.id }); return; }   // gente nas costas: o carregar de sempre
+  }
+  p.drag = { k, id: t.id, mode, w }; t.dragBy = p.id; t.dragMode = mode; if (k === 'p') t.revive = null; if (k === 'c' && mode === 'back') t.onBack = p.id;
+  near(p.x, p.y, { t: 'drag', by: p.id, k, id: t.id, mode });
+}
+function stopDrag(p, why) {
+  const d = p.drag; if (!d) return; p.drag = null;
+  const t = dragTarget(d.k, d.id);
+  if (t) {
+    t.dragBy = null; t.dragMode = null;
+    if (d.mode === 'grip') { t.gripBy = null; t.esc = 0; sendStat(t); }
+    if (d.k === 'c' && d.mode === 'back') { t.onBack = null; for (const [dx, dy] of [[0.7, 0], [-0.7, 0], [0, 0.7], [0, -0.7], [0, 0]]) if (canStand(p.x + dx, p.y + dy, p.z || 0, 0.2)) { t.x = p.x + dx; t.y = p.y + dy; break; } }
+  }
+  near(p.x, p.y, { t: 'drag', by: p.id, k: d.k, id: d.id, mode: null });
+  if (why) tell(p, why);
+}
+function struggle(p) {
+  if (!p.gripBy) return; const g = S.players[p.gripBy]; if (!g) { p.gripBy = null; p.dragBy = null; return; }
+  p.esc = (p.esc || 0) + 6 + 6 * clamp((p.cst ?? 0) / cstMaxOf(p), 0, 1); p.cst = Math.max(0, (p.cst ?? 0) - 2); g.cst = Math.max(0, (g.cst ?? 0) - 2.5);
+  if (p.esc >= 100) { stopDrag(g, p.name + ' se soltou!'); tell(p, 'Você se soltou!'); near(p.x, p.y, { t: 'anim', w: 'p', id: g.id, a: 'hurt', ms: 500 }); g.stunUntil = now_() + 500; }
+  else sendStat(p);
+}
+function dragTick(p, now, dt) {
+  const d = p.drag; if (!d) return;
+  const t = dragTarget(d.k, d.id);
+  if (!t || p.downed || p.carriedBy || (d.k !== 'c' && d.mode !== 'grip' && !t.downed) || (d.mode === 'grip' && t.downed) || (d.k === 'p' && t.carriedBy)) { stopDrag(p); return; }
+  if (p._lx != null) { const mx = p.x - p._lx, my = p.y - p._ly; if (mx * mx + my * my > 0.0004) p._dragA = Math.atan2(my, mx); } p._lx = p.x; p._ly = p.y;
+  const a = p._dragA ?? Math.atan2(t.y - p.y, t.x - p.x) + Math.PI;
+  if (d.mode === 'back') { t.x = p.x; t.y = p.y; t.z = p.z; p.cst -= (d.w >= 2 ? 8 : 2) * dt; p.cstT = now; if (p.cst <= 0) { p.cst = 0; stopDrag(p, 'O peso venceu: você largou.'); } return; }
+  if (d.mode === 'grip') {   // a vítima fica presa na frente de quem agarra
+    const ga = Math.atan2(t.y - p.y, t.x - p.x), nx = p.x + Math.cos(ga) * 0.55, ny = p.y + Math.sin(ga) * 0.55;
+    if (canStand(nx, ny, p.z || 0, 0.2)) { t.x = nx; t.y = ny; } t.lastMv = now; t.walking = false;
+    p.cst -= 9 * dt; p.cstT = now; if (p.cst <= 0) { p.cst = 0; stopDrag(p, 'Sem fôlego: você soltou.'); tell(t, 'Você se soltou!'); }
+    return;
+  }
+  const back = d.mode === 'arms' ? 1.0 : 1.2, nx = p.x - Math.cos(a) * back, ny = p.y - Math.sin(a) * back;
+  if (canStand(nx, ny, p.z || 0, 0.15) || dist(nx, ny, p.x, p.y) < 0.5) { t.x = nx; t.y = ny; }
+  if (dist(t.x, t.y, p.x, p.y) > 2.5) { t.x = nx; t.y = ny; }   // não deixa o corpo ficar para trás preso numa quina
+  t.z = p.z; t.lastMv = now;
+}
+function dragCleanup() {
+  for (const q of Object.values(S.players)) if (q.dragBy && (!S.players[q.dragBy] || !S.players[q.dragBy].drag || S.players[q.dragBy].drag.id !== q.id)) { q.dragBy = null; q.gripBy = null; q.dragMode = null; q.esc = 0; }
+  for (const c of Object.values(S.corpses || {})) if (c.dragBy && (!S.players[c.dragBy] || !S.players[c.dragBy].drag || S.players[c.dragBy].drag.id !== c.id)) { c.dragBy = null; c.dragMode = null; c.onBack = null; }
+}
+
 // ---------------- progressão por uso e habilidades da árvore ----------------
 function useGain(p, k, amt) {
   if (!USE[k] || !p || p.dev || !(amt > 0)) return; p.use = p.use || {};
@@ -1547,11 +1622,11 @@ function hostTick() {
   }
 
   for (const p of players) { if (p.wanted && (now > p.wanted || !inSafe(p.x, p.y))) { p.wanted = 0; Net.toAll({ t: 'wanted', id: p.id, ms: 0 }); }
-    bodyTick(p, now, dt); survivalTick(p, now, dt); combatTick(p, now, dt); bowTick(p, now, dt); if (p.running && p.walking) { const d = dist(p._rx ?? p.x, p._ry ?? p.y, p.x, p.y); if (d < 3) useGain(p, 'run', d); } p._rx = p.x; p._ry = p.y; }
+    bodyTick(p, now, dt); survivalTick(p, now, dt); combatTick(p, now, dt); bowTick(p, now, dt); dragTick(p, now, dt); if (p.running && p.walking) { const d = dist(p._rx ?? p.x, p._ry ?? p.y, p.x, p.y); if (d < 3) useGain(p, 'run', d); } p._rx = p.x; p._ry = p.y; }
   if (!S.bslots) initBastions();
   tickBastions(now);
   if (S.fires && S.fires.length) { S.fires = S.fires.filter(f => f.until > now); for (const p of players) { if (p.downed || now < (p.burnT || 0)) continue; if (S.fires.some(f => dist(f.x, f.y, p.x, p.y) < f.r)) { p.burnT = now + 500; damagePlayer(p, 6, null, 0); if (Math.random() < 0.25) ignitePlayer(p, now); } } }
-  fireTick(now, players); zoneTick(now); arrowTick(now, dt); arrowBleedTick(now);
+  dragCleanup(); fireTick(now, players); zoneTick(now); arrowTick(now, dt); arrowBleedTick(now);
 
   for (const p of players) {
     if (p.downed) {
@@ -1605,7 +1680,7 @@ function hostTick() {
     for (const p of players) {
       if (dist(p.x, p.y, r.x, r.y) > VIEW_RADIUS) continue;
       if (p.devHidden && p.id !== r.id) continue;
-      let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0) | (p.running && p.walking ? 256 : 0) | (p.sit ? 512 : 0) | (p.sit === 'c' ? 1024 : 0) | (p.sleep != null ? 32768 : 0) | (p.drawT ? 65536 : 0) | ((p.fl || 0) << 11) | (p.crouch ? 8192 : 0) | (p.slide ? 16384 : 0);
+      let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0) | (p.running && p.walking ? 256 : 0) | (p.sit ? 512 : 0) | (p.sit === 'c' ? 1024 : 0) | (p.sleep != null ? 32768 : 0) | (p.drawT ? 65536 : 0) | (p.dragBy ? 131072 : 0) | (p.dragMode === 'foot' ? 262144 : 0) | (p.drag && p.drag.mode === 'arms' ? 524288 : 0) | (p.drag && p.drag.mode === 'foot' ? 1048576 : 0) | (p.drag && p.drag.mode === 'back' ? 2097152 : 0) | (p.drag && p.drag.mode === 'grip' ? 4194304 : 0) | (p.gripBy ? 8388608 : 0) | ((p.fl || 0) << 11) | (p.crouch ? 8192 : 0) | (p.slide ? 16384 : 0);
       for (const b in BUFF_BITS) if (buffOn(p, b)) fl |= BUFF_BITS[b];
       pl.push([p.id, Math.round(p.x * 100), Math.round(p.y * 100), Math.round(p.z * 100), p.dir | 0, fl, Math.round(p.hp / p.maxHp * 100), p.carrying || 0, p.lifted || 0, bodyBits(p), (p.lost || 0) | ((p.pro || 0) << 5)]);
     }
@@ -1614,7 +1689,7 @@ function hostTick() {
       ml.push([m.id, MON_TYPES.indexOf(m.type), Math.round(m.x * 100), Math.round(m.y * 100), m.hp, (m.slowUntil > now ? 1 : 0) | (m.stunUntil > now ? 2 : 0) | (m.sleep ? 4 : 0) | (m.fury ? 8 : 0) | ((m.lost || 0) << 5), m.face, MON[m.type].dragon ? dragonDir(m) : -1, Math.round((m.alt || 0) * 10)]);
     }
     const ch = []; for (const id in S.chests) { const c = S.chests[id]; if (Math.abs(c.x - r.x) <= VIEW_RADIUS && Math.abs(c.y - r.y) <= VIEW_RADIUS) ch.push([c.id, Math.round(c.x * 100), Math.round(c.y * 100), c.opened.has(r.id) ? 1 : 0, c.who.has(r.id) ? 1 : 0]); }
-    const co = []; for (const id in S.corpses || {}) { const c = S.corpses[id]; if (Math.abs(c.x - r.x) <= VIEW_RADIUS && Math.abs(c.y - r.y) <= VIEW_RADIUS) co.push([c.id, MON_TYPES.indexOf(c.type), Math.round(c.x * 100), Math.round(c.y * 100), c.z, c.looted ? 1 : 0, Math.round(c.ix * 10), Math.round(c.iy * 10), c.lost || 0]); }
+    const co = []; for (const id in S.corpses || {}) { const c = S.corpses[id]; if (Math.abs(c.x - r.x) <= VIEW_RADIUS && Math.abs(c.y - r.y) <= VIEW_RADIUS) co.push([c.id, MON_TYPES.indexOf(c.type), Math.round(c.x * 100), Math.round(c.y * 100), c.z, c.looted ? 1 : 0, Math.round(c.ix * 10), Math.round(c.iy * 10), c.lost || 0, c.onBack || 0]); }
     Net.toOne(r.id, { t: 's', p: pl, m: ml, ch, co }, true);
   }
 }

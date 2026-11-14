@@ -68,7 +68,7 @@ function clientOnServer(m) {
       const oldLvl = e.lvl;
       if (m.slow) G.slowUntil = now + m.slow;
       if (m.knock) G.knockUntil = now + m.knock;
-      G.cst = m.cst ?? CST_MAX; G.cstMax = m.cstMax || CST_MAX; e.arw = m.arw || []; if (m.tree) e.tree = m.tree; if (m.use) e.use = m.use; if (typeof onProgStat === 'function') onProgStat(); G.stunUntil = now + (m.stun || 0); G.ripUntil = now + (m.rip || 0);
+      G.cst = m.cst ?? CST_MAX; G.cstMax = m.cstMax || CST_MAX; e.arw = m.arw || []; e.esc = m.esc || 0; if (m.tree) e.tree = m.tree; if (m.use) e.use = m.use; if (typeof onProgStat === 'function') onProgStat(); G.stunUntil = now + (m.stun || 0); G.ripUntil = now + (m.rip || 0);
       Object.assign(e, { hp: m.hp, maxHp: m.maxHp, mp: m.mp, maxMp: m.maxMp, lvl: m.lvl, xp: m.xp, gold: m.gold, pots: m.pots, food: m.food, water: m.water, cold: m.cold, infect: m.infect, sick: m.sick, hasSkin: m.hasSkin, body: m.body, bleed: m.bleed, lost: m.lost || 0, pro: m.pro || 0, inv: m.inv || {}, combat: m.combat, quests: m.quests, qdone: m.qdone });
       setBuffs(e, m.buffs);
       G.cdEnd = m.cds.map(r => now + r);
@@ -192,7 +192,7 @@ function clientOnServer(m) {
 
 function applySnapshot(m, now) {
   G.chests = (m.ch || []).map(c => ({ id: c[0], x: c[1] / 100, y: c[2] / 100, open: !!c[3], mine: !!c[4] }));
-  G.corpses = (m.co || []).map(c => ({ id: c[0], type: MON_TYPES[c[1]], x: c[2] / 100, y: c[3] / 100, z: c[4], looted: !!c[5], ix: c[6] / 10, iy: c[7] / 10, lost: c[8] || 0 }));
+  G.corpses = (m.co || []).map(c => ({ id: c[0], type: MON_TYPES[c[1]], x: c[2] / 100, y: c[3] / 100, z: c[4], looted: !!c[5], ix: c[6] / 10, iy: c[7] / 10, lost: c[8] || 0, onBack: c[9] || null }));
   const seenP = new Set();
   for (let [id, x100, y100, z, dir, fl, hpPct, carrying, lifted, bb, lp] of m.p) {
     seenP.add(id);
@@ -200,6 +200,9 @@ function applySnapshot(m, now) {
     if (!e) e = G.players[id] = mkEnt({ id, name: '...', cls: 'knight', skin: 'iron', color: '#888888', lvl: 1 });
     const x = x100 / 100, y = y100 / 100;
     e.flags = fl; e.visible = true; e.carrying = carrying || null; e.lifted = lifted || 0; if (id !== G.myId) { e.lost = (lp || 0) & 31; e.pro = ((lp || 0) >> 5) & 31; } e.parrying = !!((bb || 0) & 32); e.stunned = !!((bb || 0) & 64); e.duel = !!((bb || 0) & 128); e.limp = (bb || 0) & 3; e.armWeak = !!((bb || 0) & 4); e.dizzy = !!((bb || 0) & 8); e.bleeding = !!((bb || 0) & 16); e.carriedBy = !!(fl & 4); z = z / 100;
+    e.dragged = !!(fl & 131072); e.prone = !!(fl & 262144); e.gripped = !!(fl & 8388608);
+    e.dragMode = fl & 524288 ? 'arms' : fl & 1048576 ? 'foot' : fl & 2097152 ? 'back' : fl & 4194304 ? 'grip' : null;
+    if (e === G.me && e.dragged) { e.x = e.rx = x; e.y = e.ry = y; G.path = null; }   // sendo puxado/agarrado: a posição vem do servidor
     const wasDown = e.downed; e.downed = !!(fl & 2);
     if (e.downed && !wasDown && !e.downUntil) e.downUntil = now + DOWNED_MS;
     if (id === G.myId) {
@@ -863,7 +866,8 @@ window.addEventListener('keydown', e => {
   if (k === 'e') { drinkPot('mp'); return; }
   if (k === 'r' && G.me.downed) { if (!PERMADEATH || window.confirm('Desistir é MORTE PERMANENTE: seu personagem será apagado. Tem certeza?')) Net.send({ t: 'giveup' }); return; }
   if (k === 'f' && !e.repeat && openNearChest(1.8)) return;
-  if (k === 'f' && !e.repeat && G.me && G.me.carrying && STAGE.x >= 0 && dist(G.me.x, G.me.y, STAGE.x, STAGE.y) < 3.4) { Net.send({ t: 'exec' }); return; }
+  if (k === 'f' && !e.repeat && G.me && (G.me.carrying || G.me.dragMode === 'arms' || G.me.dragMode === 'foot') && STAGE.x >= 0 && dist(G.me.x, G.me.y, STAGE.x, STAGE.y) < 3.4) { Net.send({ t: 'exec' }); return; }
+  if (k === 'f' && !e.repeat && typeof grabKeyDown === 'function' && !nearCorpse() && grabKeyDown()) return;   // segurar F: menu radial (puxar / carregar / agarrar)
   if (k === 'f' && !e.repeat && !nearestDowned()) { const c = nearCorpse(); if (c) { G.loot = { id: c.id, t0: performance.now() }; G.keys.add('f'); return; } }
   if (k === 'f' && !e.repeat && !nearestDowned() && !nearCorpse() && survivalAction()) return;
   if (k === 'f' && !e.repeat && (G.me.arw || []).length && !nearestDowned() && !nearCorpse()) { Net.send({ t: 'pullarrow' }); return; }   // arrancar flecha cravada
@@ -882,6 +886,7 @@ window.addEventListener('keydown', e => {
   if ((k === '5' || k === '6' || k === '7') && !e.repeat) { Net.send({ t: 'tskill', b: +k - 5, a: G.me.fa ?? 0, id: G.target || 0 }); return; }
   if (k === 'm' && !e.repeat) { toggleWorldMap(); return; }
   if (k === 't') { if (!e.repeat) openEmoteWheel(); return; }
+  if (k === ' ' && G.me && G.me.gripped) { e.preventDefault(); Net.send({ t: 'struggle' }); return; }   // agarrado: martelar espaço
   if (k === ' ' && inCombatZone()) { e.preventDefault(); if (!e.repeat) { const me = G.me, iv = myInput(); const v = iv || (me.fa != null ? [-Math.cos(me.fa), -Math.sin(me.fa)] : [0, 1]); G.dodge = { t0: performance.now(), v }; Net.send({ t: 'dodge' }); } return; }
   if (k === 'z' && !e.repeat && inCombatZone()) { strike('under'); return; }
   if ((k === '+' || k === '=') ) { SCALE = clamp(SCALE * 1.1, 1.4, 7); G.zoomUser = true; return; }
@@ -901,7 +906,8 @@ window.addEventListener('keyup', e => {
   const k = e.key.toLowerCase();
   G.keys.delete(k);
   if (k === 't' && G.wheel) closeEmoteWheel(true);
-  if (k === 'f' && G.reviving) { Net.send({ t: 'revive', id: G.reviving, on: false }); G.reviving = null; }
+  if (k === 'f' && typeof grabKeyUp === 'function' && grabKeyUp()) return;
+  if (k === 'f' && G.reviving && !G.reviveSticky) { Net.send({ t: 'revive', id: G.reviving, on: false }); G.reviving = null; }
 });
 window.addEventListener('blur', () => G.keys.clear());
 
@@ -917,6 +923,7 @@ function frame() {
   if (G.started) {
     updateLocal(now, dt); updateFalls(now); updateLooting(now); if (typeof updateLife === 'function') updateLife(now);
     bowUpdate(now);
+    if (G.reviveSticky && (G.me.walking || !G.reviving)) { if (G.reviving) Net.send({ t: 'revive', id: G.reviving, on: false }); G.reviving = null; G.reviveSticky = false; }
     if (G.shootHeld && inCombatZone() && now - (G.shootT || 0) > 220) { G.shootT = now; Net.send({ t: 'shoot', a: G.me.fa ?? 0, id: G.target || 0 }); }
     { // luta com o dragão: a câmera se afasta devagar para caber tudo na tela (só se o zoom não foi mudado à mão)
       let near = false; for (const id in G.monsters) { const q = G.monsters[id]; if (MON[q.type].dragon && !q.dieAt && !(q.flags & 4) && dist(q.rx, q.ry, G.me.rx, G.me.ry) < 22) near = true; }

@@ -6,7 +6,7 @@ function stamMax() { const me = G.me; return me ? Math.round(STAM_MAX * (1 + tre
 function speedMul() {
   const me = G.me; if (!me) return 1;
   const legs = (me.arw || []).filter(p => p === 'legL' || p === 'legR').length;
-  return (1 + treeEff(me, 'speed') + useBonus(me, 'run') * 0.47) * (G.bow && G.bow.st === 'drawing' ? 0.5 : 1) * Math.max(0.6, 1 - legs * 0.2);
+  return (1 + treeEff(me, 'speed') + useBonus(me, 'run') * 0.47) * (G.bow && G.bow.st === 'drawing' ? 0.5 : 1) * ({ arms: 0.45, foot: 0.6, back: 0.75, grip: 0.5 }[me.dragMode] || 1) * Math.max(0.6, 1 - legs * 0.2);
 }
 
 // ---------- painel da árvore ----------
