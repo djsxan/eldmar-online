@@ -375,6 +375,7 @@ function shoot3D(R, dir, extraRotX, groundSit) {
   if (!extraRotX) {
     let minY = Infinity;
     for (const f of [R.LA.ft, R.LB.ft]) { f.getWorldPosition(tmpV); minY = Math.min(minY, tmpV.y); }
+    for (const k of [R.LA.kn, R.LB.kn]) { k.getWorldPosition(tmpV); minY = Math.min(minY, tmpV.y - 0.05); }   // de joelhos: o joelho toca o chão
     if (groundSit) { R.hips.getWorldPosition(tmpV); minY = Math.min(minY, tmpV.y - 0.13); }
     R.root.position.y = -minY + 0.035;
   } else R.root.position.y = 0.12;
@@ -441,6 +442,43 @@ function buildCreature(type) {
       for (const s of [-1, 1]) { body.add(mesh(sphG(0.045), pink, s * 0.07, 0.11, 0.23)); body.add(mesh(sphG(0.014), mat('#100c08', 'gem'), s * 0.05, 0.07, 0.35)); }
       const tail = mesh(cylG(0.012, 0.006, 0.45, 6), pink, 0, 0.0, -0.45); tail.rotation.x = Math.PI / 2 + 0.3; body.add(tail);
       for (const [x, z] of [[-0.1, 0.15], [0.1, 0.15], [-0.1, -0.15], [0.1, -0.15]]) legJ(x, z, 0.1, 0.025, fur).position.y = -0.06;
+      break;
+    }
+    case 'deer': {
+      const fur = mat('#8a5e3a', 'fur'), lt = mat('#e0cdb0', 'fur'), dk = mat('#2e2218', 'leather'), ant = mat('#cdb894', 'wood');
+      body.position.y = 0.66;
+      const b = mesh(capG(0.15, 0.48), fur, 0, 0, 0); b.rotation.x = Math.PI / 2; body.add(b);
+      const bl = mesh(capG(0.11, 0.4), lt, 0, -0.07, 0); bl.rotation.x = Math.PI / 2; body.add(bl);
+      body.add(mesh(sphG(0.07), lt, 0, 0.02, -0.38));
+      const neck = mesh(capG(0.075, 0.3), fur, 0, 0.2, 0.32); neck.rotation.x = 0.45; body.add(neck);
+      const hd = joint(body, 0, 0.42, 0.44); R.head = hd;
+      const sk = mesh(sphG(0.085), fur, 0, 0, 0.02); sk.scale.set(0.8, 0.85, 1.4); hd.add(sk);
+      hd.add(mesh(sphG(0.028), dk, 0, -0.02, 0.14));
+      for (const s of [-1, 1]) {
+        const ear = mesh(coneG(0.035, 0.11, 6), fur, s * 0.07, 0.06, -0.03); ear.rotation.z = -s * 1.0; hd.add(ear);
+        hd.add(mesh(sphG(0.014), mat('#100c08', 'gem'), s * 0.05, 0.02, 0.07));
+        const a1 = mesh(cylG(0.011, 0.015, 0.32, 5), ant, s * 0.07, 0.2, -0.02); a1.rotation.z = -s * 0.45; a1.rotation.x = -0.2; hd.add(a1);
+        const a2 = mesh(cylG(0.008, 0.011, 0.16, 5), ant, s * 0.1, 0.24, 0.05); a2.rotation.x = 0.7; hd.add(a2);
+        const a3 = mesh(cylG(0.007, 0.01, 0.14, 5), ant, s * 0.15, 0.33, -0.04); a3.rotation.z = -s * 0.9; hd.add(a3);
+      }
+      for (const [x, z] of [[-0.08, 0.22], [0.08, 0.22], [-0.08, -0.24], [0.08, -0.24]]) legJ(x, z, 0.56, 0.028, fur);
+      break;
+    }
+    case 'boar': {
+      const fur = mat('#4a3a2e', 'fur'), dk = mat('#2a201a', 'fur'), tusk = mat('#efe6d0', 'wood');
+      body.position.y = 0.38;
+      const b = mesh(sphG(0.3), fur, 0, 0, 0); b.scale.set(0.85, 0.9, 1.35); body.add(b);
+      const ridge = mesh(boxG(0.06, 0.1, 0.55), dk, 0, 0.26, 0.02); body.add(ridge);
+      const hd = joint(body, 0, 0.0, 0.38); R.head = hd;
+      const sk = mesh(coneG(0.18, 0.34, 10), fur, 0, 0, 0.1); sk.rotation.x = Math.PI / 2; hd.add(sk);
+      const sn = mesh(cylG(0.055, 0.055, 0.04, 10), mat('#7a5a4a', 'skin'), 0, -0.01, 0.27); sn.rotation.x = Math.PI / 2; hd.add(sn);
+      for (const s of [-1, 1]) {
+        const tk = mesh(coneG(0.016, 0.1, 6), tusk, s * 0.06, -0.01, 0.22); tk.rotation.x = -0.7; tk.rotation.z = -s * 0.3; hd.add(tk);
+        const ear = mesh(coneG(0.04, 0.09, 5), dk, s * 0.09, 0.12, 0.0); ear.rotation.z = -s * 0.5; hd.add(ear);
+        hd.add(mesh(sphG(0.016), mat('#100c08', 'gem'), s * 0.07, 0.06, 0.1));
+      }
+      const tail = mesh(capG(0.015, 0.12), dk, 0, 0.08, -0.42); tail.rotation.x = -0.5; body.add(tail);
+      for (const [x, z] of [[-0.12, 0.22], [0.12, 0.22], [-0.12, -0.22], [0.12, -0.22]]) legJ(x, z, 0.26, 0.045, dk);
       break;
     }
     case 'slime': {

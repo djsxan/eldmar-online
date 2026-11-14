@@ -110,6 +110,9 @@ const ACTS = {
   // ---- emojis ----
   salute: [[0, {}], [0.25, { aB: [2.55, 0.15, 2.5], ht: -0.08 }], [0.75, { aB: [2.55, 0.15, 2.5], ht: -0.08 }], [1, {}]],
   point: [[0, {}], [0.2, { aB: [1.6, 0.05, 0.05], tw: 0.25, ht: 0.05 }], [0.8, { aB: [1.6, 0.05, 0.05], tw: 0.25, ht: 0.05 }], [1, {}]],
+  // cavaleiro: saudação e apontar com a espada (braço da espada)
+  salute_k: [[0, {}], [0.25, { aA: [1.35, 0.12, 1.25], wp: 3.05, ht: -0.08 }], [0.75, { aA: [1.35, 0.12, 1.25], wp: 3.05, ht: -0.08 }], [1, {}]],
+  point_k: [[0, {}], [0.2, { aA: [1.55, 0.05, 0.05], wp: 1.6, tw: -0.25, ht: 0.05 }], [0.8, { aA: [1.55, 0.05, 0.05], wp: 1.6, tw: -0.25, ht: 0.05 }], [1, {}]],
   dance: [[0, { aA: [2.6, 0.7, 0.4], aB: [0.5, 0.6, 1.2], tw: 0.35, lA: [0.4, -0.6], kn: -0.2, ht: 0.1 }], [0.25, { aA: [1.4, 0.9, 0.9], aB: [1.4, 0.9, 0.9], tw: 0, kn: -0.45 }], [0.5, { aA: [0.5, 0.6, 1.2], aB: [2.6, 0.7, 0.4], tw: -0.35, lB: [0.4, -0.6], kn: -0.2, ht: -0.1 }], [0.75, { aA: [1.4, 0.9, 0.9], aB: [1.4, 0.9, 0.9], tw: 0, kn: -0.45 }], [1, { aA: [2.6, 0.7, 0.4], aB: [0.5, 0.6, 1.2], tw: 0.35, lA: [0.4, -0.6], kn: -0.2, ht: 0.1 }]],
   // ---- reação ao golpe ----
   hurt: [[0, {}], [0.25, { tl: -0.38, aA: [0.7, 0.55, 0.6], aB: [0.7, 0.55, 0.6], ht: -0.45, kn: -0.35 }], [1, {}]],
@@ -184,7 +187,20 @@ function buildPose(cls, P) {
   }
   if (P.hs && !P.sl) {
     const br = P.br != null ? [0, 0.6, 1, 0.6][P.br] : 0;
-    if (P.hs === 1) { Q.tl += 0.2 + br * 0.05; if (!P.act) { Q.aA[0] -= 0.08; Q.aB[0] -= 0.08; } Q.ht = (Q.ht || 0) + br * 0.03; }
+    if (P.hs === 1) {
+      // exausto: curvado, cabeça baixa, respiração pesada; andando, braços caídos arrastando a arma e passos arrastados
+      Q.tl += 0.32 + br * 0.12; Q.ht = (Q.ht || 0) + 0.2 + br * 0.06;
+      // braços pendurados na vertical (compensa a curvatura do tronco) e a ponta da arma arrastando atrás
+      if (!P.act) { const t = Q.tl; Q.aA = [-t * 0.9, 0.16, 0.08]; Q.aB = [-t * 0.85, 0.14, 0.12]; const arm = Q.aA[0] + Q.aA[2]; Q.wp = cls === 'knight' ? arm + 0.25 : cls === 'mage' ? arm + Math.PI + 0.35 : Q.wp; }
+      if (P.walk >= 0 && !P.cr) { Q.lA = [Q.lA[0] * 0.55, Q.lA[1] * 0.4 - 0.04]; Q.lB = [Q.lB[0] * 0.55, Q.lB[1] * 0.4 - 0.04]; Q.tw *= 0.4; }
+    }
+    else if (P.hs === 3) {
+      // de joelhos: um joelho no chão, mão no peito, arrastando-se devagar
+      const ph = P.walk >= 0 ? P.walk / 12 * Math.PI * 2 : 0, s = P.walk >= 0 ? 0.18 : 0;
+      Q.lA = [1.5 + Math.sin(ph) * s, -1.55]; Q.lB = [0.05 + Math.sin(ph + Math.PI) * s, -1.62];
+      Q.tl = 0.3 + br * 0.08; Q.tw = 0; Q.sway = 0; Q.drop = 10; Q.ht = (Q.ht || 0) + 0.15 + br * 0.04;
+      if (!P.act) { Q.aB = [0.85, 0.3, 2.05]; Q.aA = [0.15, 0.25, 0.25]; Q.wp = cls === 'knight' ? -0.2 : Q.wp; }
+    }
     else { Q.tl += 0.36 + br * 0.07; if (!P.act) Q.aB = [0.85, 0.3, 2.05]; if (P.walk >= 0 && !P.cr) Q.lB = [Q.lB[0] * 0.45, -0.1]; Q.ht = (Q.ht || 0) + br * 0.04; }
   }
   if (P.sit === 'g') { Q.lA = [2.45, -2.35]; Q.lB = [2.2, -2.0]; Q.drop = 12; Q.aA = [1.15, 0.35, 1.35]; Q.aB = [1.05, 0.4, 1.25]; Q.tl = -0.22; Q.ht = 0.12; }

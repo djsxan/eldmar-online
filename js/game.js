@@ -230,15 +230,16 @@ function updateLocal(now, dt) {
   if (G.pendingNpc && !G.path) { const n = G.npcs[G.pendingNpc]; if (dist(me.x, me.y, n.x, n.y) <= 3) openDialog(n.id); G.pendingNpc = null; }
   // correr com SHIFT gasta estamina; ao esgotar, precisa recuperar um pouco antes de correr de novo
   if (G.stam == null) { G.stam = STAM_MAX; G.stamT = 0; G.tired = false; }
-  const crouchKey = (G.keys.has('c') || G.crouchToggle) && !me.downed && !me.carrying && !me.sit && (me.z || 0) < 0.5;
+  const kneel = healthState(me) === 3;
+  const crouchKey = !kneel && (G.keys.has('c') || G.crouchToggle) && !me.downed && !me.carrying && !me.sit && (me.z || 0) < 0.5;
   if (!(G.keys.has('c') && G.keys.has('shift'))) G.slideLatch = false;
-  if (!G.slide && v && G.keys.has('c') && G.keys.has('shift') && !G.slideLatch && !G.tired && G.stam >= SLIDE_COST && !me.downed && !me.carrying && (me.z || 0) < 0.5 && !(me.fl > 0)) {
+  if (!G.slide && !kneel && v && G.keys.has('c') && G.keys.has('shift') && !G.slideLatch && !G.tired && G.stam >= SLIDE_COST && !me.downed && !me.carrying && (me.z || 0) < 0.5 && !(me.fl > 0)) {
     G.slide = { t0: now, v: v.slice() }; G.slideLatch = true; G.stam -= SLIDE_COST; G.stamT = now;
   }
   if (G.slide && now - G.slide.t0 > SLIDE_MS) G.slide = null;
   if (G.slide) v = G.slide.v;
   me.slide = !!G.slide; me.crouch = crouchKey && !G.slide;
-  const running = !!v && G.keys.has('shift') && !crouchKey && !G.tired && !me.downed && !me.carrying && G.stam > 0;
+  const running = !!v && !kneel && G.keys.has('shift') && !crouchKey && !G.tired && !me.downed && !me.carrying && G.stam > 0;
   if (running) { G.stam = Math.max(0, G.stam - STAM_DRAIN * dt); G.stamT = now; if (G.stam <= 0) G.tired = true; }
   else if (now - G.stamT > STAM_DELAY) G.stam = Math.min(STAM_MAX, G.stam + STAM_REGEN * dt * (v ? 0.6 : me.sit ? 2.5 : 1));
   revealFog(me.x, me.y);
@@ -250,6 +251,7 @@ function updateLocal(now, dt) {
     if (me.buffs && me.buffs.agile > now) sp *= 1.6;
     if (running) sp *= RUN_MUL;
     if (me.crouch) sp *= CROUCH_MUL;
+    if (kneel) sp *= KNEEL_MUL;
     if (G.slide) { const k = (now - G.slide.t0) / SLIDE_MS; sp = PLAYER_SPEED * RUN_MUL * 1.5 * (1 - k * 0.65); if (Math.random() < 0.5) { const w = tileW(me.x, me.y, 0); spawnPart('dust', w.x, w.y); } }
     if (me.carrying) sp *= 0.75;
     if (me.downed) sp *= 0.22;
@@ -272,8 +274,8 @@ function updateLocal(now, dt) {
     const fl = me.fl || 0, bi = fl > 0 ? me.fb : bldAt(me.x, me.y), b = BUILDINGS[bi];
     if (b && b.kind !== 'stairtower') {
       const nF = floorsOf(b);
-      if (fl < nF - 1) { const s = stairWorld(b, fl); if (Math.hypot(me.x - s.L[0], me.y - s.L[1]) < 0.42) startClimb(now, bi, fl, fl + 1, [[me.x, me.y, 0], [s.L[0], s.L[1], 0.08], [s.U[0], s.U[1], 1], [s.arrive[0], s.arrive[1], 1]]); }
-      if (!G.climbing && fl > 0) { const s = stairWorld(b, fl - 1); if (Math.hypot(me.x - s.U[0], me.y - s.U[1]) < 0.42) startClimb(now, bi, fl, fl - 1, [[me.x, me.y, 0], [s.U[0], s.U[1], -0.08], [s.L[0], s.L[1], -1], [s.entry[0], s.entry[1], -1]]); }
+      if (fl < nF - 1) { const s = stairWorld(b, fl); if (Math.hypot(me.x - s.L[0], me.y - s.L[1]) < 0.42) { const ex = s.U[0] + (s.U[0] - s.L[0]) * 0.45, ey = s.U[1] + (s.U[1] - s.L[1]) * 0.45; startClimb(now, bi, fl, fl + 1, [[me.x, me.y, 0], [s.L[0], s.L[1], 0.25], [s.U[0], s.U[1], 0.75], [ex, ey, 1]], s.arrive); } }
+      if (!G.climbing && fl > 0) { const s = stairWorld(b, fl - 1); if (Math.hypot(me.x - s.U[0], me.y - s.U[1]) < 0.42) { const ex = s.L[0] - (s.U[0] - s.L[0]) * 0.45, ey = s.L[1] - (s.U[1] - s.L[1]) * 0.45; startClimb(now, bi, fl, fl - 1, [[me.x, me.y, 0], [s.U[0], s.U[1], -0.25], [s.L[0], s.L[1], -0.75], [ex, ey, -1]], s.entry); } }
     }
   }
   // torres-escada: pisar na escada sobe para a muralha; pisar no alçapão lá em cima desce
@@ -298,12 +300,12 @@ function updateLocal(now, dt) {
     G.autoT = now;
     const rng2 = CLASSES[me.cls].range, cur = G.target && G.monsters[G.target];
     const keep = cur && !cur.dieAt && dist(me.x, me.y, cur.rx, cur.ry) <= rng2 * 1.5;
-    if (!keep) { let best = null, bd = rng2; for (const id in G.monsters) { const q = G.monsters[id]; if (q.dieAt || !q.visible) continue; const d = dist(me.x, me.y, q.rx, q.ry); if (d <= bd) { bd = d; best = q; } } if (best) setTarget(best.id); else if (cur && cur.dieAt) setTarget(null); }
+    if (!keep) { let best = null, bd = rng2; for (const id in G.monsters) { const q = G.monsters[id]; if (q.dieAt || !q.visible || MON[q.type].beh) continue; const d = dist(me.x, me.y, q.rx, q.ry); if (d <= bd) { bd = d; best = q; } } if (best) setTarget(best.id); else if (cur && cur.dieAt) setTarget(null); }
   }
   const stF = (me.crouch ? 1 : 0) | (me.slide ? 2 : 0);
   if (now - me.sendT > 100 && (moved || me.walking !== me.sentWalk || stF !== me.sentSt)) {
     me.sendT = now; me.sentWalk = me.walking; me.sentSt = stF;
-    Net.send({ t: 'mv', x: Math.round(me.x * 100) / 100, y: Math.round(me.y * 100) / 100, z: Math.round(me.z * 100) / 100, d: me.dir, w: me.walking ? 1 : 0, r: running ? 1 : 0, c: me.crouch ? 1 : 0, sl: me.slide ? 1 : 0 }, true);
+    Net.send({ t: 'mv', x: Math.round(me.x * 100) / 100, y: Math.round(me.y * 100) / 100, z: Math.round(me.z * 100) / 100, d: me.dir, w: me.walking ? 1 : 0, r: running ? 1 : 0, c: me.crouch ? 1 : 0, sl: me.slide ? 1 : 0, ti: G.tired || (G.stam ?? STAM_MAX) < STAM_MAX * 0.3 ? 1 : 0 }, true);
   }
 }
 function lineFree(ax, ay, bx, by, z) {
@@ -347,6 +349,7 @@ function castSkill(i) {
   if (!sk || me.downed) return;
   if (now < G.cdEnd[i]) return;
   if (me.mp < sk.mp) { showToast('Mana insuficiente.'); return; }
+  if (healthState(me) === 3) { showToast('De joelhos, sem forças para isso.'); return; }
   if (sk.tgt) {
     const t = G.target && G.monsters[G.target];
     if (!t) { showToast('Selecione um alvo (clique nele ou aperte Espaço).'); return; }
@@ -363,7 +366,7 @@ function drinkPot(k) {
 }
 function nearestDowned() {
   let best = null, bd = 1.7;
-  for (const id in G.players) { const e = G.players[id]; if (id === G.myId || !e.downed || !e.visible || e.carriedBy) continue; const d = dist(e.rx, e.ry, G.me.x, G.me.y); if (d < bd) { bd = d; best = e; } }
+  for (const id in G.players) { const e = G.players[id]; if (id === G.myId || !(e.downed || healthState(e) === 3) || !e.visible || e.carriedBy) continue; const d = dist(e.rx, e.ry, G.me.x, G.me.y); if (d < bd) { bd = d; best = e; } }
   return best;
 }
 
@@ -471,8 +474,8 @@ $('btn-journal').addEventListener('click', () => togglePanel('journal'));
 function updateHealthFx() {
   const hs = G.me ? healthState(G.me) : 0;
   if (hs === G.hsShown) return; G.hsShown = hs;
-  $('hstate').className = hs === 2 ? 'dying' : hs === 1 ? 'tired' : '';
-  document.body.classList.toggle('dying', hs === 2); document.body.classList.toggle('tired', hs === 1);
+  $('hstate').className = hs === 3 ? 'dying kneel' : hs === 2 ? 'dying' : hs === 1 ? 'tired' : '';
+  document.body.classList.toggle('dying', hs >= 2); document.body.classList.toggle('tired', hs === 1);
 }
 function updateTargetFrame() {
   const f = $('target-frame'), t = G.target && G.monsters[G.target];
@@ -1118,9 +1121,9 @@ $('pz-quit').addEventListener('click', () => { try { saveChar(); saveFog && G.fo
 applySettings();
 
 // subir/descer andando pelos degraus: segue os pontos (x, y, altura em andares) e no fim troca de andar com um esmaecimento cruzado
-function startClimb(now, bi, from, to, pts) {
+function startClimb(now, bi, from, to, pts, dest) {
   let len = 0; for (let k = 1; k < pts.length; k++) len += Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
-  G.climbing = { t0: now, dur: Math.max(500, len / (PLAYER_SPEED * 0.75) * 1000), bi, from, to, pts, len };
+  G.climbing = { t0: now, dur: Math.max(600, len / (PLAYER_SPEED * 0.6) * 1000), bi, from, to, pts, len, dest };
   G.path = null; G.pathGoal = null; if (G.me.sit) standUp(); G.me.emote = null;
 }
 function stepClimb(now) {
@@ -1129,8 +1132,12 @@ function stepClimb(now) {
   for (let i = 1; i < c.pts.length; i++) { const a = c.pts[i - 1], b = c.pts[i], sl = Math.hypot(b[0] - a[0], b[1] - a[1]); if (d <= sl || i === c.pts.length - 1) { const t = sl ? Math.min(1, d / sl) : 1; p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; if (sl > 0.01) me.dir = dirFromVec(b[0] - a[0], b[1] - a[1], me.dir); break; } d -= sl; }
   const ox = me.x, oy = me.y; me.x = me.rx = p[0]; me.y = me.ry = p[1]; me.lift = p[2]; me.walking = true; me.walkDist += Math.hypot(me.x - ox, me.y - oy);
   if (k < 1) return;
+  // no topo: a tela escurece rapidinho e ele aparece em frente aos degraus, no outro andar
+  me.walking = false;
+  if (!c.fading) { c.fading = now; fadeFlash(); return; }
+  if (now - c.fading < 270) return;
   G.climbing = null; me.lift = 0; me.fl = c.to; me.fb = c.to > 0 ? c.bi : -1;
-  G.flFade = { t0: now, from: c.from, to: c.to, b: c.bi };
+  me.x = me.rx = c.dest[0]; me.y = me.ry = c.dest[1];
   G.climbT = now + 500; G.floorWait = now + 1200;
   Net.send({ t: 'floor', b: c.bi, to: c.to });
 }

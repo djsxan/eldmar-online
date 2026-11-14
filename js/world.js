@@ -24,8 +24,8 @@ const DIRS8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, 
 const Z = { VILLAGE: 0, FIELDS: 1, FOREST: 2, SWAMP: 3, BONES: 4, ORCS: 5, WILD: 6, OUTSKIRTS: 7 };
 const ZONES = [
   { name: 'Cidadela de Sxan', stars: 0, mons: [] },
-  { name: 'Campos de Sxan', stars: 1, mons: ['rat', 'rat', 'slime'] },
-  { name: 'Bosque Sombrio', stars: 2, mons: ['wolf', 'wolf', 'spider'] },
+  { name: 'Campos de Sxan', stars: 1, mons: ['rat', 'deer', 'deer', 'boar', 'slime'] },
+  { name: 'Bosque Sombrio', stars: 2, mons: ['wolf', 'wolf', 'spider', 'deer', 'boar'] },
   { name: 'Pântano Pútrido', stars: 2, mons: ['toad', 'toad', 'slime'] },
   { name: 'Colinas de Ossos', stars: 3, mons: ['skeleton', 'skeleton', 'spider'] },
   { name: 'Acampamento Orc', stars: 3, mons: ['goblin', 'goblin', 'orc'] },
@@ -131,8 +131,9 @@ const doorOf = b => { const [x, y] = doorTile(b), v = DOOR_V[b.door || 'S']; ret
 // L = degrau de baixo, U = topo, entry = de onde se entra embaixo, arrive = onde se chega em cima
 function stairSpec(b, f) {
   const [A] = bDims(b);
-  if (f % 2 === 0) return { L: [A - 2, 0], U: [A - 1, 0], dv: [1, 0], entry: [A - 3, 0], arrive: [A - 1, 1] };
-  return { L: [0, 2], U: [0, 1], dv: [0, -1], entry: [0, 3], arrive: [1, 1] };
+  // o topo fica a 1 tile da parede: em cima, chega-se no tile em frente aos degraus (na direção da subida)
+  if (f % 2 === 0) return { L: [A - 3, 0], U: [A - 2, 0], dv: [1, 0], entry: [A - 4, 0], arrive: [A - 1, 0] };
+  return { L: [0, 3], U: [0, 2], dv: [0, -1], entry: [0, 4], arrive: [0, 1] };
 }
 function floorsOf(b) { return b.kind === 'stairtower' ? 1 : (b.floors || 1); }
 function interiorLayout0(b, fl = 0) {
@@ -540,10 +541,10 @@ function generateWorld() {
   for (const b of BUILDINGS) reserve(b.x - 1, b.y - 1, b.x + b.w, b.y + b.h);
   const houses = [];
   const roadDist = (px, py) => { let best = 99; for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) { const xx = Math.round(px) + dx, yy = Math.round(py) + dy; if (inb(xx, yy) && rdir[idx(xx, yy)] && bld[idx(xx, yy)] < 0) best = Math.min(best, Math.abs(dx) + Math.abs(dy)); } return best; };
-  for (let k = 0; k < 12000 && houses.length < 18; k++) {
+  for (let k = 0; k < 12000 && houses.length < 15; k++) {
     const x = x0 + 3 + Math.floor(R(k, 3, 700) * (x1 - x0 - 10)), y = y0 + 3 + Math.floor(R(k, 4, 700) * (y1 - y0 - 10));
-    if (x > KEEP.x0 - 9 && x < KEEP.x1 + 8 && y > KEEP.y0 - 9 && y < KEEP.y1 + 8) continue;   // praça aberta em volta do castelo
-    const nearKeep = x > KEEP.x0 - 16 && x < KEEP.x1 + 14 && y > KEEP.y0 - 16 && y < KEEP.y1 + 16, rr = R(k, 1, 700);
+    if (x + 6 > KEEP.x0 - 12 && x < KEEP.x1 + 12 && y + 6 > KEEP.y0 - 12 && y < KEEP.y1 + 12) continue;   // praça aberta em volta do castelo
+    const nearKeep = x + 6 > KEEP.x0 - 19 && x < KEEP.x1 + 19 && y + 6 > KEEP.y0 - 19 && y < KEEP.y1 + 19, rr = R(k, 1, 700);
     const ai = nearKeep || rr < 0.55 ? Math.floor(R(k, 8, 700) * 4) : rr < 0.93 ? 4 + Math.floor(R(k, 8, 700) * 4) : 8 + Math.floor(R(k, 8, 700) * 2), T0 = HOUSE_TYPES[ai];
     let bestHb = null, bestD = 99;
     for (const door of ['S', 'N', 'E', 'W']) {

@@ -110,7 +110,9 @@ function hostOnClient(from, m) {
     case 'npc': npcAction(p, m); break;
     case 'revive': {
       const t = S.players[m.id];
-      if (m.on && t && t.downed && !p.downed && dist(p.x, p.y, t.x, t.y) <= 1.8) { t.revive = { by: p.id, start: now_() }; near(t.x, t.y, { t: 'rv', id: t.id, by: p.id }); }
+      if (m.on && t && !t.downed && t !== p && !p.downed && t.hp < t.maxHp * KNEEL_HP && dist(p.x, p.y, t.x, t.y) <= 1.8) { t.aid = { by: p.id, start: now_() }; near(t.x, t.y, { t: 'rv', id: t.id, by: p.id }); }
+      else if (!m.on && t && t.aid && t.aid.by === p.id) { t.aid = null; near(t.x, t.y, { t: 'rv', id: t.id, by: null }); }
+      else if (m.on && t && t.downed && !p.downed && dist(p.x, p.y, t.x, t.y) <= 1.8) { t.revive = { by: p.id, start: now_() }; near(t.x, t.y, { t: 'rv', id: t.id, by: p.id }); }
       else if (!m.on && t && t.revive && t.revive.by === p.id) { t.revive = null; near(t.x, t.y, { t: 'rv', id: t.id, by: null }); }
       break;
     }
@@ -165,7 +167,7 @@ function handleMove(p, m) {
   const ok = dist(p.x, p.y, x, y) <= maxStep && canStandZ(x, y, z, 0.18, p.fl || 0, p.fb ?? -1) && Math.abs(z - (+m.z || 0)) < 0.45;
   if (!ok) { Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: p.z, fl: p.fl || 0, fb: p.fb ?? -1 }); return; }
   if (p.sit && dist(p.x, p.y, x, y) > 0.05) p.sit = null;
-  p.x = x; p.y = y; p.z = z; p.dir = m.d | 0; p.walking = !!m.w; p.running = !!m.r; p.crouch = !!m.c; p.slide = !!m.sl; p.lastMv = now;
+  p.x = x; p.y = y; p.z = z; p.dir = m.d | 0; p.walking = !!m.w; p.running = !!m.r; p.crouch = !!m.c; p.slide = !!m.sl; p.tired = !!m.ti; p.lastMv = now;
   if (p.casting && dist(p.x, p.y, p.castX, p.castY) > 0.3) { p.casting = null; near(p.x, p.y, { t: 'castend', id: p.id }); }
   if (p.carrying) { const t = S.players[p.carrying]; if (t) { t.x = p.x; t.y = p.y; t.z = p.z; } }
 }
@@ -197,6 +199,7 @@ function roll(p, mult = 1) {
   const c = CLASSES[p.cls], l = p.lvl;
   let dmg = rint(Math.floor(c.dmg[0][0] + c.dmg[0][1] * l), Math.floor(c.dmg[1][0] + c.dmg[1][1] * l)) * mult;
   if (buffOn(p, 'mead')) dmg *= 1.1;
+  if (p.hp < p.maxHp * KNEEL_HP) dmg *= 0.7;   // de joelhos: golpes fracos
   if (buffOn(p, 'whet')) dmg *= 1.15;
   const crit = Math.random() < c.crit + (buffOn(p, 'agile') ? 0.1 : 0);
   if (crit) dmg *= 1.8;
@@ -226,10 +229,10 @@ function killMonster(m, p, delay) {
   const def = MON[m.type];
   const gold = rint(def.gold[0], def.gold[1]);
   p.gold += gold;
-  sfx(m.x, m.y, `+${gold} ouro`, '#e8c860', delay + 250);
+  if (gold > 0) sfx(m.x, m.y, `+${gold} ouro`, '#e8c860', delay + 250);
   // saque: material do monstro (55%, troll sempre) e gema rara (3%)
   const drops = [];
-  if (MON_LOOT[m.type] && (def.big || Math.random() < 0.55)) drops.push(MON_LOOT[m.type]);
+  for (const [k, ch] of MON_LOOT[m.type] || []) if (Math.random() < ch) drops.push(k);
   if (Math.random() < 0.03) drops.push('gem');
   for (const k of drops) {
     if (!p.inv[k] && Object.keys(p.inv).length >= INV_SLOTS) { tell(p, 'Inventário cheio.'); break; }
@@ -275,7 +278,11 @@ function gainXp(p, amount, delay = 0) {
 }
 
 function damagePlayer(p, raw, m, delay = 0) {
-  if (p.downed) return;
+  if (p.downed) {
+    // lobos atacam quem está caído: a pessoa sangra mais rápido
+    if (m && MON[m.type].beh === 'pred') { p.downed.until -= 2500; near(p.x, p.y, { t: 'hit', k: 'p', id: p.id, x: p.x, y: p.y, dmg: 0, d: delay, ax: m.x, ay: m.y }); }
+    return;
+  }
   const c = CLASSES[p.cls];
   let mult = 1 - c.armor;
   if (buffOn(p, 'wall')) mult *= 0.4;
@@ -335,7 +342,9 @@ function monBehind(p, m, range) {
 function shot(p, kind, tx, ty, d, delay) { near(p.x, p.y, { t: 'proj', id: p.id, kind, tx, ty, d, delay }); }
 function basicAttack(p, m, now) {
   const c = CLASSES[p.cls], r = Math.random();
-  p.nextAtk = now + c.atkMs * (buffOn(p, 'agile') ? 0.5 : 1);
+  const kneel = p.hp < p.maxHp * KNEEL_HP;
+  p.nextAtk = now + c.atkMs * (buffOn(p, 'agile') ? 0.5 : 1) * (kneel ? 1.5 : 1);
+  if (kneel) { if (p.cls === 'knight') { const { dmg, crit } = roll(p, 1); anim('p', p, 'swing', m.x, m.y); hitRolled(p, m, dmg, crit, 180, 0); } else { const kind = p.cls === 'archer' ? 'arrow' : 'bolt', d = flight(p.x, p.y, m.x, m.y) + 180; anim('p', p, p.cls === 'archer' ? 'shoot' : 'bolt', m.x, m.y, { proj: kind, d }); hitMonster(p, m, 1, d); } return; }
   if (p.cls === 'knight') {
     const { dmg, crit } = roll(p, 1);
     if (dmg >= m.hp && r < 0.6) { anim('p', p, 'execute', m.x, m.y); hitRolled(p, m, Math.max(dmg, m.hp), true, 380, 1); return; }   // golpe na cabeça: termina o inimigo
@@ -373,6 +382,7 @@ function useSkill(p, i) {
   if (!sk || p.casting || p.carrying) return;
   if (now < (p.cds[i] || 0)) return;
   if (p.mp < sk.mp) { tell(p, 'Mana insuficiente.'); return; }
+  if (p.hp < p.maxHp * KNEEL_HP) { tell(p, 'De joelhos, sem forças para isso.'); return; }
   let m = null;
   if (sk.tgt) {
     m = S.monsters[p.target];
@@ -550,13 +560,28 @@ function monsterThink(m, players, now, dt) {
     else chase(m, m.homeX, m.homeY, step * 1.1, now);
     return;
   }
+  // fauna que foge: ao ser atacada, corre para longe de quem atacou
+  if (d.beh === 'flee' && m.aggro) { m.flee = { from: m.aggro, until: now + 4500 }; m.aggro = null; }
+  if (m.flee && m.flee.until > now) {
+    const pl = S.players[m.flee.from];
+    if (pl) { const ax = m.x - pl.x, ay = m.y - pl.y, l = Math.hypot(ax, ay) || 1; if (!moveToward(m, m.x + ax / l * 2, m.y + ay / l * 2, step * 1.35)) { const a = Math.random() * 6.28; moveToward(m, m.x + Math.cos(a), m.y + Math.sin(a), step); } }
+    m.wander = null; return;
+  }
   let tgt = null;
-  const valid = p => p && !p.downed && p.z < 0.5 && !inSafe(p.x, p.y);
+  const pred = d.beh === 'pred';
+  const valid = p => p && (!p.downed || (pred && !p.carriedBy)) && p.z < 0.5 && !inSafe(p.x, p.y);
+  // lobo: sempre caça quem está de joelhos ou caído; quem está cansado, 50% de chance (sorteio renovado a cada 8 s)
+  const prey = p => {
+    if (!pred) return true;
+    if (p.downed || p.hp < p.maxHp * KNEEL_HP) return true;
+    if (p.hp < p.maxHp * 0.6 || p.tired) { m.prey = m.prey || {}; let r = m.prey[p.id]; if (!r || now > r.t) r = m.prey[p.id] = { ok: Math.random() < 0.5, t: now + 8000 }; return r.ok; }
+    return false;
+  };
   if (m.taunt && m.taunt.until > now && valid(S.players[m.taunt.pid])) tgt = S.players[m.taunt.pid];
   if (!tgt && m.aggro && valid(S.players[m.aggro]) && dist(m.x, m.y, S.players[m.aggro].x, S.players[m.aggro].y) <= 11) tgt = S.players[m.aggro];
   if (!tgt) {
     let best = 99;
-    for (const p of players) { if (!valid(p)) continue; const dd = dist(m.x, m.y, p.x, p.y); if (dd <= d.aggro * (p.crouch ? 0.5 : 1) && dd < best) { best = dd; tgt = p; } }
+    if (d.aggro > 0) for (const p of players) { if (!valid(p) || !prey(p)) continue; const dd = dist(m.x, m.y, p.x, p.y); if (dd <= d.aggro * (p.crouch ? 0.5 : 1) && dd < best) { best = dd; tgt = p; } }
   }
   if (tgt) {
     if (homeDist > 13) { m.returning = true; m.aggro = null; m.taunt = null; return; }
@@ -608,6 +633,11 @@ function hostTick() {
       if (p.downed) { const pr = NPCS[0]; if (dist(p.x, p.y, pr.x, pr.y) <= 2.6) { revivePlayer(p, 1); near(p.x, p.y, { t: 'chat', name: '', text: 'A Irmã Lúmina reanimou ' + p.name + '.' }); } }
       if (p.downed && now >= p.downed.until) respawnTemple(p);
       continue;
+    }
+    if (p.aid) {
+      const r = S.players[p.aid.by];
+      if (!r || r.downed || dist(r.x, r.y, p.x, p.y) > 1.9 || p.hp >= p.maxHp * KNEEL_HP) { p.aid = null; near(p.x, p.y, { t: 'rv', id: p.id, by: null }); }
+      else if (now - p.aid.start >= AID_MS) { p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * AID_HEAL)); p.aid = null; near(p.x, p.y, { t: 'rv', id: p.id, by: null }); aoe('heal', p.x, p.y, { id: p.id }); tell(p, r.name + ' te ajudou a levantar.'); sendStat(p); }
     }
     if (p.casting && now >= p.casting.until) { const c = p.casting; p.casting = null; execSkill(p, c.i, S.monsters[c.tid]); }
     if (!p.target) continue;

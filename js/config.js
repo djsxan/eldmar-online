@@ -3,8 +3,8 @@
 //  Mexa aqui para balancear o jogo.
 // ============================================================
 const GAME_NAME = 'World of Sxan';
-const VERSION = 'v1.3.0';
-const VERSION_NAME = 'Passos Furtivos';
+const VERSION = 'v1.4.0';
+const VERSION_NAME = 'Caça e Fôlego';
 
 const PLAYER_SPEED = 2.7;          // tiles por segundo (1 tile ≈ 2 m)
 // configurações do jogador (menu de pausa)
@@ -99,11 +99,14 @@ const SKILLS = {
 
 // Monstros. speed em tiles/s · aggro = distância em que percebe o jogador
 const MON = {
-  rat:      { name: 'Ratazana',          hp: 18,  dmg: [1, 4],   xp: 6,   gold: [1, 3],   speed: 1.7, atk: 1400, aggro: 4 },
+  // fauna (beh: flee = foge ao ser atacada · retal = revida · pred = predador que só caça os fracos). Animais não carregam ouro: o lucro vem dos recursos.
+  rat:      { name: 'Ratazana',          hp: 18,  dmg: [1, 3],   xp: 5,   gold: [0, 0],   speed: 2.2, atk: 1400, aggro: 0, beh: 'flee' },
+  deer:     { name: 'Cervo',             hp: 45,  dmg: [0, 0],   xp: 14,  gold: [0, 0],   speed: 3.6, atk: 1400, aggro: 0, beh: 'flee' },
+  boar:     { name: 'Javali',            hp: 85,  dmg: [5, 11],  xp: 30,  gold: [0, 0],   speed: 2.6, atk: 1300, aggro: 0, beh: 'retal' },
   slime:    { name: 'Lodo Vivo',         hp: 32,  dmg: [2, 5],   xp: 12,  gold: [2, 5],   speed: 1.2, atk: 1500, aggro: 4 },
-  wolf:     { name: 'Lobo Cinzento',     hp: 60,  dmg: [4, 10],  xp: 28,  gold: [3, 8],   speed: 2.6, atk: 1100, aggro: 6 },
-  spider:   { name: 'Aranha-Tecelã',     hp: 70,  dmg: [5, 11],  xp: 32,  gold: [4, 9],   speed: 2.2, atk: 1200, aggro: 5 },
-  toad:     { name: 'Sapo-Boi do Brejo', hp: 80,  dmg: [5, 12],  xp: 35,  gold: [4, 10],  speed: 1.5, atk: 1300, aggro: 5 },
+  wolf:     { name: 'Lobo Cinzento',     hp: 60,  dmg: [4, 10],  xp: 28,  gold: [0, 0],   speed: 2.8, atk: 1100, aggro: 7, beh: 'pred' },
+  spider:   { name: 'Aranha-Tecelã',     hp: 50,  dmg: [3, 7],   xp: 20,  gold: [0, 0],   speed: 2.4, atk: 1200, aggro: 0, beh: 'flee' },
+  toad:     { name: 'Sapo-Boi do Brejo', hp: 55,  dmg: [3, 7],   xp: 20,  gold: [0, 0],   speed: 1.8, atk: 1300, aggro: 0, beh: 'flee' },
   goblin:   { name: 'Saqueador Goblin',  hp: 90,  dmg: [6, 14],  xp: 45,  gold: [8, 16],  speed: 2.3, atk: 1100, aggro: 6 },
   skeleton: { name: 'Esqueleto Errante', hp: 120, dmg: [8, 16],  xp: 60,  gold: [6, 14],  speed: 1.7, atk: 1300, aggro: 6 },
   orc:      { name: 'Orc Guerreiro',     hp: 180, dmg: [10, 22], xp: 95,  gold: [12, 25], speed: 2.0, atk: 1300, aggro: 7 },
@@ -133,20 +136,30 @@ const ITEMS = {
 
 // saque dos monstros (vai para o inventário; o mercador compra)
 // agachar (C) e deslizar (C + Shift correndo)
+// estados de vida: à beira da morte < 25%; de joelhos < 15% (anda 50% mais devagar, sem habilidades, ataque mais fraco)
+const DYING_HP = 0.25, KNEEL_HP = 0.15, KNEEL_MUL = 0.5, AID_MS = 2000, AID_HEAL = 0.2;
 const CROUCH_MUL = 0.5, SLIDE_MS = 600, SLIDE_COST = 22;
 const LOOT = {
   rattail:  { name: 'Rabo de Ratazana', price: 4,   icon: '〰', color: '#c8a090', desc: 'Fino e pelado. Alguém paga por isso.' },
   goo:      { name: 'Gosma Viva',       price: 6,   icon: '●', color: '#6ad84a', desc: 'Ainda se mexe um pouco.' },
-  pelt:     { name: 'Pele de Lobo',     price: 12,  icon: '▰', color: '#9a9a9a', desc: 'Grossa e quente. Os alfaiates adoram.' },
+  pelt:     { name: 'Pele de Lobo',     price: 22,  icon: '▰', color: '#9a9a9a', desc: 'Grossa e quente. Os alfaiates adoram.' },
   silk:     { name: 'Seda de Aranha',   price: 14,  icon: '❋', color: '#e8e8f0', desc: 'Fio resistente como corda.' },
   toadskin: { name: 'Couro de Sapo',    price: 13,  icon: '◆', color: '#7a9a4a', desc: 'Úmido e elástico.' },
   trinket:  { name: 'Bugiganga Goblin', price: 20,  icon: '✧', color: '#e8c040', desc: 'Roubada de alguém, com certeza.' },
   bone:     { name: 'Osso Antigo',      price: 18,  icon: '✕', color: '#e8dcc0', desc: 'Velho, mas ainda inteiro.' },
   tusk:     { name: 'Presa de Orc',     price: 28,  icon: '◣', color: '#f0e8d0', desc: 'Troféu de guerra.' },
   trollheart: { name: 'Coração de Troll', price: 120, icon: '♥', color: '#c83a3a', desc: 'Ainda quente. Raríssimo.' },
+  hide:     { name: 'Couro de Cervo',   price: 16,  icon: '▰', color: '#b08050', desc: 'Couro macio, bom para botas e luvas.' },
+  venison:  { name: 'Carne de Cervo',   price: 9,   icon: '◖', color: '#c85a4a', desc: 'Carne magra. A taverna sempre compra.' },
+  boartusk: { name: 'Presa de Javali',  price: 18,  icon: '◣', color: '#e8dcc0', desc: 'Curva e afiada como faca.' },
+  pork:     { name: 'Carne de Javali',  price: 11,  icon: '◖', color: '#d87a6a', desc: 'Gorda e saborosa. Vira ensopado.' },
   gem:      { name: 'Gema Bruta',       price: 55,  icon: '◈', color: '#5ad0f0', desc: 'Pedra preciosa sem lapidar.' },
 };
-const MON_LOOT = { rat: 'rattail', slime: 'goo', wolf: 'pelt', spider: 'silk', toad: 'toadskin', goblin: 'trinket', skeleton: 'bone', orc: 'tusk', troll: 'trollheart' };
+// recursos de cada criatura: [item, chance]
+const MON_LOOT = {
+  rat: [['rattail', 0.85]], deer: [['hide', 1], ['venison', 0.75]], boar: [['boartusk', 0.9], ['pork', 0.8]], wolf: [['pelt', 0.95]],
+  spider: [['silk', 0.85]], toad: [['toadskin', 0.85]], slime: [['goo', 0.55]], goblin: [['trinket', 0.55]], skeleton: [['bone', 0.55]], orc: [['tusk', 0.55]], troll: [['trollheart', 1]],
+};
 const INV_SLOTS = 24;
 const BUFF_NAMES = { warcry: 'Grito de Guerra', wall: 'Muralha de Ferro', agile: 'Passo Ágil', bless: 'Bênção da Aurora', mead: 'Hidromel', whet: 'Lâmina Afiada' };
 const BUFF_BITS = { wall: 16, agile: 32, bless: 64, warcry: 128 };

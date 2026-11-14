@@ -1033,7 +1033,7 @@ function mBuilding(b, night) {
   const ov = 0.42, roofM = smat(st.roofTex, st.roof, { bump: st.roofTex === 'thatch' ? 2 : 1.6, side: THREE.DoubleSide }), ridgeX = W2 >= H2;
   const gable = b.kind === 'house' ? (b.v || 0) % 2 === 0 : b.kind === 'shop' || b.kind === 'barracks';
   // no oitão o telhado avança pouco (beiral curto) e ganha uma tábua de acabamento na borda inclinada
-  const ox = gable && ridgeX ? 0.16 : ov, oz = gable && !ridgeX ? 0.16 : ov;
+  const ox = gable && ridgeX ? 0.03 : ov, oz = gable && !ridgeX ? 0.03 : ov;
   const A = V3(-ox, H, -oz), B = V3(W2 + ox, H, -oz), C = V3(W2 + ox, H, H2 + oz), D = V3(-ox, H, H2 + oz);
   let r1, r2;
   if (gable) { r1 = ridgeX ? V3(-ox, H + RH, H2 / 2) : V3(W2 / 2, H + RH, -oz); r2 = ridgeX ? V3(W2 + ox, H + RH, H2 / 2) : V3(W2 / 2, H + RH, H2 + oz); }
@@ -1044,8 +1044,10 @@ function mBuilding(b, night) {
     // oitões (paredes triangulares nas pontas) com uma janelinha
     const gm = smat(timber ? 'plaster' : st.tex, shadeH(st.wall, -0.12), { bump: 1, side: THREE.DoubleSide });
     const tri = (p, q, t) => { const g = new THREE.BufferGeometry().setFromPoints([p, q, t]); g.computeVertexNormals(); wuv(g, 0.7); return mk(g, gm); };
-    if (ridgeX) { o.add(tri(V3(W2, H, 0), V3(W2, H, H2), V3(W2, H + RH * (H2 / 2) / (H2 / 2 + ov), H2 / 2))); o.add(tri(V3(0, H, H2), V3(0, H, 0), V3(0, H + RH * (H2 / 2) / (H2 / 2 + ov), H2 / 2))); }
-    else { o.add(tri(V3(0, H, H2), V3(W2, H, H2), V3(W2 / 2, H + RH * (W2 / 2) / (W2 / 2 + ov), H2))); o.add(tri(V3(W2, H, 0), V3(0, H, 0), V3(W2 / 2, H + RH * (W2 / 2) / (W2 / 2 + ov), 0))); }
+    // parede do oitão vai até encostar no telhado (pentágono: sobe na beira e termina na cumeeira)
+    const pent = (P) => { for (let k = 1; k < P.length - 1; k++) o.add(tri(P[0], P[k], P[k + 1])); };
+    if (ridgeX) { const e = RH * ov / (H2 / 2 + ov); for (const x of [0, W2]) pent([V3(x, H, 0), V3(x, H + e, 0), V3(x, H + RH, H2 / 2), V3(x, H + e, H2), V3(x, H, H2)]); }
+    else { const e = RH * ov / (W2 / 2 + ov); for (const z of [0, H2]) pent([V3(0, H, z), V3(0, H + e, z), V3(W2 / 2, H + RH, z), V3(W2, H + e, z), V3(W2, H, z)]); }
     const gw = mk(new THREE.CircleGeometry(0.18, 12), glassM);
     if (ridgeX) { gw.position.set(W2 + 0.03, H + RH * 0.3, H2 / 2); gw.rotation.y = Math.PI / 2; } else { gw.position.set(W2 / 2, H + RH * 0.3, H2 + 0.03); }
     o.add(gw);
@@ -1192,9 +1194,9 @@ function mInterior(b, fl = 0) {
         g.add(mk(new THREE.BoxGeometry(ux ? 1.96 : 0.9, 0.02, ux ? 0.9 : 1.96).translate(wx * 0.03, 0.065, wz * 0.03), smat(null, '#050302', { rough: 1, metal: 0 })));
         for (let k = 0; k < n; k++) { const s = 1 - (k + 0.5) * 2 / n, c = Math.round(0x6a * (1 - k / n * 0.85)), col = '#' + [c, Math.round(c * 0.7), Math.round(c * 0.42)].map(v => v.toString(16).padStart(2, '0')).join(''); g.add(wbox(ux ? 2 / n - 0.03 : 0.8, 0.04, ux ? 0.8 : 2 / n - 0.03, ux * s + wx * 0.03, 0.09, uz * s + wz * 0.03, smat('wood', col), 2)); }
         const ox = -wx * 0.46, oz = -wz * 0.46;
-        // corrimão do lado aberto só na metade de baixo (o topo fica livre para descer) + na ponta de baixo
-        g.add(wbox(ux ? 1.0 : 0.05, 0.08, ux ? 0.05 : 1.0, -ux * 0.5 + ox, 0.82, -uz * 0.5 + oz, DW(), 2));
-        for (const s of [-1, -0.5, 0]) g.add(wbox(0.05, 0.8, 0.05, ux * s + ox, 0.42, uz * s + oz, DW(), 2));
+        // corrimão em todo o lado aberto e na ponta de baixo; a ponta do topo fica livre para descer
+        g.add(wbox(ux ? 2.0 : 0.05, 0.08, ux ? 0.05 : 2.0, ox, 0.82, oz, DW(), 2));
+        for (const s of [-1, -0.5, 0, 0.5, 1]) g.add(wbox(0.05, 0.8, 0.05, ux * s + ox, 0.42, uz * s + oz, DW(), 2));
         g.add(wbox(ux ? 0.05 : 0.92, 0.08, ux ? 0.92 : 0.05, -ux * 1 + wx * 0.0, 0.82, -uz * 1, DW(), 2));
         for (const q of [-0.44, 0, 0.44]) g.add(wbox(0.05, 0.8, 0.05, -ux + (ux ? 0 : q), 0.42, -uz + (ux ? q : 0), DW(), 2));
         g.add(mk(new THREE.BoxGeometry(0.9, 0.04, 0.9).translate(ux * 0.5, 0.08, uz * 0.5), smat(null, '#c8a050', { emissive: '#6a4a10', ei: 0.25, transparent: true, opacity: 0.3 }), false));

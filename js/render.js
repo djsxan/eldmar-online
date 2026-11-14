@@ -246,7 +246,8 @@ const DIR_VIEW = ['S', 'E', 'N', 'W']; // 0..3
 function healthState(e) {
   if (!e.maxHp || e.downed) return 0;
   const r = e.hp / e.maxHp;
-  if (r < 0.25) return 2;
+  if (r < KNEEL_HP) return 3;
+  if (r < DYING_HP) return 2;
   if (r < 0.6 || (e === G.me && (G.tired || (G.stam ?? STAM_MAX) < STAM_MAX * 0.3))) return 1;
   return 0;
 }
@@ -260,14 +261,14 @@ function heroPoseFor(e, now) {
     if (t >= 0 && t < 1 && ACTS[e.anim.a]) P.act = { k: e.anim.a, f: Math.min(11, Math.floor(t * 12)) };
   }
   if (e.cast && e.cast.end > now) P.act = { k: 'cast', f: Math.floor(now / 70) % 12 };
-  if (!P.act && e.emote && !e.walking) { const ms = ACT_MS[e.emote.k], t = (now - e.emote.t0) / ms; if (e.emote.k === 'dance') P.act = { k: 'dance', f: Math.floor(t * 12) % 12 }; else if (t < 1) P.act = { k: e.emote.k, f: Math.min(11, Math.floor(t * 12)) }; else e.emote = null; }
+  if (!P.act && e.emote && !e.walking) { const ms = ACT_MS[e.emote.k], t = (now - e.emote.t0) / ms; if (e.emote.k === 'dance') P.act = { k: 'dance', f: Math.floor(t * 12) % 12 }; else if (t < 1) P.act = { k: e.emote.k + (e.cls === 'knight' && ACTS[e.emote.k + '_k'] ? '_k' : ''), f: Math.min(11, Math.floor(t * 12)) }; else e.emote = null; }
   else if (e.walking && e.emote) e.emote = null;
   if (e.sit && !P.act) { P.sit = e.sit.chair ? 'c' : 'g'; P.walk = -1; return P; }
   if (!e.isNpc) {
     if (e.slide) { P.sl = 1; P.walk = -1; P.run = 0; P.act = null; return P; }
     if (e.crouch) { P.cr = 1; P.run = 0; }
     P.hs = healthState(e);
-    if (P.hs && !e.walking && !P.act) P.br = Math.floor(now / (P.hs === 2 ? 180 : 260)) % 4;   // respiração ofegante
+    if (P.hs && !e.walking && !P.act) P.br = Math.floor(now / (P.hs >= 2 ? 180 : 220)) % 4;   // respiração ofegante
   }
   if (!P.act && !e.walking && e.idleAnim) {
     const t = (now - e.idleAnim.t0) / e.idleAnim.dur;
@@ -332,7 +333,7 @@ function fallAngle(ms) {
   const t = ms / 1100; if (t >= 1) return 0;
   return (t < 0.25 ? t / 0.25 : t < 0.65 ? 1 : 1 - (t - 0.65) / 0.35) * 1.15;
 }
-const MON_H = { rat: 30, slime: 40, wolf: 58, spider: 52, toad: 44, goblin: 68, skeleton: 92, orc: 104, troll: 150 };
+const MON_H = { deer: 70, boar: 46, rat: 30, slime: 40, wolf: 58, spider: 52, toad: 44, goblin: 68, skeleton: 92, orc: 104, troll: 150 };
 function drawMonsterEntity(ctx, e, sx, sy, now) {
   if (R3.ok) {
     let atk = -1;
@@ -357,7 +358,7 @@ function drawMonsterEntity(ctx, e, sx, sy, now) {
   let atk = -1;
   if (e.anim) { const t = (now - e.anim.t0) / ACT_MS.bite; if (t >= 0 && t < 1) atk = Math.min(3, Math.floor(t * 4)); }
   const f = e.walking ? Math.floor(e.walkDist * 3) % 4 : (Math.floor(now / 450 + e.id) % 2) * ((e.type === 'slime' || e.type === 'toad') ? 1 : 0);
-  const spr = monSprite(e.type, f, atk);
+  const spr = monSprite(e.type === 'deer' || e.type === 'boar' ? 'wolf' : e.type, f, atk);
   let alpha = 1, sink = 0;
   if (e.dieAt && now > e.dieAt) { const t = Math.min(1, (now - e.dieAt) / 600); alpha = 1 - t; sink = Math.round(t * 4); }
   blit(ctx, def.big ? SHADOW_BIG : SHADOW, sx, sy);
