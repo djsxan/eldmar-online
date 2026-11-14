@@ -25,7 +25,7 @@ function fullStat(p) {
   const now = now_();
   return {
     t: 'pstat', id: p.id, hp: p.hp, maxHp: p.maxHp, mp: p.mp, maxMp: p.maxMp, lvl: p.lvl, xp: p.xp, gold: p.gold,
-    pots: { hp: p.pots.hp, mp: p.pots.mp, band: p.pots.band || 0 }, body: p.body, bleed: p.bleed, lost: p.lost || 0, pro: p.pro || 0, knock: Math.max(0, (p.knockUntil || 0) - now), inv: { ...p.inv }, quests: { ...p.quests }, qdone: { ...p.qdone },
+    pots: { hp: p.pots.hp, mp: p.pots.mp, band: p.pots.band || 0 }, body: p.body, bleed: p.bleed, food: Math.round(p.food ?? 100), water: Math.round(p.water ?? 100), cold: Math.round(p.cold || 0), infect: p.infect || 0, sick: Math.max(0, (p.sickUntil || 0) - now), hasSkin: !!p.hasSkin, lost: p.lost || 0, pro: p.pro || 0, knock: Math.max(0, (p.knockUntil || 0) - now), inv: { ...p.inv }, quests: { ...p.quests }, qdone: { ...p.qdone },
     buffs: Object.entries(p.buffs).filter(([, u]) => u > now).map(([k, u]) => [k, u - now]),
     cds: [0, 1, 2, 3].map(i => Math.max(0, (p.cds[i] || 0) - now)),
     combat: now - p.lastCombat < OUT_OF_COMBAT_MS, cst: Math.round(p.cst ?? CST_MAX), stun: Math.max(0, (p.stunUntil || 0) - now), rip: Math.max(0, (p.ripUntil || 0) - now), slow: Math.max(0, (p.slowUntil || 0) - now), downed: p.downed ? p.downed.until - now : 0,
@@ -142,6 +142,7 @@ function hostOnClient(from, m) {
       color: /^#[0-9a-f]{6}$/i.test(m.color) ? m.color : '#8b2e2e',
       x: s.x, y: s.y, z: 0, lvl, xp: clamp(m.xp | 0, 0, need(lvl) - 1), gold: clamp(m.gold | 0, 0, 1e7),
       pots: { hp: clamp((m.pots && m.pots.hp) | 0, 0, 999), mp: clamp((m.pots && m.pots.mp) | 0, 0, 999), band: clamp((m.pots && m.pots.band) | 0, 0, 999) },
+      food: clamp(isFinite(m.food) ? +m.food : 100, 0, 100), water: clamp(isFinite(m.water) ? +m.water : 100, 0, 100), infect: clamp(m.infect | 0, 0, 2), cold: 0, hasSkin: !!m.hasSkin,
       lost: (m.lost | 0) & 30, pro: (m.pro | 0) & 30, cst: CST_MAX, body: Object.fromEntries(BODY_PARTS.map(k => [k, clamp(m.body && isFinite(m.body[k]) ? +m.body[k] : 100, 0, 100)])),
       bleed: Object.fromEntries(BODY_PARTS.map(k => [k, clamp(m.bleed && isFinite(m.bleed[k]) ? +m.bleed[k] : 0, 0, 2)])), aim: 'torso',
       maxHp: maxHpFor(cls, lvl), maxMp: maxMpFor(cls, lvl), hp: 0, mp: 0,
@@ -252,6 +253,9 @@ function hostOnClient(from, m) {
     case 'duel': p.duel = !!m.on; break;
     case 'aim': if (['head', 'torso', 'legs'].includes(m.z)) p.aim = m.z; break;
     case 'band': bandage(p); break;
+    case 'use': useItem(p, String(m.k)); break;
+    case 'cook': cookOrDrink(p, 'cook'); break;
+    case 'drinkw': cookOrDrink(p, 'drink'); break;
     case 'skin': {
       const c = S.corpses && S.corpses[m.id]; if (!c || c.looted || p.downed || dist(p.x, p.y, c.x, c.y) > 1.9) break;
       c.looted = true;
@@ -415,6 +419,65 @@ function woundPart(p, part, dmg) {
   if (after > before || (dmg >= p.maxHp * 0.12 && Math.random() < 0.5)) p.bleed[part] = Math.min(2, Math.max(p.bleed[part] || 0, BLEED_RATE[Math.max(1, after)]));
   if (after > before) Net.toOne(p.id, { t: 'wound', part, st: after });
 }
+// ---------- sobrevivência: fome, sede, frio, infecção ----------
+function nearFire(p, r = 3.2) {
+  if (S.fires && S.fires.some(f => dist(f.x, f.y, p.x, p.y) < r)) return true;
+  for (let y = Math.round(p.y) - 3; y <= Math.round(p.y) + 3; y++) for (let x = Math.round(p.x) - 3; x <= Math.round(p.x) + 3; x++) { if (!inBounds(x, y)) continue; const o = WORLD.obj[y * MAP_W + x]; if ((o === O.CAMPFIRE || o === O.BRAZIER || o === O.TORCH) && dist(x, y, p.x, p.y) < r) return true; }
+  return false;
+}
+function survFactor(p) { return ((p.food ?? 100) < 30 ? 0.6 : 1) * ((p.water ?? 100) < 30 ? 0.7 : 1) * ((p.cold || 0) > 50 ? 0.6 : 1) * (p.infect ? 0.7 : 1); }
+function survivalTick(p, now, dt) {
+  if (p.dev || p.downed) return;
+  const busy = (p.running && p.walking) || now - p.lastCombat < 4000 ? 1.5 : 1, sick = now < (p.sickUntil || 0);
+  p.food = Math.max(0, (p.food ?? 100) - dt * 100 / (SURV.foodMin * 60) * busy);
+  p.water = Math.max(0, (p.water ?? 100) - dt * 100 / (SURV.waterMin * 60) * busy * (sick ? 2.5 : 1));
+  // frio: à noite, fora da cidade, longe do fogo e fora de casa
+  const night = dayInfo().night, indoor = p.fl > 0 || bldAt(p.x, p.y) >= 0, warm = !night || indoor || nearFire(p);
+  p.cold = clamp((p.cold || 0) + dt * (warm ? -2.5 : inSafe(p.x, p.y) ? 0.2 : 100 / (SURV.coldMin * 60)), 0, 100);
+  // infecção: ferida grave sem bandagem pode infeccionar; piora com o tempo
+  p.band = p.band || {};
+  for (const k of BODY_PARTS) if (p.band[k] && p.body[k] >= 70) delete p.band[k];
+  if (now > (p.infCheck || 0)) { p.infCheck = now + 30000; if (!p.infect && BODY_PARTS.some(k => !((p.lost || 0) & (LOST[k] || 0)) && PART_STATE(p.body[k]) >= 2 && !p.band[k]) && Math.random() < SURV.infectChance) { p.infect = 1; p.infT = 0; tell(p, 'Uma ferida infeccionou. Você está com febre. Use unguento ou procure a sacerdotisa.'); } }
+  if (p.infect) { p.infT = (p.infT || 0) + dt; if (p.infect === 1 && p.infT > 300) { p.infect = 2; tell(p, 'A infecção piorou.'); } }
+  // dano por fome, sede, frio extremo e infecção (acumulado)
+  const drain = ((p.food <= 0 ? 0.1 : 0) + (p.water <= 0 ? 0.17 : 0) + (p.cold >= 100 ? 0.125 : 0) + (p.infect === 1 ? 0.05 : p.infect === 2 ? 0.2 : 0)) / 100 * p.maxHp * dt;
+  if (drain > 0) { p.survAcc = (p.survAcc || 0) + drain; if (p.survAcc >= 1) { const h = Math.floor(p.survAcc); p.survAcc -= h; p.hp -= h; if (p.hp <= 0) { p.hp = 0; goDown(p, null); } } }
+}
+function useItem(p, k) {
+  const now = now_(); if (p.downed || now < (p.useT || 0)) return; p.useT = now + 600;
+  if (k === 'water') { if (!(p.pots.water > 0)) return; p.pots.water--; p.water = Math.min(100, p.water + 35); tell(p, 'Você bebeu do odre.'); sendStat(p); return; }
+  if (!p.inv[k]) return;
+  const take = () => { if (--p.inv[k] <= 0) delete p.inv[k]; };
+  if (FOOD[k]) { take(); p.food = Math.min(100, p.food + FOOD[k]); if (k === 'cookedmeat') p.water = Math.max(0, p.water - 5); if ((k === 'venison' || k === 'pork') && Math.random() < 0.3) { p.sickUntil = now + 120000; tell(p, 'A carne crua caiu mal. Você está enjoado (sede dobrada por 2 min).'); } else tell(p, 'Você comeu ' + LOOT[k].name.toLowerCase() + '.'); }
+  else if (k === 'ointment') { take(); p.infect = 0; p.infT = 0; tell(p, 'O unguento arde, mas a febre baixa.'); }
+  else if (k === 'firewood') {
+    const tx = Math.round(p.x + Math.cos(p.fa || 0)), ty = Math.round(p.y + Math.sin(p.fa || 0)), t = ty * MAP_W + tx;
+    if (!inBounds(tx, ty) || WORLD.obj[t] !== O.NONE || WORLD.bld[t] >= 0 || WORLD.ground[t] === T.WATER || WORLD.ground[t] === T.CLIFF) { tell(p, 'Não dá para acender a fogueira aí.'); return; }
+    take(); setObj(t, O.CAMPFIRE); (S.objBack = S.objBack || []).push({ i: t, o: O.NONE, at: now + 180000 }); tell(p, 'Fogueira acesa. Dura uns 3 minutos.');
+  }
+  sendStat(p);
+}
+function cookOrDrink(p, what) {
+  if (p.downed) return;
+  if (what === 'cook') {
+    if (!nearFire(p, 1.9)) return; let n = 0;
+    for (const k of ['venison', 'pork']) { n += p.inv[k] || 0; delete p.inv[k]; }
+    if (!n) { tell(p, 'Nada para assar.'); return; }
+    if (!p.inv.cookedmeat && Object.keys(p.inv).length >= INV_SLOTS) { tell(p, 'Inventário cheio.'); return; }
+    p.inv.cookedmeat = (p.inv.cookedmeat || 0) + n; tell(p, n + ' carne' + (n > 1 ? 's assadas' : ' assada') + '.'); sendStat(p);
+  } else if (what === 'drink') {
+    let ok = false; for (let y = Math.round(p.y) - 2; y <= Math.round(p.y) + 2 && !ok; y++) for (let x = Math.round(p.x) - 2; x <= Math.round(p.x) + 2; x++) { if (!inBounds(x, y)) continue; const i = y * MAP_W + x, g = WORLD.ground[i], o = WORLD.obj[i]; if ((g === T.WATER || g === T.SHALLOW || o === O.WELL || o === O.FOUNTAIN) && dist(x, y, p.x, p.y) < 1.9) { ok = true; break; } }
+    if (!ok) return; p.water = 100; if (p.hasSkin) p.pots.water = 5; tell(p, p.hasSkin ? 'Você bebeu e encheu o odre.' : 'Você bebeu até matar a sede.'); sendStat(p);
+  }
+}
+// morte permanente: o personagem acaba
+function permaDeath(p, reason) {
+  Net.toOne(p.id, { t: 'dead', reason, lvl: p.lvl, name: p.name });
+  sys(`${p.name} morreu ${reason}. Que a Aurora o receba.`);
+  if (p.carrying) dropCarried(p);
+  if (p.carriedBy && S.players[p.carriedBy]) S.players[p.carriedBy].carrying = null;
+  delete S.players[p.id]; Net.toAll({ t: 'pleave', id: p.id });
+}
 function bodyTick(p, now, dt) {
   if (!p.body || p.downed || p.dev) return;
   let tot = 0; for (const k of BODY_PARTS) tot += p.bleed[k] || 0;
@@ -424,7 +487,7 @@ function bodyTick(p, now, dt) {
     if (p.bleedAcc >= 1) { const h = Math.floor(p.bleedAcc); p.bleedAcc -= h; p.hp -= h; if (p.hp <= 0) { p.hp = 0; goDown(p, null); return; } }
     for (const k of BODY_PARTS) if (p.bleed[k] > 0 && p.bleed[k] <= 0.3) p.bleed[k] = Math.max(0, p.bleed[k] - 0.006 * dt);   // feridas leves estancam sozinhas
   } else if (now - p.lastCombat > 8000) {
-    for (const k of BODY_PARTS) { if ((p.lost || 0) & (LOST[k] || 0)) continue; const h = p.body[k]; p.body[k] = h >= 40 ? Math.min(100, h + 0.4 * dt) : Math.min(40, h + 0.08 * dt); }   // grave só cicatriza até "ferido" (o resto, só com a sacerdotisa)
+    if (p.infect !== 2) for (const k of BODY_PARTS) { if ((p.lost || 0) & (LOST[k] || 0)) continue; const h = p.body[k]; p.body[k] = h >= 40 ? Math.min(100, h + 0.4 * dt) : Math.min(40, h + 0.08 * dt); }   // grave só cicatriza até "ferido" (o resto, só com a sacerdotisa)
   }
   if (now - (p.bodySent || 0) > 2000) { p.bodySent = now; sendStat(p); }
 }
@@ -434,13 +497,13 @@ function bandage(p) {
   if (p.pots.band > 0) {
     p.bandT = now + 1800; const x0 = p.x, y0 = p.y;
     Net.toOne(p.id, { t: 'banding', ms: 1500 });
-    setTimeout(() => { if (p.downed || dist(p.x, p.y, x0, y0) > 0.4) { tell(p, 'Você se mexeu: a bandagem soltou.'); return; } p.pots.band--; p.bleed[worst] = 0; p.body[worst] = Math.min(100, p.body[worst] + 12); tell(p, 'Bandagem em ' + BODY_NAMES[worst].toLowerCase() + '.'); sendStat(p); }, 1500);
+    setTimeout(() => { if (p.downed || dist(p.x, p.y, x0, y0) > 0.4) { tell(p, 'Você se mexeu: a bandagem soltou.'); return; } p.pots.band--; p.bleed[worst] = 0; (p.band = p.band || {})[worst] = true; p.body[worst] = Math.min(100, p.body[worst] + 12); tell(p, 'Bandagem em ' + BODY_NAMES[worst].toLowerCase() + '.'); sendStat(p); }, 1500);
     return;
   }
   const fire = S.fires && S.fires.some(f => dist(f.x, f.y, p.x, p.y) < 1.8);
   let nearFire = fire; for (let y = Math.round(p.y) - 2; y <= Math.round(p.y) + 2 && !nearFire; y++) for (let x = Math.round(p.x) - 2; x <= Math.round(p.x) + 2; x++) { const o = WORLD.obj[y * MAP_W + x]; if ((o === O.CAMPFIRE || o === O.TORCH || o === O.BRAZIER) && dist(x, y, p.x, p.y) < 1.8) { nearFire = true; break; } }
   if (!nearFire) { tell(p, 'Sem bandagem e sem fogo por perto para cauterizar.'); return; }
-  p.bandT = now + 2000; for (const k of BODY_PARTS) p.bleed[k] = 0;
+  p.bandT = now + 2000; p.band = p.band || {}; for (const k of BODY_PARTS) { p.bleed[k] = 0; if (PART_STATE(p.body[k]) >= 2) p.band[k] = true; }
   const h = Math.round(p.maxHp * 0.1); p.hp -= h; near(p.x, p.y, { t: 'hit', k: 'p', id: p.id, x: p.x, y: p.y, dmg: h, d: 0 });
   tell(p, 'Você cauterizou as feridas no fogo. Dói, mas o sangue parou.'); if (p.hp <= 0) { p.hp = 0; goDown(p, null); } sendStat(p);
 }
@@ -491,6 +554,7 @@ function revivePlayer(p, frac, by) {
   sendStat(p);
 }
 function respawnTemple(p) {
+  if (PERMADEATH && !p.dev) { permaDeath(p, p.decap ? 'decapitado' : 'sangrando no chão'); return; }
   if (p.carriedBy && S.players[p.carriedBy]) S.players[p.carriedBy].carrying = null;
   p.carriedBy = null; p.downed = null; p.revive = null;
   p.xp = Math.floor(p.xp / 2);
@@ -639,14 +703,19 @@ function npcAction(p, m) {
   const say = text => Net.toOne(p.id, { t: 'npc', n: n.id, text });
   const pay = cost => { if (p.gold < cost) { say('Você não tem ouro suficiente.'); return false; } p.gold -= cost; return true; };
   const now = now_();
-  if (n.id === 'merchant' && m.a === 'buy' && ITEMS[m.item]) {
+  if (n.id === 'merchant' && m.a === 'buyl' && LOOT[m.item] && ['bread', 'ointment', 'firewood'].includes(m.item)) {
+    const qty = m.qty === 5 ? 5 : 1; if (!p.inv[m.item] && Object.keys(p.inv).length >= INV_SLOTS) { say('Sua mochila está cheia.'); return; }
+    if (!pay(LOOT[m.item].price * qty)) return; p.inv[m.item] = (p.inv[m.item] || 0) + qty; say(qty + 'x ' + LOOT[m.item].name + '. Bom proveito.');
+  } else if (n.id === 'merchant' && m.a === 'buy' && m.item === 'water') {
+    if (!pay(ITEMS.water.price)) return; p.hasSkin = true; p.pots.water = 5; say('Um odre cheio. Encha em rios, poços e fontes.');
+  } else if (n.id === 'merchant' && m.a === 'buy' && ITEMS[m.item]) {
     const qty = m.qty === 5 ? 5 : 1;
     if (!pay(ITEMS[m.item].price * qty)) return;
     p.pots[m.item] += qty;
     say(`${qty}x ${ITEMS[m.item].name}. Boa caçada, e volte inteiro.`);
   } else if (n.id === 'merchant' && m.a === 'sell') {
     let total = 0, n2 = 0;
-    for (const k in p.inv) { if (!LOOT[k] || (m.item && m.item !== k)) continue; total += LOOT[k].price * p.inv[k]; n2 += p.inv[k]; delete p.inv[k]; }
+    for (const k in p.inv) { if (!LOOT[k] || (m.item && m.item !== k) || (!m.item && ['bread', 'cookedmeat', 'ointment', 'firewood'].includes(k))) continue; total += LOOT[k].price * p.inv[k]; n2 += p.inv[k]; delete p.inv[k]; }
     if (!n2) { say('Você não tem nada que me interesse agora.'); return; }
     p.gold += total;
     say(`Fechado: ${n2} ${n2 > 1 ? 'itens' : 'item'} por ${total} de ouro. Traga mais quando puder.`);
@@ -663,7 +732,8 @@ function npcAction(p, m) {
     say('Pelo fogo da Aurora, o que foi tirado volta a ser seu. Não desperdice este milagre.');
   } else if (n.id === 'priest' && m.a === 'bless') {
     p.hp = p.maxHp; p.mp = p.maxMp; p.buffs.bless = now + 180000;
-    if (p.body) for (const k of BODY_PARTS) { p.body[k] = 100; p.bleed[k] = 0; }   // a sacerdotisa trata todas as feridas
+    if (p.body) for (const k of BODY_PARTS) { if ((p.lost || 0) & (LOST[k] || 0)) continue; p.body[k] = 100; p.bleed[k] = 0; }   // a sacerdotisa trata todas as feridas
+    p.infect = 0; p.infT = 0; p.cold = 0;
     aoe('heal', p.x, p.y, { id: p.id });
     say('Que a Aurora guarde seus passos. Suas feridas estão fechadas, e a bênção reduz o dano que você recebe por algum tempo.');
   } else if (n.id === 'innkeeper' && m.a === 'mead') {
@@ -672,7 +742,7 @@ function npcAction(p, m) {
     say('Hidromel da casa. Aquece o sangue: +10% de dano e recuperação mais rápida por 3 minutos.');
   } else if (n.id === 'innkeeper' && m.a === 'stew') {
     if (!pay(10)) return;
-    p.hp = p.maxHp; p.mp = p.maxMp;
+    p.hp = p.maxHp; p.mp = p.maxMp; p.food = 100; p.water = 100; p.cold = 0;
     say('Ensopado de javali, como minha mãe fazia. Coma com calma.');
   } else if (n.id === 'innkeeper' && m.a === 'rumor') {
     say(pick(RUMORS));
@@ -932,7 +1002,7 @@ function playerKick(p, a, now) {
 }
 function combatTick(p, now, dt) {
   if (p.atk) { const A = p.atk; if (!A.done && now >= A.t0 + A.W) { A.done = true; resolvePlayerStrike(p, A, now); } if (p.atk && now >= A.t0 + A.W + A.R + A.C) p.atk = null; }
-  if (!p.atk && !p.parry && now - (p.cstT || 0) > 600) p.cst = Math.min(CST_MAX, (p.cst ?? CST_MAX) + CST_REGEN * dt);
+  if (!p.atk && !p.parry && now - (p.cstT || 0) > 600) p.cst = Math.min(CST_MAX, (p.cst ?? CST_MAX) + CST_REGEN * dt * survFactor(p));
   if (p.parry) p.cst = Math.max(0, p.cst - 2 * dt);
 }
 
@@ -1036,7 +1106,7 @@ function hostTick() {
     S.nextSpawn = now + 1500;
   }
 
-  for (const p of players) { bodyTick(p, now, dt); combatTick(p, now, dt); }
+  for (const p of players) { bodyTick(p, now, dt); survivalTick(p, now, dt); combatTick(p, now, dt); }
   if (!S.bslots) initBastions();
   tickBastions(now);
   if (S.fires && S.fires.length) { S.fires = S.fires.filter(f => f.until > now); for (const p of players) { if (p.downed || now < (p.burnT || 0)) continue; if (S.fires.some(f => dist(f.x, f.y, p.x, p.y) < f.r)) { p.burnT = now + 500; damagePlayer(p, 6, null, 0); } } }

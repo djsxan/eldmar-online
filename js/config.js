@@ -3,8 +3,8 @@
 //  Mexa aqui para balancear o jogo.
 // ============================================================
 const GAME_NAME = 'World of Sxan';
-const VERSION = 'v1.10.0';
-const VERSION_NAME = 'Aço e Sangue';
+const VERSION = 'v1.11.0';
+const VERSION_NAME = 'Fome e Frio';
 
 const PLAYER_SPEED = 2.7;          // tiles por segundo (1 tile ≈ 2 m)
 // configurações do jogador (menu de pausa)
@@ -143,6 +143,7 @@ const MAX_ACTIVE_QUESTS = 3;
 const ITEMS = {
   hp: { name: 'Poção de Vida', price: 20, desc: 'Recupera 35% da vida.' },
   mp: { name: 'Poção de Mana', price: 25, desc: 'Recupera 40% da mana.' },
+  water: { name: 'Odre (5 goles)', price: 12, desc: 'Água para a viagem. Clique para beber; encha na água (F).' },
   band: { name: 'Bandagem', price: 8, desc: 'Estanca o sangramento da pior ferida. Tecla B (perto do fogo, sem bandagem, cauteriza).' },
 };
 
@@ -162,9 +163,9 @@ const LOOT = {
   tusk:     { name: 'Presa de Orc',     price: 28,  icon: '◣', color: '#f0e8d0', desc: 'Troféu de guerra.' },
   trollheart: { name: 'Coração de Troll', price: 120, icon: '♥', color: '#c83a3a', desc: 'Ainda quente. Raríssimo.' },
   hide:     { name: 'Couro de Cervo',   price: 16,  icon: '▰', color: '#b08050', desc: 'Couro macio, bom para botas e luvas.' },
-  venison:  { name: 'Carne de Cervo',   price: 9,   icon: '◖', color: '#c85a4a', desc: 'Carne magra. A taverna sempre compra.' },
+  venison:  { name: 'Carne de Cervo',   price: 9,   icon: '◖', color: '#c85a4a', desc: 'Carne crua. Asse no fogo (F perto de uma fogueira) ou coma crua (pode passar mal).' },
   boartusk: { name: 'Presa de Javali',  price: 18,  icon: '◣', color: '#e8dcc0', desc: 'Curva e afiada como faca.' },
-  pork:     { name: 'Carne de Javali',  price: 11,  icon: '◖', color: '#d87a6a', desc: 'Gorda e saborosa. Vira ensopado.' },
+  pork:     { name: 'Carne de Javali',  price: 11,  icon: '◖', color: '#d87a6a', desc: 'Carne crua. Asse no fogo (F perto de uma fogueira) ou coma crua (pode passar mal).' },
   pouch:    { name: 'Bolsa Roubada',    price: 26,  icon: '◍', color: '#a8844a', desc: 'Moedas de algum viajante azarado.' },
   rustblade: { name: 'Lâmina Enferrujada', price: 24, icon: '⟋', color: '#a87a5a', desc: 'Espada de um soldado que fugiu da guerra.' },
   wispdust: { name: 'Pó Fantasma',      price: 32,  icon: '✺', color: '#8affd0', desc: 'Brilha fraquinho no escuro.' },
@@ -174,6 +175,10 @@ const LOOT = {
   slimecore: { name: 'Núcleo do Lodo Ancião', price: 130, icon: '◉', color: '#5ad84a', desc: 'Pulsa como um coração verde.' },
   trolltusk: { name: 'Presa do Troll',  price: 150, icon: '◣', color: '#f0e8d0', desc: 'Do tamanho de um braço.' },
   dragonscale: { name: 'Escama de Dragão', price: 420, icon: '⬢', color: '#c83a2a', desc: 'Dura como aço e ainda morna. O troféu mais raro de Sxan.' },
+  bread:    { name: 'Pão',              price: 4,   icon: '◒', color: '#d8a860', desc: 'Pão dormido da taverna. Mata a fome. Clique para comer.' },
+  cookedmeat: { name: 'Carne Assada',   price: 12,  icon: '◖', color: '#a8582a', desc: 'Carne de caça assada no fogo. Alimenta bem. Clique para comer.' },
+  ointment: { name: 'Unguento',         price: 25,  icon: '⚱', color: '#7ab86a', desc: 'Ervas e banha. Cura infecção. Clique para usar.' },
+  firewood: { name: 'Lenha',            price: 5,   icon: '≡', color: '#8a6a3a', desc: 'Clique para acender uma fogueira à sua frente (dura 3 min).' },
   gem:      { name: 'Gema Bruta',       price: 55,  icon: '◈', color: '#5ad0f0', desc: 'Pedra preciosa sem lapidar.' },
 };
 // recursos de cada criatura: [item, chance]
@@ -224,6 +229,10 @@ const MON_MELEE = {
 const LOST = { head: 1, armA: 2, armB: 4, legL: 8, legR: 16 };
 const LOST_NAMES = { head: 'a cabeça', armA: 'o braço da arma', armB: 'o outro braço', legL: 'a perna esquerda', legR: 'a perna direita' };
 const SEVER_FROM = { slashL: [['head', 0.35], ['armA', 0.35], ['armB', 0.3]], slashR: [['head', 0.35], ['armA', 0.35], ['armB', 0.3]], over: [['head', 0.25], ['armA', 0.4], ['armB', 0.35]], under: [['legL', 0.5], ['legR', 0.5]] };
+// ===== sobrevivência (fase 4) e morte permanente (fase 5) =====
+const SURV = { foodMin: 45, waterMin: 30, coldMin: 5, infectChance: 0.12 };   // minutos até esvaziar / esfriar
+const PERMADEATH = true;   // morrer (sangrar até o fim, desistir, decapitação) apaga o personagem; cair da conexão nunca mata
+const FOOD = { bread: 28, cookedmeat: 40, venison: 22, pork: 22 };
 const KNOCK_MS = 1700, PROSTH_PRICE = 150, RITUAL_PRICE = 600;
 const STRIKE_PART = { head: ['head', 'head', 'torso', 'armA'], legs: ['legL', 'legR', 'legL', 'torso'], torso: ['torso', 'torso', 'armA', 'armB'] };
 const BUFF_NAMES = { warcry: 'Grito de Guerra', wall: 'Muralha de Ferro', agile: 'Passo Ágil', bless: 'Bênção da Aurora', mead: 'Hidromel', whet: 'Lâmina Afiada' };

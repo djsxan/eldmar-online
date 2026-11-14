@@ -67,7 +67,7 @@ function clientOnServer(m) {
       if (m.slow) G.slowUntil = now + m.slow;
       if (m.knock) G.knockUntil = now + m.knock;
       G.cst = m.cst ?? CST_MAX; G.stunUntil = now + (m.stun || 0); G.ripUntil = now + (m.rip || 0);
-      Object.assign(e, { hp: m.hp, maxHp: m.maxHp, mp: m.mp, maxMp: m.maxMp, lvl: m.lvl, xp: m.xp, gold: m.gold, pots: m.pots, body: m.body, bleed: m.bleed, lost: m.lost || 0, pro: m.pro || 0, inv: m.inv || {}, combat: m.combat, quests: m.quests, qdone: m.qdone });
+      Object.assign(e, { hp: m.hp, maxHp: m.maxHp, mp: m.mp, maxMp: m.maxMp, lvl: m.lvl, xp: m.xp, gold: m.gold, pots: m.pots, food: m.food, water: m.water, cold: m.cold, infect: m.infect, sick: m.sick, hasSkin: m.hasSkin, body: m.body, bleed: m.bleed, lost: m.lost || 0, pro: m.pro || 0, inv: m.inv || {}, combat: m.combat, quests: m.quests, qdone: m.qdone });
       setBuffs(e, m.buffs);
       G.cdEnd = m.cds.map(r => now + r);
       e.downed = m.downed > 0; e.downUntil = now + m.downed;
@@ -171,6 +171,11 @@ function clientOnServer(m) {
     case 'clang': { const w = tileW(m.x, m.y, 26); for (let k = 0; k < (m.perfect ? 26 : 12); k++) spawnPart('spark', w.x, w.y, { color: m.perfect ? 'rgba(255,230,120,A)' : 'rgba(255,240,200,A)' }); G.shake = Math.max(G.shake, m.perfect ? 5 : 2.5); if (m.blockBy) { const q = G.monsters[m.blockBy]; if (q) q.blockAt = now; } break; }
     case 'whiff': case 'swoosh': break;
     case 'miss': { const e = G.monsters[m.id]; if (e) { const w = tileW(e.rx, e.ry, 30); for (let k = 0; k < 5; k++) spawnPart('dust', w.x, w.y); } break; }
+    case 'dead': {
+      G.dead = true; .classList.add('hidden'); .classList.add('hidden'); try { const all = loadChars(); delete all[charKey(G.me.name, G.me.cls)]; localStorage.setItem(SAVE_KEY, JSON.stringify(all)); } catch (e) { }
+      const d = document.createElement('div'); d.id = 'deathscreen'; d.innerHTML = '<div class="ds-box"><div class="ds-title">Você morreu</div><div class="ds-sub">' + m.name + ', nível ' + m.lvl + ' — ' + m.reason + '</div><div class="ds-note">Em Sxan a morte é para sempre. Seu personagem se foi.</div><button class="btn gold" onclick="location.reload()">Começar de novo</button></div>';
+      document.body.appendChild(d); break;
+    }
     case 'lootgold': showToast('+ ' + m.g + ' de ouro'); break;
     case 'loot': { const it = LOOT[m.k]; if (it) { showToast('+ ' + it.name); G.newLoot = m.k; } break; }
     case 'qprog': { const q = QUESTS.find(x => x.id === m.id); if (q) showToast(`${q.name}: ${m.n}/${q.count}`); break; }
@@ -439,10 +444,11 @@ const SAVE_KEY = 'wos-chars-v4';
 function loadChars() { try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; } catch (e) { return {}; } }
 function charKey(name, cls) { return name.trim().toLowerCase() + '|' + cls; }
 function saveChar() {
+  if (G.dead) return;
   const me = G.me;
   try {
     const all = loadChars();
-    all[charKey(me.name, me.cls)] = { name: me.name, cls: me.cls, skin: me.skin, color: me.color, lvl: me.lvl, xp: me.xp, gold: me.gold, pots: me.pots, body: me.body, bleed: me.bleed, lost: (me.lost || 0) & 30, pro: me.pro || 0, inv: me.inv, quests: me.quests, qdone: me.qdone, t: Date.now() };
+    all[charKey(me.name, me.cls)] = { name: me.name, cls: me.cls, skin: me.skin, color: me.color, lvl: me.lvl, xp: me.xp, gold: me.gold, pots: me.pots, food: me.food, water: me.water, infect: me.infect, hasSkin: me.hasSkin, body: me.body, bleed: me.bleed, lost: (me.lost || 0) & 30, pro: me.pro || 0, inv: me.inv, quests: me.quests, qdone: me.qdone, t: Date.now() };
     localStorage.setItem(SAVE_KEY, JSON.stringify(all));
   } catch (e) { }
 }
@@ -516,8 +522,9 @@ function updateInv() {
   $('inv-gold').textContent = me.gold;
   const list = [];
   if (me.pots && me.pots.hp) list.push({ k: 'hp', n: me.pots.hp, name: ITEMS.hp.name, icon: '🧪', color: '#e85a5a', desc: ITEMS.hp.desc + ' Clique para beber (Q).', use: () => drinkPot('hp') });
+  if (me.pots && me.pots.water) list.push({ k: 'water', n: me.pots.water, name: 'Odre', icon: '💧', color: '#6ab8ff', desc: 'Goles de água. Clique para beber; encha em rios, poços e fontes (F).', use: () => Net.send({ t: 'use', k: 'water' }) });
   if (me.pots && me.pots.mp) list.push({ k: 'mp', n: me.pots.mp, name: ITEMS.mp.name, icon: '🧪', color: '#5a8ae8', desc: ITEMS.mp.desc + ' Clique para beber (E).', use: () => drinkPot('mp') });
-  for (const k in (me.inv || {})) { const it = LOOT[k]; if (it && me.inv[k] > 0) list.push({ k, n: me.inv[k], name: it.name, icon: it.icon, color: it.color, desc: it.desc + ' Vale ' + it.price + ' de ouro cada no Empório.' }); }
+  for (const k in (me.inv || {})) { const it = LOOT[k]; if (it && me.inv[k] > 0) list.push({ k, n: me.inv[k], name: it.name, icon: it.icon, color: it.color, desc: it.desc + ' Vale ' + it.price + ' de ouro cada no Empório.', use: FOOD[k] || k === 'ointment' || k === 'firewood' ? () => Net.send({ t: 'use', k }) : null }); }
   grid.innerHTML = '';
   for (let i = 0; i < INV_SLOTS; i++) {
     const s = document.createElement('div'), it = list[i]; s.className = 'inv-slot';
@@ -558,7 +565,7 @@ function updateBodyDoll() {
   document.body.classList.toggle('dizzy', PART_STATE(me.body.head) >= 2);
 }
 function updateHealthFx() {
-  updateBodyDoll();
+  updateBodyDoll(); updateNeeds();
   const hs = G.me ? healthState(G.me) : 0;
   if (hs === G.hsShown) return; G.hsShown = hs;   // (o boneco do corpo atualiza sempre, acima)
   $('hstate').className = hs === 3 ? 'dying kneel' : hs === 2 ? 'dying' : hs === 1 ? 'tired' : '';
@@ -621,6 +628,8 @@ const NPC_DIALOG = {
   merchant: { greet: 'Bem-vindo ao Empório. Não é muito, mas o que vendo funciona.', opts: [
     ['Poção de Vida — 20 ouro', { a: 'buy', item: 'hp', qty: 1 }], ['5 Poções de Vida — 100 ouro', { a: 'buy', item: 'hp', qty: 5 }],
     ['Poção de Mana — 25 ouro', { a: 'buy', item: 'mp', qty: 1 }], ['5 Poções de Mana — 125 ouro', { a: 'buy', item: 'mp', qty: 5 }],
+    ['Pão — 4 ouro', { a: 'buyl', item: 'bread', qty: 1 }], ['5 Pães — 20 ouro', { a: 'buyl', item: 'bread', qty: 5 }], ['Odre cheio — 12 ouro', { a: 'buy', item: 'water' }],
+    ['Unguento — 25 ouro (cura infecção)', { a: 'buyl', item: 'ointment', qty: 1 }], ['Lenha — 5 ouro', { a: 'buyl', item: 'firewood', qty: 1 }],
     ['Bandagem — 8 ouro', { a: 'buy', item: 'band', qty: 1 }], ['5 Bandagens — 40 ouro', { a: 'buy', item: 'band', qty: 5 }],
     ['Vender todo o saque', { a: 'sell' }]] },
   priest: { greet: 'Paz, viajante. A capela é pequena, mas a Aurora ainda escuta quem pede. Traga aqui os que caírem; eu cuido deles.', opts: [['Receber a bênção (grátis)', { a: 'bless' }], ['Ritual de restauração dos membros — 600 ouro', { a: 'ritual' }]] },
@@ -813,9 +822,10 @@ window.addEventListener('keydown', e => {
   if (k >= '1' && k <= '4') { castSkill(+k - 1); return; }
   if (k === 'q') { drinkPot('hp'); return; }
   if (k === 'e') { drinkPot('mp'); return; }
-  if (k === 'r' && G.me.downed) { Net.send({ t: 'giveup' }); return; }
+  if (k === 'r' && G.me.downed) { if (!PERMADEATH || window.confirm('Desistir é MORTE PERMANENTE: seu personagem será apagado. Tem certeza?')) Net.send({ t: 'giveup' }); return; }
   if (k === 'f' && !e.repeat && openNearChest(1.8)) return;
   if (k === 'f' && !e.repeat && !nearestDowned()) { const c = nearCorpse(); if (c) { G.loot = { id: c.id, t0: performance.now() }; G.keys.add('f'); return; } }
+  if (k === 'f' && !e.repeat && !nearestDowned() && !nearCorpse() && survivalAction()) return;
   if (k === 'f' && !e.repeat && inCombatZone() && !nearestDowned() && !nearCorpse() && !(G.chests || []).some(c => c.mine && !c.open && dist(c.x, c.y, G.me.x, G.me.y) < 1.8)) { Net.send({ t: 'kick', a: G.me.fa ?? 0 }); return; }
   if (k === 'f' && !e.repeat) { const d = nearestDowned(); if (d) { G.reviving = d.id; Net.send({ t: 'revive', id: d.id, on: true }); } return; }
   if (k === 'g' && !e.repeat) { liftOrThrow(); return; }
@@ -978,7 +988,7 @@ function lockLobby(b) { for (const el of document.querySelectorAll('#lobby butto
 function helloMsg() {
   const name = $('name').value.trim() || 'Aventureiro';
   const saved = loadChars()[charKey(name, chosenClass)] || {};
-  return { t: 'hello', dev: G.devPw || undefined, name, color: chosenColor, cls: chosenClass, skin: chosenSkin[chosenClass], lvl: saved.lvl, xp: saved.xp, gold: saved.gold, pots: saved.pots, body: saved.body, bleed: saved.bleed, lost: saved.lost, pro: saved.pro, inv: saved.inv, quests: saved.quests, qdone: saved.qdone };
+  return { t: 'hello', dev: G.devPw || undefined, name, color: chosenColor, cls: chosenClass, skin: chosenSkin[chosenClass], lvl: saved.lvl, xp: saved.xp, gold: saved.gold, pots: saved.pots, food: saved.food, water: saved.water, infect: saved.infect, hasSkin: saved.hasSkin, body: saved.body, bleed: saved.bleed, lost: saved.lost, pro: saved.pro, inv: saved.inv, quests: saved.quests, qdone: saved.qdone };
 }
 function showRoom(code) { $('room-code').textContent = Net.offline ? 'offline' : code; }
 function createRoom(code = randomCode(), tries = 0) {
@@ -1295,6 +1305,29 @@ function buildDevPanel() {
   });
 }
 function devTp(x, y) { const me = G.me; Object.assign(me, { x, y, rx: x, ry: y, z: 0, fl: 0, fb: -1 }); Net.send({ t: 'dev', a: 'tp', x, y, z: 0 }); }
+// ---------- sobrevivência: assar, beber, ícones das necessidades ----------
+function nearObjKinds(r, test) { const me = G.me; for (let y = Math.round(me.y) - 2; y <= Math.round(me.y) + 2; y++) for (let x = Math.round(me.x) - 2; x <= Math.round(me.x) + 2; x++) { if (!inBounds(x, y)) continue; const i = y * MAP_W + x; if (test(WORLD.ground[i], WORLD.obj[i]) && dist(x, y, me.x, me.y) < r) return true; } return false; }
+const nearFireC = () => nearObjKinds(1.9, (g, o) => o === O.CAMPFIRE || o === O.BRAZIER || o === O.TORCH) || (G.fires || []).some(f => dist(f.x, f.y, G.me.x, G.me.y) < 1.9);
+const nearWaterC = () => nearObjKinds(1.9, (g, o) => g === T.WATER || g === T.SHALLOW || o === O.WELL || o === O.FOUNTAIN);
+function survivalAction() {
+  const me = G.me, raw = me.inv && (me.inv.venison || me.inv.pork);
+  if (raw && nearFireC()) { Net.send({ t: 'cook' }); return true; }
+  if (nearWaterC() && ((me.water ?? 100) < 98 || (me.hasSkin && (me.pots.water || 0) < 5))) { Net.send({ t: 'drinkw' }); return true; }
+  return false;
+}
+function updateNeeds() {
+  const me = G.me, el = $('needs'); if (!me || !el) return;
+  const out = [];
+  if ((me.food ?? 100) < 35) out.push(['🍖', me.food <= 0 ? 'Faminto' : 'Com fome', me.food <= 0 ? 3 : me.food < 15 ? 2 : 1]);
+  if ((me.water ?? 100) < 35) out.push(['💧', me.water <= 0 ? 'Desidratado' : 'Com sede', me.water <= 0 ? 3 : me.water < 15 ? 2 : 1]);
+  if ((me.cold || 0) > 40) out.push(['❄', me.cold >= 100 ? 'Congelando' : 'Com frio', me.cold >= 100 ? 3 : me.cold > 70 ? 2 : 1]);
+  if (me.infect) out.push(['☣', me.infect === 2 ? 'Infecção grave' : 'Febre', me.infect + 1]);
+  if (me.sick > 0) out.push(['🤢', 'Enjoado', 1]);
+  el.innerHTML = out.map(([i, t, s]) => '<span class="nd s' + s + '" title="' + t + '">' + i + '</span>').join('');
+  document.body.classList.toggle('cold', (me.cold || 0) > 50); document.body.classList.toggle('fever', !!me.infect);
+  const pr = $('prompt'); if (!G.loot && !nearCorpse()) { const raw = me.inv && (me.inv.venison || me.inv.pork); const txt = raw && nearFireC() ? 'F: assar a carne' : nearWaterC() && (me.water ?? 100) < 98 ? 'F: beber' : ''; if (txt) { pr.textContent = txt; pr.classList.remove('hidden'); } else pr.classList.add('hidden'); }
+  if ($('pz-surv')) $('pz-surv').innerHTML = '<div><b>Fome</b> ' + Math.round(100 - (me.food ?? 100)) + '% · <b>Sede</b> ' + Math.round(100 - (me.water ?? 100)) + '% · <b>Frio</b> ' + Math.round(me.cold || 0) + '%</div><div><b>Infecção</b> ' + ['nenhuma', 'febre', 'grave'][me.infect || 0] + (me.sick > 0 ? ' · <b>enjoado</b>' : '') + '</div><div class="gp-note">Coma e beba, fique perto do fogo à noite, trate feridas graves com bandagem. A morte é permanente.</div>';
+}
 // ---------- sangue em jato e pedaços decepados ----------
 function sprayBlood(x, y, dx, dy, n) {
   const sx = dx - dy, sy = (dx + dy) * 0.5, l = Math.hypot(sx, sy) || 1;

@@ -56,6 +56,7 @@
   <div id="buffs"></div>
   <div id="hstate"></div>
   <div id="duelicon" class="hidden" title="Modo duelo ligado">⚔</div>
+  <div id="needs"></div>
   <div id="bodydoll" class="hidden" title="Seu corpo"><svg viewBox="0 0 40 80" width="34" height="68">
     <circle class="bd-head" cx="20" cy="9" r="7"/><rect class="bd-torso" x="12" y="17" width="16" height="24" rx="4"/>
     <rect class="bd-armA" x="4" y="18" width="7" height="22" rx="3"/><rect class="bd-armB" x="29" y="18" width="7" height="22" rx="3"/>
@@ -107,7 +108,7 @@
   <div id="downed-ui" class="panel hidden">
     <div class="d-title">Você caiu</div>
     <div class="bar hp"><div id="downed-fill"></div><span id="downed-time"></span></div>
-    <div class="d-help">Um aliado pode te reanimar (F) ou te carregar até a capela (G).<br><kbd>R</kbd> desistir e renascer na capela</div>
+    <div class="d-help">Um aliado pode te reanimar (F) ou te carregar até a capela (G).<br><kbd>R</kbd> desistir (morte permanente) · se ninguém te salvar, você morre de vez</div>
   </div>
 
   <div id="pause" class="hidden">
@@ -129,6 +130,8 @@
       </div>
       <div class="pz-sec">Corpo</div>
       <div id="pz-body" class="pz-body"></div>
+      <div class="pz-sec">Sobrevivência</div>
+      <div id="pz-surv" class="pz-body"></div>
       <div class="pz-sec">Sala</div>
       <div class="pz-room">Código <b id="room-code"></b></div>
       <button class="pz-btn" id="btn-copy">Copiar convite</button>
@@ -157,6 +160,7 @@
         <div><b>Poções</b> Q (vida) · E (mana) · <b>Sentar</b> V · <b>Mapa</b> M</div>
         <div><b>Agachar</b> segurar C · <b>Deslizar</b> C + Shift correndo</div>
         <div><b>Inventário</b> I · <b>Jornada</b> J · <b>Emojis</b> segurar T</div>
+        <div><b>Sobreviver</b> clique na comida/odre no inventário · F perto do fogo assa carne · F perto da água bebe · lenha acende fogueira</div>
         <div><b>Mira</b> cursor na cabeça / tronco / pernas do alvo · <b>Bandagem</b> B · <b>Revistar/esfolar</b> segurar F · <b>Pegar/arremessar</b> G</div>
         <div><b>Reanimar</b> segurar F · <b>Carregar</b> G · <b>Desistir</b> R (caído)</div>
         <div><b>Chat</b> Enter · <b>Zoom</b> roda do mouse · <b>Menu</b> Esc</div>
@@ -171,7 +175,7 @@
     <div><kbd>Clique</kbd> no inimigo · <kbd>X</kbd> / <kbd>Espaço</kbd> — mirar (ataca sozinho no alcance)</div>
     <div><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd> habilidades · <kbd>Q</kbd><kbd>E</kbd> poções</div>
     <div><kbd>F</kbd> (segurar) reanimar aliado · <kbd>G</kbd> carregar/soltar</div>
-    <div><kbd>R</kbd> desistir quando caído · <kbd>Roda</kbd> zoom</div>
+    <div><kbd>R</kbd> desistir quando caído (morte permanente) · <kbd>Roda</kbd> zoom</div>
     <div><kbd>C</kbd> agachar · <kbd>C</kbd>+<kbd>Shift</kbd> deslizar · <kbd>V</kbd> sentar</div>
     <div><kbd>I</kbd> inventário · <kbd>J</kbd> jornada · <kbd>M</kbd> mapa · <kbd>T</kbd> emojis</div>
     <div><kbd>Enter</kbd> chat · <kbd>Esc</kbd> cancelar</div>
