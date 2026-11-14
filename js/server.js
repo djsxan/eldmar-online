@@ -28,7 +28,7 @@ function fullStat(p) {
     pots: { hp: p.pots.hp, mp: p.pots.mp, band: p.pots.band || 0 }, body: p.body, bleed: p.bleed, food: Math.round(p.food ?? 100), water: Math.round(p.water ?? 100), cold: Math.round(p.cold || 0), infect: p.infect || 0, sick: Math.max(0, (p.sickUntil || 0) - now), hasSkin: !!p.hasSkin, lost: p.lost || 0, pro: p.pro || 0, knock: Math.max(0, (p.knockUntil || 0) - now), inv: { ...p.inv }, quests: { ...p.quests }, qdone: { ...p.qdone },
     buffs: Object.entries(p.buffs).filter(([, u]) => u > now).map(([k, u]) => [k, u - now]),
     cds: [0, 1, 2, 3].map(i => Math.max(0, (p.cds[i] || 0) - now)),
-    combat: now - p.lastCombat < OUT_OF_COMBAT_MS, cst: Math.round(p.cst ?? CST_MAX), stun: Math.max(0, (p.stunUntil || 0) - now), rip: Math.max(0, (p.ripUntil || 0) - now), slow: Math.max(0, (p.slowUntil || 0) - now), downed: p.downed ? p.downed.until - now : 0,
+    combat: now - p.lastCombat < OUT_OF_COMBAT_MS, cst: Math.round(p.cst ?? CST_MAX), cstMax: cstMaxOf(p), tree: p.tree || {}, use: p.use || {}, stun: Math.max(0, (p.stunUntil || 0) - now), rip: Math.max(0, (p.ripUntil || 0) - now), slow: Math.max(0, (p.slowUntil || 0) - now), downed: p.downed ? p.downed.until - now : 0,
   };
 }
 function sendStat(p) { Net.toOne(p.id, fullStat(p)); }
@@ -150,6 +150,8 @@ function hostOnClient(from, m) {
       downed: null, carriedBy: null, carrying: null, revive: null, quests: {}, qdone: {}, inv: {},
     };
     if (m.inv) for (const k in LOOT) if (m.inv[k] > 0) np.inv[k] = clamp(m.inv[k] | 0, 0, 999);
+    np.tree = cleanTree(cls, lvl, m.tree); np.use = {}; if (m.use && typeof m.use === 'object') for (const k in USE) if (isFinite(m.use[k])) np.use[k] = clamp(+m.use[k], 0, 1e6);
+    np.maxHp = maxHpOf(np); np.maxMp = maxMpOf(np);
     if (m.quests) for (const q of QUESTS) if (m.quests[q.id] != null) np.quests[q.id] = clamp(m.quests[q.id] | 0, 0, q.count);
     if (m.qdone) for (const q of QUESTS) if (m.qdone[q.id]) np.qdone[q.id] = m.qdone[q.id] | 0;
     np.hp = np.maxHp; np.mp = np.maxMp;
@@ -170,9 +172,17 @@ function hostOnClient(from, m) {
   switch (m.t) {
     case 'mv': handleMove(p, m); break;
     case 'target': p.target = m.id && S.monsters[m.id] ? m.id : null; break;
+    case 'tlearn': {
+      const T = TREE[p.cls]; if (!T) break; let ok = false; p.tree = p.tree || {};
+      T.forEach(b => b.nodes.forEach((nd, i) => { if (nd.id !== m.id) return; const r = p.tree[nd.id] | 0; if (r >= nd.max || treePts(p) >= p.lvl - 1 || branchPts(p, b) < TREE_REQ[i]) return; p.tree[nd.id] = r + 1; ok = true; }));
+      if (!ok) { tell(p, 'Não dá para aprender isso agora.'); break; }
+      { const rh = p.hp / Math.max(1, p.maxHp), rm = p.mp / Math.max(1, p.maxMp); p.maxHp = maxHpOf(p); p.maxMp = maxMpOf(p); if (!p.downed) { p.hp = Math.max(1, Math.round(p.maxHp * rh)); p.mp = Math.round(p.maxMp * rm); } }
+      sendStat(p); break;
+    }
+    case 'tskill': treeSkill(p, m.b | 0, m); break;
     case 'shoot': {
       const now = now_(); if (p.cls === 'knight' || p.downed || p.carrying || p.lifted || p.atk || p.casting || p.grabbed || inSafe(p.x, p.y) || now < p.nextAtk) break;
-      const rng = CLASSES[p.cls].range, a = +m.a || 0, ok = q => q && Math.abs((q.z || 0) - (p.z || 0)) < 0.5 && (q.alt || 0) < 1.2 && dist(p.x, p.y, q.x, q.y) <= rng + (MON[q.type].rad || 0);
+      const rng = CLASSES[p.cls].range + treeEff(p, 'range'), a = +m.a || 0, ok = q => q && Math.abs((q.z || 0) - (p.z || 0)) < 0.5 && (q.alt || 0) < 1.2 && dist(p.x, p.y, q.x, q.y) <= rng + (MON[q.type].rad || 0);
       let q = S.monsters[m.id]; if (!ok(q)) q = null;
       if (!q) { let best = 1e9; for (const o of Object.values(S.monsters)) { if (!ok(o)) continue; const da = Math.abs(angDiff(Math.atan2(o.y - p.y, o.x - p.x), a)); if (da > 0.5) continue; const sc = da * 4 + dist(p.x, p.y, o.x, o.y); if (sc < best) { best = sc; q = o; } } }
       if (!q) break;
@@ -257,7 +267,7 @@ function hostOnClient(from, m) {
     case 'atk': playerStrike(p, m.k, +m.a, now_()); break;
     case 'parry': if (m.on) { if (p.atk && !p.atk.done && p.cst >= FEINT_COST) { p.cst -= FEINT_COST; p.atk = null; } if (!p.atk && !p.downed && now_() >= (p.stunUntil || 0)) p.parry = { t0: now_(), a: +m.a || 0 }; } else p.parry = null; break;
     case 'parrya': if (p.parry && isFinite(+m.a)) p.parry.a = +m.a; break;
-    case 'dodge': { const now = now_(); const lg = (p.lost || 0) & ~(p.pro || 0) & 24; if (lg || now < (p.knockUntil || 0) || p.downed || now < (p.dodgeCd || 0) || p.cst < DODGE.cost || now < (p.stunUntil || 0)) break; p.cst -= DODGE.cost; p.dodgeCd = now + DODGE.cd; p.dodgeUntil = now + DODGE.iframe; p.dodgeAllow = now + DODGE.ms + 400; p.parry = null; if (p.atk && !p.atk.done) p.atk = null; near(p.x, p.y, { t: 'anim', w: 'p', id: p.id, a: 'dash', ms: DODGE.ms + 120 }); sendStat(p);
+    case 'dodge': { const now = now_(); const lg = (p.lost || 0) & ~(p.pro || 0) & 24; if (lg || now < (p.knockUntil || 0) || p.downed || now < (p.dodgeCd || 0) || p.cst < DODGE.cost * Math.max(0.4, 1 - treeEff(p, 'dodgeCost') - useBonus(p, 'dodge')) || now < (p.stunUntil || 0)) break; p.cst -= DODGE.cost * Math.max(0.4, 1 - treeEff(p, 'dodgeCost') - useBonus(p, 'dodge')); useGain(p, 'dodge', 1); p.dodgeCd = now + DODGE.cd; p.dodgeUntil = now + DODGE.iframe; p.dodgeAllow = now + DODGE.ms + 400; p.parry = null; if (p.atk && !p.atk.done) p.atk = null; near(p.x, p.y, { t: 'anim', w: 'p', id: p.id, a: 'dash', ms: DODGE.ms + 120 }); sendStat(p);
       if (p.burnUntil > now) { p.burnUntil -= 3000; if (p.burnUntil <= now + 400) extinguish(p, 'Você rola no chão e apaga o fogo.'); else near(p.x, p.y, { t: 'burn', id: p.id, ms: p.burnUntil - now }); }
       break; }
     case 'kick': playerKick(p, +m.a || 0, now_()); break;
@@ -269,7 +279,7 @@ function hostOnClient(from, m) {
       const i = m.i | 0, o = WORLD.obj[i], x = i % MAP_W, y = Math.floor(i / MAP_W); if (p.downed || dist(p.x, p.y, x, y) > 1.8 || (o !== O.BERRY && o !== O.HERB)) break;
       const k = o === O.BERRY ? 'berries' : 'herb', n = o === O.BERRY ? 2 + (Math.random() < 0.5 ? 1 : 0) : 1;
       if (!p.inv[k] && Object.keys(p.inv).length >= INV_SLOTS) { tell(p, 'Inventário cheio.'); break; }
-      p.inv[k] = (p.inv[k] || 0) + n; setObj(i, o === O.BERRY ? O.BUSH : O.NONE); (S.objBack = S.objBack || []).push({ i, o, at: now_() + (o === O.BERRY ? 240000 : 300000) });
+      p.inv[k] = (p.inv[k] || 0) + n + (Math.random() < useBonus(p, 'skin') * 2 ? 1 : 0); useGain(p, 'skin', 1); setObj(i, o === O.BERRY ? O.BUSH : O.NONE); (S.objBack = S.objBack || []).push({ i, o, at: now_() + (o === O.BERRY ? 240000 : 300000) });
       Net.toOne(p.id, { t: 'loot', k }); sendStat(p); break;
     }
     case 'cook': cookOrDrink(p, 'cook'); break;
@@ -355,7 +365,7 @@ function hostOnLeave(id) {
 }
 
 // ---------------- combate ----------------
-function roll(p, mult = 1) {
+function roll(p, mult = 1, tgt = null) {
   const c = CLASSES[p.cls], l = p.lvl;
   let dmg = rint(Math.floor(c.dmg[0][0] + c.dmg[0][1] * l), Math.floor(c.dmg[1][0] + c.dmg[1][1] * l)) * mult;
   if (buffOn(p, 'mead')) dmg *= 1.1;
@@ -363,8 +373,11 @@ function roll(p, mult = 1) {
   if (p.body) dmg *= ((p.lost || 0) & LOST.armA) ? (((p.pro || 0) & LOST.armA) ? 0.6 : 0.3) : ARM_DMG[PART_STATE(p.body.armA)];   // braço da arma ferido / perdido (gancho ajuda)
   dmg *= p._aimMul || 1;
   if (buffOn(p, 'whet')) dmg *= 1.15;
-  const crit = Math.random() < c.crit + (buffOn(p, 'agile') ? 0.1 : 0);
-  if (crit) dmg *= 1.8;
+  dmg *= 1 + treeEff(p, 'dmg') + (p._el === 'fire' ? treeEff(p, 'fire') : p._el === 'ice' ? treeEff(p, 'ice') : 0) + useBonus(p, p._melee ? MELEE_USE[p.cls] : RANGED_USE[p.cls]);
+  if (tgt && MON[tgt.type] && MON[tgt.type].beh) dmg *= 1 + treeEff(p, 'beast');
+  if (buffOn(p, 'banner')) dmg *= 1.15;
+  const crit = p._forceCrit || Math.random() < c.crit + treeEff(p, 'crit') + (buffOn(p, 'agile') ? 0.1 : 0);
+  if (crit) dmg *= 1.8 + treeEff(p, 'critDmg');
   return { dmg: Math.max(1, Math.round(dmg)), crit };
 }
 
@@ -377,7 +390,7 @@ function hitRolled(p, m, dmg, crit, delay, hv) {
 }
 function hitMonster(p, m, mult, delay = 0) {
   if (!S.monsters[m.id]) return;
-  const { dmg, crit } = roll(p, mult);
+  const { dmg, crit } = roll(p, mult, m);
   m.hp -= dmg; m.aggro = p.id; m.returning = false;
   p.lastCombat = now_();
   near(m.x, m.y, { t: 'hit', k: 'm', id: m.id, x: m.x, y: m.y, dmg, crit, d: delay, by: p.id, ax: p.x, ay: p.y, hv: mult >= 2 ? 1 : 0 });
@@ -385,8 +398,8 @@ function hitMonster(p, m, mult, delay = 0) {
 }
 
 function lootCorpse(p, c, auto) {
-  c.looted = true;
-  if (c.gold) { p.gold += c.gold; Net.toOne(p.id, { t: 'lootgold', g: c.gold }); }
+  c.looted = true; useGain(p, 'skin', 1);
+  if (c.gold) { const g = Math.round(c.gold * (1 + useBonus(p, 'skin'))); p.gold += g; Net.toOne(p.id, { t: 'lootgold', g }); }
   for (const k of c.items) { if (!p.inv[k] && Object.keys(p.inv).length >= INV_SLOTS) { tell(p, 'Inventário cheio.'); c.looted = false; c.gold = 0; c.items = c.items.slice(c.items.indexOf(k)); break; } p.inv[k] = Math.min(999, (p.inv[k] || 0) + 1); Net.toOne(p.id, { t: 'loot', k }); }
   if (c.looted) c.items = [];
   if (!auto && !c.gold && !c.items.length && c.looted) tell(p, 'Nada de útil aqui.');
@@ -431,7 +444,7 @@ function gainXp(p, amount, delay = 0) {
   let up = false;
   while (p.xp >= need(p.lvl)) { p.xp -= need(p.lvl); p.lvl++; up = true; }
   if (up) {
-    p.maxHp = maxHpFor(p.cls, p.lvl); p.maxMp = maxMpFor(p.cls, p.lvl);
+    p.maxHp = maxHpOf(p); p.maxMp = maxMpOf(p);
     if (!p.downed) { p.hp = p.maxHp; p.mp = p.maxMp; }
     aoe('lvlup', p.x, p.y, { id: p.id, d: delay });
     sys(`${p.name} alcançou o nível ${p.lvl}.`);
@@ -491,9 +504,9 @@ function useItem(p, k) {
   if (k === 'water') { drinkCanteen(p, now, true); return; }
   if (!p.inv[k]) return;
   const take = () => { if (--p.inv[k] <= 0) delete p.inv[k]; };
-  if (FOOD[k]) { take(); p.food = Math.min(100, p.food + FOOD[k]); if (k === 'cookedmeat') p.water = Math.max(0, p.water - 5); if ((k === 'venison' || k === 'pork') && Math.random() < 0.3) { p.sickUntil = now + 120000; tell(p, 'A carne crua caiu mal. Você está enjoado (sede dobrada por 2 min).'); } else tell(p, 'Você comeu ' + LOOT[k].name.toLowerCase() + '.'); }
+  if (FOOD[k]) { take(); p.food = Math.min(100, p.food + FOOD[k] * (1 + useBonus(p, 'cook'))); if (k === 'cookedmeat') p.water = Math.max(0, p.water - 5); if ((k === 'venison' || k === 'pork') && Math.random() < 0.3) { p.sickUntil = now + 120000; tell(p, 'A carne crua caiu mal. Você está enjoado (sede dobrada por 2 min).'); } else tell(p, 'Você comeu ' + LOOT[k].name.toLowerCase() + '.'); }
   else if (k === 'ointment') { take(); p.infect = 0; p.infT = 0; tell(p, 'O unguento arde, mas a febre baixa.'); }
-  else if (k === 'herb') { take(); p.infect = Math.max(0, (p.infect || 0) - 1); p.infT = 0; for (const b of BODY_PARTS) if (p.bleed[b] > 0 && p.bleed[b] <= 0.6) p.bleed[b] = 0; tell(p, 'A erva amarga acalma a febre e estanca os cortes leves.'); }
+  else if (k === 'herb') { take(); useGain(p, 'aid', 1); p.infect = Math.max(0, (p.infect || 0) - 1); p.infT = 0; for (const b of BODY_PARTS) if (p.bleed[b] > 0 && p.bleed[b] <= 0.6) p.bleed[b] = 0; tell(p, 'A erva amarga acalma a febre e estanca os cortes leves.'); }
   else if (k === 'firewood') {
     const tx = Math.round(p.x + Math.cos(p.fa || 0)), ty = Math.round(p.y + Math.sin(p.fa || 0)), t = ty * MAP_W + tx;
     if (!inBounds(tx, ty) || WORLD.obj[t] !== O.NONE || WORLD.bld[t] >= 0 || WORLD.ground[t] === T.WATER || WORLD.ground[t] === T.CLIFF) { tell(p, 'Não dá para acender a fogueira aí.'); return; }
@@ -508,7 +521,7 @@ function cookOrDrink(p, what) {
     for (const k of ['venison', 'pork']) { n += p.inv[k] || 0; delete p.inv[k]; }
     if (!n) { tell(p, 'Nada para assar.'); return; }
     if (!p.inv.cookedmeat && Object.keys(p.inv).length >= INV_SLOTS) { tell(p, 'Inventário cheio.'); return; }
-    p.inv.cookedmeat = (p.inv.cookedmeat || 0) + n; tell(p, n + ' carne' + (n > 1 ? 's assadas' : ' assada') + '.'); sendStat(p);
+    p.inv.cookedmeat = (p.inv.cookedmeat || 0) + n; useGain(p, 'cook', n); tell(p, n + ' carne' + (n > 1 ? 's assadas' : ' assada') + '.'); sendStat(p);
   } else if (what === 'drink') {
     let ok = false; for (let y = Math.round(p.y) - 2; y <= Math.round(p.y) + 2 && !ok; y++) for (let x = Math.round(p.x) - 2; x <= Math.round(p.x) + 2; x++) { if (!inBounds(x, y)) continue; const i = y * MAP_W + x, g = WORLD.ground[i], o = WORLD.obj[i]; if ((g === T.WATER || g === T.SHALLOW || o === O.WELL || o === O.FOUNTAIN) && dist(x, y, p.x, p.y) < 1.9) { ok = true; break; } }
     if (!ok) return; near(p.x, p.y, { t: 'anim', w: 'p', id: p.id, a: 'scoop', ms: 1500 }); p.water = 100; if (p.hasSkin) p.pots.water = 5; tell(p, p.hasSkin ? 'Você bebeu e encheu o odre.' : 'Você bebeu até matar a sede.'); sendStat(p);
@@ -564,6 +577,8 @@ function damagePlayer(p, raw, m, delay = 0, zone = null) {
   if (buffOn(p, 'wall')) mult *= 0.4;
   if (buffOn(p, 'warcry')) mult *= 0.8;
   if (buffOn(p, 'bless')) mult *= 0.9;
+  mult *= Math.max(0.4, 1 - treeEff(p, 'armor')); if (buffOn(p, 'iron')) mult *= 0.6; if (buffOn(p, 'sanct')) mult *= 0.75;
+  useGain(p, 'vigor', 0.5);
   if (p.body && PART_STATE(p.body.armB) >= 2) mult = Math.min(1, mult * 1.25);
   const part = zone ? pick(STRIKE_PART[zone]) : pickPart(m), headK = part === 'head' ? 1.25 : 1;
   const dmg = Math.max(1, Math.round(raw * mult * headK));
@@ -627,13 +642,14 @@ function basicAttack(p, m, now) {
   if (Math.random() > AIM_ACC[z]) { p.nextAtk = now + CLASSES[p.cls].atkMs; anim('p', p, p.cls === 'knight' ? 'swing' : p.cls === 'archer' ? 'shoot' : 'bolt', m.x, m.y); near(m.x, m.y, { t: 'miss', id: m.id }); return; }   // errou
   p._aimMul = AIM_DMG[z];
   try { basicAttack0(p, m, now); } finally { p._aimMul = 1; }
+  if (p.cls !== 'knight') useGain(p, RANGED_USE[p.cls], 1);
   if (p.body && PART_STATE(p.body.armA) >= 2) p.nextAtk += CLASSES[p.cls].atkMs * (PART_STATE(p.body.armA) === 3 ? 0.5 : 0.2);
   if (S.monsters[m.id]) { if (z === 'legs') m.slowUntil = Math.max(m.slowUntil, now + 2500); else if (z === 'head' && Math.random() < 0.15) m.stunUntil = Math.max(m.stunUntil, now + 700); }
 }
 function basicAttack0(p, m, now) {
   const c = CLASSES[p.cls], r = Math.random();
   const kneel = p.hp < p.maxHp * KNEEL_HP;
-  p.nextAtk = now + c.atkMs * (buffOn(p, 'agile') ? 0.5 : 1) * (kneel ? 1.5 : 1);
+  p.nextAtk = now + c.atkMs * (buffOn(p, 'agile') ? 0.5 : 1) * (kneel ? 1.5 : 1) * (1 - Math.min(0.4, treeEff(p, 'aspd')));
   if (kneel) { if (p.cls === 'knight') { const { dmg, crit } = roll(p, 1); anim('p', p, 'swing', m.x, m.y); hitRolled(p, m, dmg, crit, 180, 0); } else { const kind = p.cls === 'archer' ? 'arrow' : 'bolt', d = flight(p.x, p.y, m.x, m.y) + 180; anim('p', p, p.cls === 'archer' ? 'shoot' : 'bolt', m.x, m.y, { proj: kind, d }); hitMonster(p, m, 1, d); } return; }
   if (p.cls === 'knight') {
     const { dmg, crit } = roll(p, 1);
@@ -669,6 +685,7 @@ function basicAttack0(p, m, now) {
 // ---------------- habilidades ----------------
 function useSkill(p, i) {
   const sk = SKILLS[p.cls][i], now = now_();
+  p._el = sk.el; setTimeout(() => { p._el = null; }, 0); if (p.cls === 'mage') useGain(p, 'magic', 2);
   if (!sk || p.casting || p.carrying) return;
   if (now < (p.cds[i] || 0)) return;
   if (p.mp < sk.mp) { tell(p, 'Mana insuficiente.'); return; }
@@ -683,7 +700,7 @@ function useSkill(p, i) {
   if (offensive && inSafe(p.x, p.y)) { tell(p, 'Não se luta dentro da cidadela.'); return; }
   p.mp -= sk.mp; p.cds[i] = now + sk.cd;
   if (sk.cast) {
-    p.casting = { i, until: now + sk.cast, tid: m && m.id }; p.castX = p.x; p.castY = p.y;
+    p.casting = { i, until: now + sk.cast * (1 - Math.min(0.5, treeEff(p, 'castSpeed'))), tid: m && m.id }; p.castX = p.x; p.castY = p.y;
     near(p.x, p.y, { t: 'cast', id: p.id, ms: sk.cast, s: sk.name, el: sk.el });
   } else execSkill(p, i, m);
   sendStat(p);
@@ -692,6 +709,7 @@ function monstersNear(x, y, r) { return Object.values(S.monsters).filter(m => di
 
 function execSkill(p, i, m) {
   const sk = SKILLS[p.cls][i], now = now_();
+  p._el = sk.el; setTimeout(() => { p._el = null; }, 0); if (p.cls === 'mage') useGain(p, 'magic', 2);
   if (sk.tgt && (!m || !S.monsters[m.id])) return;
   const tx = m ? m.x : p.x, ty = m ? m.y : p.y;
   const shout = { s: sk.name + '!' };
@@ -717,13 +735,13 @@ function execSkill(p, i, m) {
     case 'rain': anim('p', p, 'rain', tx, ty, shout); aoe('rain', tx, ty); for (const q of monstersNear(tx, ty, 1.6)) hitMonster(p, q, 1.3, 650); break;
     case 'agile': anim('p', p, 'dash', tx, ty, shout); aoe('agile', p.x, p.y, { id: p.id }); p.buffs.agile = now + 6000; break;
     case 'fireball': { const d = flight(p.x, p.y, m.x, m.y) + 100; anim('p', p, 'fireball', tx, ty, { ...shout, proj: 'fire', d }); hitMonster(p, m, 2.6, d); aoe('boom', tx, ty, { d }); break; }
-    case 'nova': anim('p', p, 'nova', tx, ty, shout); aoe('nova', p.x, p.y); for (const q of monstersNear(p.x, p.y, 2.5)) { q.slowUntil = now + 4000; hitMonster(p, q, 1.4, 200); } break;
+    case 'nova': anim('p', p, 'nova', tx, ty, shout); aoe('nova', p.x, p.y); for (const q of monstersNear(p.x, p.y, 2.5)) { q.slowUntil = now + 4000 * (1 + treeEff(p, 'slowDur')); hitMonster(p, q, 1.4, 200); } break;
     case 'heal':
       anim('p', p, 'heal', tx, ty, shout);
       for (const q of Object.values(S.players)) {
         if (dist(q.x, q.y, p.x, p.y) > 4) continue;
         if (q.downed) { revivePlayer(q, 0.25, p.name); continue; }
-        const h = Math.min(q.maxHp - q.hp, Math.round(20 + p.lvl * 5 + q.maxHp * 0.15));
+        const h = Math.min(q.maxHp - q.hp, Math.round((20 + p.lvl * 5 + q.maxHp * 0.15) * (1 + treeEff(p, 'holy'))));
         q.hp += h; aoe('heal', q.x, q.y, { id: q.id }); sfx(q.x, q.y, `+${h}`, '#7ad87a', 150); sendStat(q);
       }
       break;
@@ -735,7 +753,8 @@ function usePot(p, k) {
   const now = now_();
   if (!ITEMS[k] || p.pots[k] <= 0 || now < p.potCd) return;
   p.potCd = now + 1000; p.pots[k]--;
-  if (k === 'hp') { const h = Math.min(p.maxHp - p.hp, Math.ceil(p.maxHp * 0.35)); p.hp += h; sfx(p.x, p.y, `+${h}`, '#7ad87a'); }
+  useGain(p, 'aid', 1);
+  if (k === 'hp') { const h = Math.min(p.maxHp - p.hp, Math.ceil(p.maxHp * 0.35 * (1 + useBonus(p, 'aid')))); p.hp += h; sfx(p.x, p.y, `+${h}`, '#7ad87a'); }
   else { const h = Math.min(p.maxMp - p.mp, Math.ceil(p.maxMp * 0.4)); p.mp += h; sfx(p.x, p.y, `+${h}`, '#6a9ae8'); }
   aoe('potion', p.x, p.y, { id: p.id, k });
   sendStat(p);
@@ -751,6 +770,10 @@ function npcAction(p, m) {
   if (m.a === 'buyl' && LOOT[m.item] && ((n.id === 'merchant' && ['bread', 'ointment', 'firewood'].includes(m.item)) || (n.id === 'fruit' && ['apple', 'berries'].includes(m.item)))) {
     const qty = m.qty === 5 ? 5 : 1; if (!p.inv[m.item] && Object.keys(p.inv).length >= INV_SLOTS) { say('Sua mochila está cheia.'); return; }
     if (!pay(LOOT[m.item].price * qty)) return; p.inv[m.item] = (p.inv[m.item] || 0) + qty; say(qty + 'x ' + LOOT[m.item].name + '. Bom proveito.');
+  } else if (n.id === 'priest' && m.a === 'treset') {
+    if (!treePts(p)) { say('Você ainda não aprendeu nenhum talento.'); return; }
+    if (!pay(20 * p.lvl)) return; p.tree = {}; p.maxHp = maxHpOf(p); p.maxMp = maxMpOf(p); p.hp = Math.min(p.hp, p.maxHp); p.mp = Math.min(p.mp, p.maxMp);
+    say('Respire fundo e esqueça... Seus pontos de talento voltaram para você.');
   } else if (n.id === 'merchant' && m.a === 'buy' && m.item === 'water') {
     if (!pay(ITEMS.water.price)) return; p.hasSkin = true; p.pots.water = 5; say('Um odre cheio. Encha em rios, poços e fontes.');
   } else if (n.id === 'merchant' && m.a === 'buy' && ITEMS[m.item]) {
@@ -879,7 +902,7 @@ function monsterThink(m, players, now, dt) {
   }
   let tgt = null;
   const pred = d.beh === 'pred';
-  const valid = p => p && !p.dev && (!p.downed || (pred && !p.carriedBy)) && p.z < 0.5 && !inSafe(p.x, p.y);
+  const valid = p => p && !p.dev && !buffOn(p, 'smoke') && (!p.downed || (pred && !p.carriedBy)) && p.z < 0.5 && !inSafe(p.x, p.y);
   // lobo: sempre caça quem está de joelhos ou caído; quem está cansado, 50% de chance (sorteio renovado a cada 8 s)
   const prey = p => {
     if (!pred) return true;
@@ -891,7 +914,7 @@ function monsterThink(m, players, now, dt) {
   if (!tgt && m.aggro && valid(S.players[m.aggro]) && dist(m.x, m.y, S.players[m.aggro].x, S.players[m.aggro].y) <= 11) tgt = S.players[m.aggro];
   if (!tgt) {
     let best = 99;
-    if (d.aggro > 0) for (const p of players) { if (!valid(p) || !prey(p)) continue; const dd = dist(m.x, m.y, p.x, p.y); if (dd <= d.aggro * (p.crouch ? 0.5 : 1) && dd < best) { best = dd; tgt = p; } }
+    if (d.aggro > 0) for (const p of players) { if (!valid(p) || !prey(p)) continue; const dd = dist(m.x, m.y, p.x, p.y); if (dd <= d.aggro * (p.crouch ? 0.5 * (1 - treeEff(p, 'stealth')) : 1) && dd < best) { best = dd; tgt = p; } }
   }
   if (tgt) {
     if (homeDist > 13) { m.returning = true; m.aggro = null; m.taunt = null; return; }
@@ -935,7 +958,7 @@ function severPlayer(q, part, by) {
   sendStat(q);
 }
 function knockPlayer(p, by, now) {
-  if (p.dev || p.downed || now < (p.knockUntil || 0)) return;
+  if (p.dev || p.downed || now < (p.knockUntil || 0) || buffOn(p, 'iron')) return;
   p.knockUntil = now + KNOCK_MS; p.parry = null; p.atk = null; p.stunUntil = now + KNOCK_MS;
   near(p.x, p.y, { t: 'knock', k: 'p', id: p.id, ax: by.x, ay: by.y, ms: KNOCK_MS }); sendStat(p);
 }
@@ -957,18 +980,19 @@ function resolveMonStrike(m, A, now) {
   for (const p of Object.values(S.players)) {
     if (p.dev || p.downed || Math.abs((p.z || 0) - (m.z || 0)) >= 0.5 || !inArc(m.x, m.y, A.a, p.x, p.y, A.reach, A.arc)) continue;
     if (now < (p.dodgeUntil || 0)) { near(p.x, p.y, { t: 'whiff', id: p.id }); continue; }       // esquivou
+    if (Math.random() < treeEff(p, 'evade')) { near(p.x, p.y, { t: 'whiff', id: p.id }); continue; }   // reflexos (talento)
     const toM = Math.atan2(m.y - p.y, m.x - p.x);
     if (p.parry && Math.abs(angDiff(p.parry.a, toM)) <= PARRY_ARC) {
-      const perfect = now - p.parry.t0 <= PARRY_PERFECT + A.W * 0.25;
+      const perfect = now - p.parry.t0 <= PARRY_PERFECT + A.W * 0.25 + treeEff(p, 'parry') + useLvl(p, 'parry') * 0.6; useGain(p, 'parry', perfect ? 3 : 1);
       if (perfect) { m.stunUntil = now + 850; m.nextAtk = Math.max(m.nextAtk, now + 900); p.ripUntil = now + RIPOSTE_MS; p.cst = Math.min(CST_MAX, p.cst + 5); near(p.x, p.y, { t: 'clang', x: (p.x + m.x) / 2, y: (p.y + m.y) / 2, perfect: 1, id: m.id }); }
-      else { p.cst -= (10 + (d.big ? 18 : 6)) * ((p.lost || 0) & LOST.armB ? 1.6 : 1); near(p.x, p.y, { t: 'clang', x: (p.x + m.x) / 2, y: (p.y + m.y) / 2 }); if (p.cst <= 0) guardBreak(p, now); }
+      else { p.cst -= (10 + (d.big ? 18 : 6)) * ((p.lost || 0) & LOST.armB ? 1.6 : 1) * (1 - useBonus(p, 'parry')); near(p.x, p.y, { t: 'clang', x: (p.x + m.x) / 2, y: (p.y + m.y) / 2 }); if (p.cst <= 0) guardBreak(p, now); }
       sendStat(p); continue;
     }
     const crit = MON_MELEE[m.type] && A.k !== 'stab' && A.k !== 'bite' && Math.random() < (d.big ? 0.12 : 0.07);
     damagePlayer(p, Math.round(rint(d.dmg[0], d.dmg[1]) * STRIKES[A.k].mult * ((m.lost || 0) & 6 ? 0.4 : 1) * (crit ? 1.6 : 1)), m, 0, STRIKES[A.k].zone);
     const svp = crit && !p.downed ? severPart(A.k, p.lost || 0) : null;
     if (svp && (p.body[svp] ?? 100) <= 30 && Math.random() < 0.5) severPlayer(p, svp, m);
-    else if (d.big && !p.downed && Math.random() < 0.35) knockPlayer(p, m, now);
+    else if (d.big && !p.downed && Math.random() < 0.35 * Math.max(0, 1 - treeEff(p, 'knockRes'))) knockPlayer(p, m, now);
     if (d.drain && !p.downed) { p.mp = Math.max(0, p.mp - d.drain); sendStat(p); }
     if (p.atk && !p.atk.done) { p.atk = null; near(p.x, p.y, { t: 'anim', w: 'p', id: p.id, a: 'hurt' }); }   // levar golpe interrompe a preparação
     if (A.k !== 'stab' && A.k !== 'bite') break;   // golpes de arma acertam um alvo
@@ -982,7 +1006,7 @@ function playerStrike(p, k, a, now) {
     if (!p.atk.done && now < p.atk.t0 + p.atk.W && p.atk.k !== k && p.cst >= FEINT_COST) { p.cst -= FEINT_COST; }   // finta: troca de golpe no meio da preparação
     else return;
   } else if (p.cst < B.st) { tell(p, 'Sem fôlego.'); return; }
-  else p.cst -= B.st;
+  else { p.cst -= B.st; useGain(p, 'breath', B.st / 10); }
   const M = MELEE[p.cls] || MELEE.knight, rip = now < (p.ripUntil || 0);
   const W = Math.round(B.W * M.spd * (rip ? 0.55 : 1)), R = B.R, C = Math.round(B.C * M.spd);
   p.atk = { k, t0: now, a: isFinite(a) ? a : 0, W, R, C, reach: B.reach * M.reach, arc: B.arc, rip }; p.parry = null; p.ripUntil = 0; p.lastCombat = now;
@@ -1005,7 +1029,8 @@ function pvpHit(p, q, A, now) {
   if (crit && A.k !== 'stab' && !q.downed) severPlayer(q, severPart(A.k, q.lost || 0), { x: p.x, y: p.y, name: p.name });
   if (q.atk && !q.atk.done) { q.atk = null; near(q.x, q.y, { t: 'anim', w: 'p', id: q.id, a: 'hurt' }); }
 }
-function resolvePlayerStrike(p, A, now) {
+function resolvePlayerStrike(p, A, now) { p._melee = true; try { resolvePlayerStrike0(p, A, now); } finally { p._melee = false; } }
+function resolvePlayerStrike0(p, A, now) {
   { const B0 = STRIKES[A.k]; let n = 0; for (const q of Object.values(S.players)) { if (n >= (B0.multi || 1) || !pvpOk(p, q) || !inArc(p.x, p.y, A.a, q.x, q.y, A.reach, A.arc, 0.3)) continue; pvpHit(p, q, A, now); n++; } if (n) return; }
   const B = STRIKES[A.k], M = MELEE[p.cls] || MELEE.knight;
   const targets = Object.values(S.monsters).filter(q => Math.abs((q.z || 0) - (p.z || 0)) < 0.5 && (q.alt || 0) < 1.2 && inArc(p.x, p.y, A.a, q.x, q.y, A.reach, A.arc, MON[q.type].rad || 0.3)).sort((a, b) => dist(a.x, a.y, p.x, p.y) - dist(b.x, b.y, p.x, p.y)).slice(0, B.multi || 1);
@@ -1017,7 +1042,7 @@ function resolvePlayerStrike(p, A, now) {
     const { dmg, crit } = roll(p, B.mult * M.dmg * (A.rip ? 1.25 : 1));
     const sev = crit && A.k !== 'stab' && MON_LOOK[q.type] ? severPart(A.k, q.lost || 0) : null;
     if (sev) { q.lost = (q.lost || 0) | LOST[sev]; near(q.x, q.y, { t: 'sever', k: 'm', id: q.id, part: sev, x: q.x, y: q.y, ax: p.x, ay: p.y }); }
-    q._hz = B.zone; hitRolled(p, q, sev === 'head' ? q.hp + 9999 : dmg, crit, 0, crit ? 1 : 0);
+    q._hz = B.zone; hitRolled(p, q, sev === 'head' ? q.hp + 9999 : dmg, crit, 0, crit ? 1 : 0); useGain(p, MELEE_USE[p.cls], 1);
     if (!S.monsters[q.id]) continue;
     if (sev && sev.startsWith('arm')) q.flee = { from: p.id, until: now + 7000 };
     if (crit && A.k === 'over' && !sev && !MON[q.type].big) knockMon(q, p, now);
@@ -1048,7 +1073,7 @@ function playerKick(p, a, now) {
 }
 function combatTick(p, now, dt) {
   if (p.atk) { const A = p.atk; if (!A.done && now >= A.t0 + A.W) { A.done = true; resolvePlayerStrike(p, A, now); } if (p.atk && now >= A.t0 + A.W + A.R + A.C) p.atk = null; }
-  if (!p.atk && !p.parry && now - (p.cstT || 0) > 600) p.cst = Math.min(CST_MAX, (p.cst ?? CST_MAX) + CST_REGEN * dt * survFactor(p));
+  if (!p.atk && !p.parry && now - (p.cstT || 0) > 600) p.cst = Math.min(cstMaxOf(p), (p.cst ?? cstMaxOf(p)) + CST_REGEN * dt * survFactor(p) * (1 + useBonus(p, 'breath')));
   if (p.parry) p.cst = Math.max(0, p.cst - 2 * dt);
 }
 
@@ -1314,6 +1339,76 @@ function flingPlayer(p, fx, fy, D) {
   if (fz >= 0.5 && tz < 0.5) setTimeout(() => damagePlayer(p, Math.round(p.maxHp * 0.08), null, 0), ms);   // queda da mesa
 }
 
+// ---------------- progressão por uso e habilidades da árvore ----------------
+function useGain(p, k, amt) {
+  if (!USE[k] || !p || p.dev || !(amt > 0)) return; p.use = p.use || {};
+  const l0 = useLvl(p, k); p.use[k] = (p.use[k] || 0) + amt; const l1 = useLvl(p, k);
+  if (l1 > l0) { if (k === 'vigor') { const r = p.hp / Math.max(1, p.maxHp); p.maxHp = maxHpOf(p); if (!p.downed) p.hp = Math.max(1, Math.round(p.maxHp * r)); } if (l1 % 5 === 0) Net.toOne(p.id, { t: 'usel', k, l: l1 }); }
+}
+function treeSkill(p, b, msg) {
+  const br = TREE[p.cls] && TREE[p.cls][b], nd = br && br.nodes[4]; if (!nd) return;
+  if (!treeHas(p, nd.id)) { tell(p, 'Aprenda ' + nd.name + ' na árvore de talentos (K).'); return; }
+  const now = now_(); p.tcd = p.tcd || {};
+  if (p.downed || p.carrying || p.lifted || p.grabbed || now < (p.stunUntil || 0) || now < (p.knockUntil || 0)) return;
+  if (inSafe(p.x, p.y)) { tell(p, 'Aqui não: a cidade é um lugar seguro.'); return; }
+  if (now < (p.tcd[b] || 0)) { tell(p, nd.name + ': recarregando (' + Math.ceil((p.tcd[b] - now) / 1000) + 's).'); return; }
+  if (p.mp < nd.mp) { tell(p, 'Mana insuficiente.'); return; }
+  const a = isFinite(+msg.a) ? +msg.a : 0, shout = { s: nd.name + '!' };
+  const sameLvl = q => Math.abs((q.z || 0) - (p.z || 0)) < 0.5 && (q.alt || 0) < 1.2;
+  const pickTgt = rng => { let q = S.monsters[msg.id]; if (q && sameLvl(q) && dist(p.x, p.y, q.x, q.y) <= rng) return q; let best = null, bs = 1e9; for (const o of Object.values(S.monsters)) { if (!sameLvl(o)) continue; const d = dist(p.x, p.y, o.x, o.y); if (d > rng) continue; const da = Math.abs(angDiff(Math.atan2(o.y - p.y, o.x - p.x), a)); if (da > 0.7) continue; const sc = d + da * 4; if (sc < bs) { bs = sc; best = o; } } return best; };
+  switch (nd.id) {
+    case 'charge': {
+      let d = 0; for (let s = 0.25; s <= 4; s += 0.25) { if (!canStand(p.x + Math.cos(a) * s, p.y + Math.sin(a) * s, p.z || 0, 0.25)) break; d = s; }
+      anim('p', p, 'dash', p.x + Math.cos(a), p.y + Math.sin(a), shout); Net.toOne(p.id, { t: 'push', a, d });
+      const hit = Object.values(S.monsters).filter(sameLvl).map(q => { const ax = q.x - p.x, ay = q.y - p.y; return { q, t: ax * Math.cos(a) + ay * Math.sin(a), perp: Math.abs(-ax * Math.sin(a) + ay * Math.cos(a)) }; }).filter(o => o.t > 0 && o.t < d + 1.3 && o.perp < 0.9 + (MON[o.q.type].rad || 0.3)).sort((x, y) => x.t - y.t)[0];
+      if (hit) setTimeout(() => { const q = S.monsters[hit.q.id]; if (!q) return; p._melee = true; hitMonster(p, q, 1.8, 0); p._melee = false; if (S.monsters[q.id]) { q.stunUntil = Math.max(q.stunUntil, now_() + 1000); q.atk = null; if (!MON[q.type].big) knockMon(q, p, now_()); } }, 220);
+      break;
+    }
+    case 'taunt': anim('p', p, 'warcry', p.x, p.y, shout); aoe('warcry', p.x, p.y); p.buffs.iron = now + 5000; for (const q of monstersNear(p.x, p.y, 6)) { q.taunt = { pid: p.id, until: now + 5000 }; q.returning = false; q.aggro = p.id; } break;
+    case 'banner': anim('p', p, 'warcry', p.x, p.y, shout); addZone(p, 'banner', p.x + Math.cos(a) * 0.8, p.y + Math.sin(a) * 0.8, 0, 12000); break;
+    case 'headshot': {
+      const q = pickTgt(CLASSES[p.cls].range + treeEff(p, 'range') + 1); if (!q) { tell(p, 'Nenhum alvo na mira.'); return; }
+      anim('p', p, 'pierce', q.x, q.y, shout); const id = q.id;
+      setTimeout(() => { const t = S.monsters[id]; if (!t) return; const d = flight(p.x, p.y, t.x, t.y); shot(p, 'arrow', t.x, t.y, d, 0); p._forceCrit = true; const r = roll(p, 3.5, t); p._forceCrit = false; hitRolled(p, t, r.dmg, true, d, 1); }, 650);
+      break;
+    }
+    case 'trap': { const mine = (S.zones || []).filter(z => z.k === 'trap' && z.by === p.id); if (mine.length >= 2) removeZone(mine[0]); anim('p', p, 'quiver', p.x, p.y, shout); addZone(p, 'trap', p.x, p.y, 0, 30000); break; }
+    case 'smoke':
+      near(p.x, p.y, { t: 'smokebomb', x: p.x, y: p.y }); p.buffs.smoke = now + 4000; p.buffs.agile = Math.max(p.buffs.agile || 0, now + 4000);
+      for (const q of Object.values(S.monsters)) if ((q.aggro === p.id || (q.taunt && q.taunt.pid === p.id)) && dist(q.x, q.y, p.x, p.y) < 14) { q.aggro = null; q.taunt = null; q.atk = null; q.returning = true; }
+      break;
+    case 'firewall': { const cx = p.x + Math.cos(a) * 3, cy = p.y + Math.sin(a) * 3; anim('p', p, 'fireball', cx, cy, shout); addZone(p, 'firewall', cx, cy, a, 5000); break; }
+    case 'icejail': {
+      const q = pickTgt(CLASSES[p.cls].range + 1); if (!q) { tell(p, 'Nenhum alvo na mira.'); return; }
+      anim('p', p, 'bolt', q.x, q.y, shout); p._el = 'ice'; hitMonster(p, q, 1.5, 250); p._el = null;
+      if (S.monsters[q.id]) { q.stunUntil = Math.max(q.stunUntil, now + 3000); q.atk = null; } near(q.x, q.y, { t: 'icejail', id: q.id, ms: 3000 }); break;
+    }
+    case 'sanct': anim('p', p, 'heal', p.x, p.y, shout); addZone(p, 'sanct', p.x, p.y, 0, 8000); break;
+  }
+  p.mp -= nd.mp; p.tcd[b] = now + nd.cd; p.lastCombat = now; if (p.cls === 'mage') useGain(p, 'magic', 2); sendStat(p);
+}
+function addZone(p, k, x, y, a, ms) {
+  const z = { k, x, y, a, by: p.id, until: now_() + ms, t: 0 }; (S.zones = S.zones || []).push(z);
+  near(x, y, { t: 'zone', k, x, y, a, ms, z: p.z || 0 });
+  if (k === 'firewall') { const l = []; for (let s = -2; s <= 2.01; s += 0.5) l.push([x - Math.sin(a) * s, y + Math.cos(a) * s, 1.1, ms]); near(x, y, { t: 'fires', l, nb: 1 }); }
+  return z;
+}
+function removeZone(z) { S.zones = (S.zones || []).filter(q => q !== z); near(z.x, z.y, { t: 'zoneoff', k: z.k, x: z.x, y: z.y }); }
+function zoneTick(now) {
+  if (!S.zones || !S.zones.length) return;
+  for (const z of S.zones.slice()) {
+    const p = S.players[z.by];
+    if (now >= z.until || !p) { removeZone(z); continue; }
+    if (now < z.t) continue;
+    if (z.k === 'trap') { z.t = now + 100; const q = Object.values(S.monsters).find(o => (o.alt || 0) < 1 && dist(o.x, o.y, z.x, z.y) < 0.75 + (MON[o.type].rad || 0.3) * 0.5); if (q) { hitMonster(p, q, 1.5, 0); if (S.monsters[q.id]) { q.stunUntil = Math.max(q.stunUntil, now + 3000); q.atk = null; } removeZone(z); } continue; }
+    if (z.k === 'firewall') { z.t = now + 500; for (const q of Object.values(S.monsters)) { const ax = q.x - z.x, ay = q.y - z.y; if (Math.abs(-ax * Math.sin(z.a) + ay * Math.cos(z.a)) < 2.6 && Math.abs(ax * Math.cos(z.a) + ay * Math.sin(z.a)) < 0.9) { p._el = 'fire'; hitMonster(p, q, 0.6, 0); p._el = null; } } continue; }
+    if (z.k === 'banner' || z.k === 'sanct') {
+      z.t = now + 1000; const r = z.k === 'banner' ? 4.5 : 4;
+      for (const q of Object.values(S.players)) { if (q.downed || dist(q.x, q.y, z.x, z.y) > r) continue; q.buffs[z.k] = now + 1500; const h = Math.round(q.maxHp * (z.k === 'sanct' ? 0.03 * (1 + treeEff(p, 'holy')) : 0.015)); if (q.hp < q.maxHp) { q.hp = Math.min(q.maxHp, q.hp + h); sendStat(q); } }
+    }
+  }
+}
+
 // ---------------- laço principal (10x por segundo) ----------------
 function hostTick() {
   const now = now_();
@@ -1329,11 +1424,11 @@ function hostTick() {
     S.nextSpawn = now + 1500;
   }
 
-  for (const p of players) { bodyTick(p, now, dt); survivalTick(p, now, dt); combatTick(p, now, dt); }
+  for (const p of players) { bodyTick(p, now, dt); survivalTick(p, now, dt); combatTick(p, now, dt); if (p.running && p.walking) { const d = dist(p._rx ?? p.x, p._ry ?? p.y, p.x, p.y); if (d < 3) useGain(p, 'run', d); } p._rx = p.x; p._ry = p.y; }
   if (!S.bslots) initBastions();
   tickBastions(now);
   if (S.fires && S.fires.length) { S.fires = S.fires.filter(f => f.until > now); for (const p of players) { if (p.downed || now < (p.burnT || 0)) continue; if (S.fires.some(f => dist(f.x, f.y, p.x, p.y) < f.r)) { p.burnT = now + 500; damagePlayer(p, 6, null, 0); if (Math.random() < 0.25) ignitePlayer(p, now); } } }
-  fireTick(now, players);
+  fireTick(now, players); zoneTick(now);
 
   for (const p of players) {
     if (p.downed) {
@@ -1370,6 +1465,7 @@ function hostTick() {
       if (p.hp >= p.maxHp && p.mp >= p.maxMp) continue;
       let hr = Math.ceil(p.maxHp * 0.04) + 1, mr = Math.ceil(p.maxMp * 0.05) + 1;
       if (p.cls === 'mage') mr *= 2;
+      hr = Math.ceil(hr * (1 + treeEff(p, 'regen'))); mr = Math.ceil(mr * (1 + treeEff(p, 'mregen')));
       if (buffOn(p, 'mead')) { hr = Math.ceil(hr * 1.5); mr = Math.ceil(mr * 1.5); }
       if (inSafe(p.x, p.y)) { hr *= 2; mr *= 2; }
       if (p.sit) { hr = Math.ceil(hr * 2.5); mr = Math.ceil(mr * 2.5); }

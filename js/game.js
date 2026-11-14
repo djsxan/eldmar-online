@@ -48,6 +48,7 @@ function setBuffs(e, list) { const now = performance.now(); e.buffs = {}; for (c
 
 function clientOnServer(m) {
   const now = performance.now();
+  if (typeof progEvent === 'function' && progEvent(m, now)) return;
   switch (m.t) {
     case 'welcome':
       G.myId = m.you; setTimeout(() => Net.send({ t: 'duel', on: SET.duel ? 1 : 0 }), 500);
@@ -66,7 +67,7 @@ function clientOnServer(m) {
       const oldLvl = e.lvl;
       if (m.slow) G.slowUntil = now + m.slow;
       if (m.knock) G.knockUntil = now + m.knock;
-      G.cst = m.cst ?? CST_MAX; G.stunUntil = now + (m.stun || 0); G.ripUntil = now + (m.rip || 0);
+      G.cst = m.cst ?? CST_MAX; G.cstMax = m.cstMax || CST_MAX; if (m.tree) e.tree = m.tree; if (m.use) e.use = m.use; if (typeof onProgStat === 'function') onProgStat(); G.stunUntil = now + (m.stun || 0); G.ripUntil = now + (m.rip || 0);
       Object.assign(e, { hp: m.hp, maxHp: m.maxHp, mp: m.mp, maxMp: m.maxMp, lvl: m.lvl, xp: m.xp, gold: m.gold, pots: m.pots, food: m.food, water: m.water, cold: m.cold, infect: m.infect, sick: m.sick, hasSkin: m.hasSkin, body: m.body, bleed: m.bleed, lost: m.lost || 0, pro: m.pro || 0, inv: m.inv || {}, combat: m.combat, quests: m.quests, qdone: m.qdone });
       setBuffs(e, m.buffs);
       G.cdEnd = m.cds.map(r => now + r);
@@ -287,7 +288,7 @@ function updateLocal(now, dt) {
   if (G.pendingSeat != null && !G.path) { const st = WORLD.seats[G.pendingSeat]; if (dist(me.x, me.y, st.x, st.y) <= 1.7) sitDown(G.pendingSeat); G.pendingSeat = null; }
   if (G.pendingNpc && !G.path) { const n = G.npcs[G.pendingNpc]; if (dist(me.x, me.y, n.x, n.y) <= 3) openDialog(n.id); G.pendingNpc = null; }
   // correr com SHIFT gasta estamina; ao esgotar, precisa recuperar um pouco antes de correr de novo
-  if (G.stam == null) { G.stam = STAM_MAX; G.stamT = 0; G.tired = false; }
+  if (G.stam == null) { G.stam = stamMax(); G.stamT = 0; G.tired = false; }
   const kneel = healthState(me) === 3;
   const crouchKey = !kneel && (G.keys.has('c') || G.crouchToggle) && !me.downed && !me.carrying && !me.sit && (me.z || 0) < 0.5;
   if (!(G.keys.has('c') && G.keys.has('shift'))) G.slideLatch = false;
@@ -302,13 +303,13 @@ function updateLocal(now, dt) {
   if (G.push) { const kp = (now - G.push.t0) / 260; if (kp >= 1) G.push = null; else v = G.push.v; }
   const running = !!v && !kneel && !((me.lost || 0) & 24) && !(me.body && Math.max(PART_STATE(me.body.legL), PART_STATE(me.body.legR)) >= 3) && G.keys.has('shift') && !crouchKey && !G.tired && !me.downed && !me.carrying && G.stam > 0;
   if (running) { G.stam = Math.max(0, G.stam - STAM_DRAIN * dt); G.stamT = now; if (G.stam <= 0) G.tired = true; }
-  else if (now - G.stamT > STAM_DELAY) G.stam = Math.min(STAM_MAX, G.stam + STAM_REGEN * dt * (v ? 0.6 : me.sit ? 2.5 : 1));
+  else if (now - G.stamT > STAM_DELAY) G.stam = Math.min(stamMax(), G.stam + STAM_REGEN * dt * (v ? 0.6 : me.sit ? 2.5 : 1));
   revealFog(me.x, me.y);
-  if (G.tired && G.stam >= STAM_MAX * 0.3) G.tired = false;
+  if (G.tired && G.stam >= stamMax() * 0.3) G.tired = false;
   me.running = running;
   let moved = 0;
   if (v) {
-    let sp = PLAYER_SPEED;
+    let sp = PLAYER_SPEED * (typeof speedMul === 'function' ? speedMul() : 1);
     if (me.buffs && me.buffs.agile > now) sp *= 1.6;
     if (running) sp *= RUN_MUL * (healthState(me) === 1 ? 0.75 : 1);   // cansado corre pesado e mais devagar
     if (me.crouch) sp *= CROUCH_MUL;
@@ -381,7 +382,7 @@ function updateLocal(now, dt) {
     me.fa = a; me.dir = dirFromVec(Math.cos(a), Math.sin(a), me.dir); if (G.parrying && now - (G.parryAT || 0) > 150) { G.parryAT = now; Net.send({ t: 'parrya', a }); } }
   if (now - me.sendT > 100 && (moved || me.walking !== me.sentWalk || stF !== me.sentSt || me.dir !== me.sentDir)) { me.sentDir = me.dir;
     me.sendT = now; me.sentWalk = me.walking; me.sentSt = stF;
-    Net.send({ t: 'mv', x: Math.round(me.x * 100) / 100, y: Math.round(me.y * 100) / 100, z: Math.round(me.z * 100) / 100, d: me.dir, w: me.walking ? 1 : 0, r: running ? 1 : 0, c: me.crouch ? 1 : 0, sl: me.slide ? 1 : 0, ti: G.tired || (G.stam ?? STAM_MAX) < STAM_MAX * 0.3 ? 1 : 0 }, true);
+    Net.send({ t: 'mv', x: Math.round(me.x * 100) / 100, y: Math.round(me.y * 100) / 100, z: Math.round(me.z * 100) / 100, d: me.dir, w: me.walking ? 1 : 0, r: running ? 1 : 0, c: me.crouch ? 1 : 0, sl: me.slide ? 1 : 0, ti: G.tired || (G.stam ?? STAM_MAX) < stamMax() * 0.3 ? 1 : 0 }, true);
   }
 }
 function lineFree(ax, ay, bx, by, z) {
@@ -455,7 +456,7 @@ function saveChar() {
   const me = G.me;
   try {
     const all = loadChars();
-    all[charKey(me.name, me.cls)] = { name: me.name, cls: me.cls, skin: me.skin, color: me.color, lvl: me.lvl, xp: me.xp, gold: me.gold, pots: me.pots, food: me.food, water: me.water, infect: me.infect, hasSkin: me.hasSkin, body: me.body, bleed: me.bleed, lost: (me.lost || 0) & 30, pro: me.pro || 0, inv: me.inv, quests: me.quests, qdone: me.qdone, t: Date.now() };
+    all[charKey(me.name, me.cls)] = { name: me.name, cls: me.cls, skin: me.skin, color: me.color, lvl: me.lvl, xp: me.xp, gold: me.gold, pots: me.pots, food: me.food, water: me.water, infect: me.infect, hasSkin: me.hasSkin, tree: me.tree, use: me.use, body: me.body, bleed: me.bleed, lost: (me.lost || 0) & 30, pro: me.pro || 0, inv: me.inv, quests: me.quests, qdone: me.qdone, t: Date.now() };
     localStorage.setItem(SAVE_KEY, JSON.stringify(all));
   } catch (e) { }
 }
@@ -483,7 +484,7 @@ function updateHud() {
   $('hud-class').textContent = CLASSES[me.cls].name; $('hud-lvl').textContent = me.lvl;
   bar('hp', me.hp, me.maxHp, `${me.hp} / ${me.maxHp}`);
   bar('mp', me.mp, me.maxMp, `${me.mp} / ${me.maxMp}`);
-  bar('st', G.stam ?? STAM_MAX, STAM_MAX, 'Estamina'); $('st-fill').parentNode.classList.toggle('tired', !!G.tired);
+  bar('st', G.stam ?? stamMax(), stamMax(), 'Estamina'); $('st-fill').parentNode.classList.toggle('tired', !!G.tired);
   bar('xp', me.xp, need(me.lvl), `${me.xp} / ${need(me.lvl)} xp`);
   $('gold').textContent = me.gold;
   $('pot-hp-n').textContent = me.pots ? me.pots.hp : 0;
@@ -519,10 +520,10 @@ function updateQuests() {
 // ---------- painéis: inventário (I) e jornada (J) ----------
 function togglePanel(id, force) {
   const el = $(id), open = force != null ? force : el.classList.contains('hidden');
-  for (const o of ['inv', 'journal']) $(o).classList.add('hidden');
+  for (const o of ['inv', 'journal', 'tree']) $(o).classList.add('hidden');
   if (!open) return;
   el.classList.remove('hidden');
-  if (id === 'inv') updateInv(); else updateQuests();
+  if (id === 'inv') updateInv(); else if (id === 'tree') updateTree(); else updateQuests();
 }
 function updateInv() {
   const me = G.me, grid = $('inv-grid'); if (!me) return;
@@ -861,6 +862,8 @@ window.addEventListener('keydown', e => {
   if (k === 'f2' && G.dev) { e.preventDefault(); $('devpanel').classList.toggle('hidden'); return; }
   if (k === 'escape' && G.devPlace) { G.devPlace = null; showToast('Colocação cancelada.'); return; }
   if (k === 'j' && !e.repeat) { togglePanel('journal'); return; }
+  if (k === 'k' && !e.repeat) { togglePanel('tree'); return; }
+  if ((k === '5' || k === '6' || k === '7') && !e.repeat) { Net.send({ t: 'tskill', b: +k - 5, a: G.me.fa ?? 0, id: G.target || 0 }); return; }
   if (k === 'm' && !e.repeat) { toggleWorldMap(); return; }
   if (k === 't') { if (!e.repeat) openEmoteWheel(); return; }
   if (k === ' ' && inCombatZone()) { e.preventDefault(); if (!e.repeat) { const me = G.me, iv = myInput(); const v = iv || (me.fa != null ? [-Math.cos(me.fa), -Math.sin(me.fa)] : [0, 1]); G.dodge = { t0: performance.now(), v }; Net.send({ t: 'dodge' }); } return; }
@@ -1019,7 +1022,7 @@ function lockLobby(b) { for (const el of document.querySelectorAll('#lobby butto
 function helloMsg() {
   const name = $('name').value.trim() || 'Aventureiro';
   const saved = loadChars()[charKey(name, chosenClass)] || {};
-  return { t: 'hello', dev: G.devPw || undefined, name, color: chosenColor, cls: chosenClass, skin: chosenSkin[chosenClass], lvl: saved.lvl, xp: saved.xp, gold: saved.gold, pots: saved.pots, food: saved.food, water: saved.water, infect: saved.infect, hasSkin: saved.hasSkin, body: saved.body, bleed: saved.bleed, lost: saved.lost, pro: saved.pro, inv: saved.inv, quests: saved.quests, qdone: saved.qdone };
+  return { t: 'hello', dev: G.devPw || undefined, name, color: chosenColor, cls: chosenClass, skin: chosenSkin[chosenClass], lvl: saved.lvl, xp: saved.xp, gold: saved.gold, pots: saved.pots, food: saved.food, water: saved.water, infect: saved.infect, tree: saved.tree, use: saved.use, hasSkin: saved.hasSkin, body: saved.body, bleed: saved.bleed, lost: saved.lost, pro: saved.pro, inv: saved.inv, quests: saved.quests, qdone: saved.qdone };
 }
 function showRoom(code) { $('room-code').textContent = Net.offline ? 'offline' : code; }
 function createRoom(code = 'S1', tries = 0) {
@@ -1361,6 +1364,7 @@ function updateNeeds() {
   el.innerHTML = out.map(([i, t, s]) => '<span class="nd s' + s + '" title="' + t + '">' + i + '</span>').join('');
   document.body.classList.toggle('cold', (me.cold || 0) > 50); document.body.classList.toggle('fever', !!me.infect);
   const pr = $('prompt'); if (!G.loot && !nearCorpse()) { const raw = me.inv && (me.inv.venison || me.inv.pork); const hv = nearHarvest(), exN = me.carrying && STAGE.x >= 0 && dist(me.x, me.y, STAGE.x, STAGE.y) < 3.4; const txt = exN ? 'F: entregar ao carrasco (execução)' : hv >= 0 ? (WORLD.obj[hv] === O.BERRY ? 'F: colher frutas' : 'F: colher erva') : raw && nearFireC() ? 'F: assar a carne' : nearWaterC() && (me.water ?? 100) < 98 ? 'F: beber' : ''; if (txt) { pr.textContent = txt; pr.classList.remove('hidden'); } else pr.classList.add('hidden'); }
+  if ($('pz-use') && typeof useHtml === 'function') $('pz-use').innerHTML = useHtml();
   if ($('pz-surv')) $('pz-surv').innerHTML = '<div><b>Fome</b> ' + Math.round(100 - (me.food ?? 100)) + '% · <b>Sede</b> ' + Math.round(100 - (me.water ?? 100)) + '% · <b>Frio</b> ' + Math.round(me.cold || 0) + '%</div><div><b>Infecção</b> ' + ['nenhuma', 'febre', 'grave'][me.infect || 0] + (me.sick > 0 ? ' · <b>enjoado</b>' : '') + '</div><div class="gp-note">Coma e beba, fique perto do fogo à noite, trate feridas graves com bandagem. A morte é permanente.</div>';
 }
 // ---------- sangue em jato e pedaços decepados ----------

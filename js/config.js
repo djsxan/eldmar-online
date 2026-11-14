@@ -3,8 +3,8 @@
 //  Mexa aqui para balancear o jogo.
 // ============================================================
 const GAME_NAME = 'World of Sxan';
-const VERSION = 'v1.16.0';
-const VERSION_NAME = 'O Cadafalso';
+const VERSION = 'v1.17.0';
+const VERSION_NAME = 'Talentos';
 
 const PLAYER_SPEED = 2.7;          // tiles por segundo (1 tile ≈ 2 m)
 // configurações do jogador (menu de pausa)
@@ -248,3 +248,109 @@ const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 const rint = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 const pick = a => a[Math.floor(Math.random() * a.length)];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// ============================================================
+//  ÁRVORE DE TALENTOS — 1 ponto por nível; 3 ramos por vocação.
+//  Cada ramo: 4 talentos passivos (até 3 pontos) + 1 habilidade (teclas 5, 6, 7).
+//  Um nó só libera com pontos suficientes já gastos no ramo (TREE_REQ).
+// ============================================================
+const TREE_REQ = [0, 2, 4, 6, 8];
+const TREE = {
+  knight: [
+    { name: 'Lâmina', icon: '⚔', nodes: [
+      { id: 'k_dmg', name: 'Fio Afiado', max: 3, eff: { dmg: 0.05 }, desc: '+5% de dano por ponto.' },
+      { id: 'k_crit', name: 'Golpe Certeiro', max: 3, eff: { crit: 0.03 }, desc: '+3% de chance de crítico por ponto.' },
+      { id: 'k_cdm', name: 'Brutalidade', max: 3, eff: { critDmg: 0.12 }, desc: '+12% de dano crítico por ponto.' },
+      { id: 'k_aspd', name: 'Mão Ligeira', max: 3, eff: { aspd: 0.05 }, desc: 'Ataca 5% mais rápido por ponto.' },
+      { id: 'charge', name: 'Investida', skill: true, max: 1, mp: 10, cd: 10000, desc: 'Avança 4 passos na direção do mouse e atropela o primeiro inimigo: 180% de dano e atordoa por 1s.' }] },
+    { name: 'Bastião', icon: '🛡', nodes: [
+      { id: 'k_hp', name: 'Couro Duro', max: 3, eff: { hp: 0.06 }, desc: '+6% de vida máxima por ponto.' },
+      { id: 'k_arm', name: 'Placas Reforçadas', max: 3, eff: { armor: 0.04 }, desc: '-4% de dano recebido por ponto.' },
+      { id: 'k_parry', name: 'Olho de Esgrimista', max: 3, eff: { parry: 60 }, desc: 'A janela da defesa perfeita fica 0,06s maior por ponto.' },
+      { id: 'k_stand', name: 'Pés Firmes', max: 3, eff: { knockRes: 0.25 }, desc: '25% menos chance de ser derrubado por ponto.' },
+      { id: 'taunt', name: 'Provocação Inabalável', skill: true, max: 1, mp: 12, cd: 18000, desc: 'Atrai os inimigos em 6 passos; por 5s você recebe 40% menos dano e não pode ser derrubado.' }] },
+    { name: 'Comando', icon: '⚑', nodes: [
+      { id: 'k_cst', name: 'Fôlego de Guerra', max: 3, eff: { cst: 0.1 }, desc: '+10% de fôlego de combate por ponto.' },
+      { id: 'k_regen', name: 'Sangue Forte', max: 3, eff: { regen: 0.15 }, desc: '+15% de recuperação de vida por ponto.' },
+      { id: 'k_stam', name: 'Marcha Longa', max: 3, eff: { stam: 0.1 }, desc: '+10% de estamina para correr por ponto.' },
+      { id: 'k_mreg', name: 'Disciplina', max: 3, eff: { mregen: 0.15 }, desc: '+15% de recuperação de mana por ponto.' },
+      { id: 'banner', name: 'Estandarte de Guerra', skill: true, max: 1, mp: 20, cd: 30000, desc: 'Finca um estandarte por 12s: aliados por perto causam +15% de dano e recuperam vida.' }] },
+  ],
+  archer: [
+    { name: 'Precisão', icon: '◎', nodes: [
+      { id: 'a_crit', name: 'Mira Firme', max: 3, eff: { crit: 0.03 }, desc: '+3% de chance de crítico por ponto.' },
+      { id: 'a_cdm', name: 'Ponto Fraco', max: 3, eff: { critDmg: 0.12 }, desc: '+12% de dano crítico por ponto.' },
+      { id: 'a_range', name: 'Olho de Falcão', max: 3, eff: { range: 0.5 }, desc: '+0,5 de alcance por ponto.' },
+      { id: 'a_dmg', name: 'Pontas de Aço', max: 3, eff: { dmg: 0.04 }, desc: '+4% de dano por ponto.' },
+      { id: 'headshot', name: 'Tiro na Cabeça', skill: true, max: 1, mp: 14, cd: 12000, desc: 'Mira por um instante e acerta o alvo na cabeça: 350% de dano, sempre crítico.' }] },
+    { name: 'Caça', icon: '🐾', nodes: [
+      { id: 'a_beast', name: 'Caçador', max: 3, eff: { beast: 0.08 }, desc: '+8% de dano em feras por ponto.' },
+      { id: 'a_speed', name: 'Passo Leve', max: 3, eff: { speed: 0.03 }, desc: 'Anda 3% mais rápido por ponto.' },
+      { id: 'a_stam', name: 'Resistência', max: 3, eff: { stam: 0.1 }, desc: '+10% de estamina para correr por ponto.' },
+      { id: 'a_aspd', name: 'Puxada Rápida', max: 3, eff: { aspd: 0.05 }, desc: 'Atira 5% mais rápido por ponto.' },
+      { id: 'trap', name: 'Armadilha', skill: true, max: 1, mp: 10, cd: 15000, desc: 'Arma uma armadilha de ferro aos seus pés (30s): o primeiro inimigo que pisar leva 150% de dano e fica preso por 3s.' }] },
+    { name: 'Sombra', icon: '☾', nodes: [
+      { id: 'a_dodge', name: 'Rolamento', max: 3, eff: { dodgeCost: 0.12 }, desc: 'A esquiva gasta 12% menos fôlego por ponto.' },
+      { id: 'a_stealth', name: 'Furtividade', max: 3, eff: { stealth: 0.15 }, desc: 'Agachado, os inimigos percebem você 15% mais perto por ponto.' },
+      { id: 'a_evade', name: 'Reflexos', max: 3, eff: { evade: 0.03 }, desc: '3% de chance por ponto de escapar de um golpe sem esquivar.' },
+      { id: 'a_cst', name: 'Respiração Calma', max: 3, eff: { cst: 0.08 }, desc: '+8% de fôlego de combate por ponto.' },
+      { id: 'smoke', name: 'Bomba de Fumaça', skill: true, max: 1, mp: 12, cd: 20000, desc: 'Nuvem de fumaça: os inimigos perdem você de vista por 4s e você anda mais rápido.' }] },
+  ],
+  mage: [
+    { name: 'Fogo', icon: '🔥', nodes: [
+      { id: 'm_fire', name: 'Chama Viva', max: 3, eff: { fire: 0.08 }, desc: '+8% de dano das magias de fogo por ponto.' },
+      { id: 'm_dmg', name: 'Foco Arcano', max: 3, eff: { dmg: 0.04 }, desc: '+4% de dano por ponto.' },
+      { id: 'm_crit', name: 'Faísca', max: 3, eff: { crit: 0.02 }, desc: '+2% de chance de crítico por ponto.' },
+      { id: 'm_cast', name: 'Palavras Rápidas', max: 3, eff: { castSpeed: 0.08 }, desc: 'Conjura 8% mais rápido por ponto.' },
+      { id: 'firewall', name: 'Muralha de Chamas', skill: true, max: 1, mp: 25, cd: 16000, desc: 'Ergue uma muralha de fogo à sua frente por 5s: queima os inimigos que estiverem nela.' }] },
+    { name: 'Gelo', icon: '❄', nodes: [
+      { id: 'm_ice', name: 'Frio Cortante', max: 3, eff: { ice: 0.08 }, desc: '+8% de dano das magias de gelo por ponto.' },
+      { id: 'm_slow', name: 'Inverno Longo', max: 3, eff: { slowDur: 0.15 }, desc: 'A lentidão dura 15% mais por ponto.' },
+      { id: 'm_ward', name: 'Pele de Geada', max: 3, eff: { armor: 0.03 }, desc: '-3% de dano recebido por ponto.' },
+      { id: 'm_mp', name: 'Poço de Mana', max: 3, eff: { mp: 0.06 }, desc: '+6% de mana máxima por ponto.' },
+      { id: 'icejail', name: 'Prisão de Gelo', skill: true, max: 1, mp: 18, cd: 12000, desc: 'Congela o alvo por 3s e causa 150% de dano de gelo.' }] },
+    { name: 'Luz', icon: '✚', nodes: [
+      { id: 'm_holy', name: 'Graça', max: 3, eff: { holy: 0.1 }, desc: '+10% de cura por ponto.' },
+      { id: 'm_mreg', name: 'Meditação', max: 3, eff: { mregen: 0.15 }, desc: '+15% de recuperação de mana por ponto.' },
+      { id: 'm_hp', name: 'Fé Inabalável', max: 3, eff: { hp: 0.05 }, desc: '+5% de vida máxima por ponto.' },
+      { id: 'm_regen', name: 'Bênção Serena', max: 3, eff: { regen: 0.12 }, desc: '+12% de recuperação de vida por ponto.' },
+      { id: 'sanct', name: 'Santuário', skill: true, max: 1, mp: 30, cd: 30000, desc: 'Círculo sagrado por 8s: aliados dentro recuperam vida e recebem 25% menos dano.' }] },
+  ],
+};
+const treePts = p => { let n = 0; for (const k in p.tree || {}) n += p.tree[k] | 0; return n; };
+const branchPts = (p, b) => b.nodes.reduce((s, nd) => s + ((p.tree && p.tree[nd.id]) | 0), 0);
+const treeHas = (p, id) => !!(p.tree && p.tree[id]);
+function treeEff(p, key) { const T = TREE[p.cls]; if (!T || !p.tree) return 0; let v = 0; for (const b of T) for (const nd of b.nodes) if (nd.eff && nd.eff[key] && p.tree[nd.id]) v += nd.eff[key] * p.tree[nd.id]; return v; }
+// valida uma árvore vinda de fora (save): nós da vocação, limite por nó, requisito do ramo e total de pontos
+function cleanTree(cls, lvl, t) {
+  const out = {}, T = TREE[cls]; if (!T || !t || typeof t !== 'object') return out;
+  for (const b of T) b.nodes.forEach((nd, i) => { const r = clamp(t[nd.id] | 0, 0, nd.max); if (!r) return; if (branchPts({ tree: out }, b) < TREE_REQ[i]) return; out[nd.id] = r; });
+  return treePts({ tree: out }) <= Math.max(0, lvl - 1) ? out : {};
+}
+
+// ============================================================
+//  PROGRESSÃO POR USO — cada habilidade vai de 0 a 100 conforme é usada
+//  (sobe rápido no começo e devagar no fim). No 100: +15% no que ela melhora.
+// ============================================================
+const USE = {
+  sword:  { name: 'Espada', cat: 'Armas', K: 450, desc: 'Golpes de espada: mais dano corpo a corpo.' },
+  dagger: { name: 'Adaga', cat: 'Armas', K: 450, desc: 'Golpes de adaga: mais dano corpo a corpo.' },
+  staff:  { name: 'Cajado', cat: 'Armas', K: 450, desc: 'Golpes de cajado: mais dano corpo a corpo.' },
+  bow:    { name: 'Arco', cat: 'Armas', K: 500, desc: 'Flechas disparadas: mais dano à distância.' },
+  magic:  { name: 'Magia', cat: 'Armas', K: 500, desc: 'Feitiços lançados: mais dano das magias.' },
+  parry:  { name: 'Aparar', cat: 'Defesa', K: 160, desc: 'Defesas bem-sucedidas: janela perfeita maior e menos fôlego gasto ao bloquear.' },
+  dodge:  { name: 'Esquiva', cat: 'Defesa', K: 160, desc: 'Esquivas: gastam menos fôlego.' },
+  vigor:  { name: 'Vigor', cat: 'Defesa', K: 700, desc: 'Apanhar endurece: mais vida máxima.' },
+  run:    { name: 'Corrida', cat: 'Atletismo', K: 2500, desc: 'Distância corrida: mais estamina e um pouco mais de velocidade.' },
+  breath: { name: 'Fôlego', cat: 'Atletismo', K: 900, desc: 'Fôlego gasto em combate: ele volta mais rápido.' },
+  skin:   { name: 'Coleta', cat: 'Sobrevivência', K: 120, desc: 'Esfolar, revistar e colher: chance de achar mais e mais ouro.' },
+  cook:   { name: 'Cozinha', cat: 'Sobrevivência', K: 60, desc: 'Cozinhar: a comida sacia mais.' },
+  aid:    { name: 'Socorro', cat: 'Sobrevivência', K: 60, desc: 'Poções, bandagens e ervas: curam mais.' },
+};
+const USE_MAX_BONUS = 0.15;
+const useLvl = (p, k) => Math.floor(100 * (1 - Math.exp(-((p.use && p.use[k]) || 0) / USE[k].K)));
+const useBonus = (p, k) => useLvl(p, k) / 100 * USE_MAX_BONUS;
+const MELEE_USE = { knight: 'sword', archer: 'dagger', mage: 'staff' }, RANGED_USE = { knight: 'sword', archer: 'bow', mage: 'magic' };
+const maxHpOf = p => Math.floor(maxHpFor(p.cls, p.lvl) * (1 + treeEff(p, 'hp') + useBonus(p, 'vigor')));
+const maxMpOf = p => Math.floor(maxMpFor(p.cls, p.lvl) * (1 + treeEff(p, 'mp')));
+const cstMaxOf = p => Math.round(CST_MAX * (1 + treeEff(p, 'cst')));

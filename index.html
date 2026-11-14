@@ -72,6 +72,12 @@
     <div id="inv-info">Passe o mouse sobre um item. O saque pode ser vendido ao Borin, no Empório.</div>
   </div>
   <!-- jornada (J): contratos -->
+  <div id="tree" class="gpanel hidden">
+    <div class="gp-head"><span>Árvore de Talentos</span><span id="tree-pts" class="gp-gold"></span><button class="gp-x" data-close="tree">✕</button></div>
+    <div id="tree-body"></div>
+    <div id="tree-info">1 ponto por nível. Cada ramo libera o próximo talento conforme você investe nele; o último é uma habilidade (teclas 5, 6 e 7). A Irmã Lúmina reinicia a árvore por ouro.</div>
+  </div>
+  <style>#tree{width:min(760px,94vw)}#tree-body{display:flex;gap:10px;margin:8px 0}.tr-col{flex:1;display:flex;flex-direction:column;gap:6px}.tr-head{font-weight:700;text-align:center;padding:4px;border-bottom:1px solid rgba(201,162,74,.4)}.tr-head small{display:block;font-weight:400;opacity:.7}.tr-ic{margin-right:6px}.tr-node{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:7px 9px;border-radius:6px;border:1px solid rgba(201,162,74,.35);background:rgba(0,0,0,.2);color:inherit;font:inherit;font-size:13px;cursor:pointer;text-align:left}.tr-node span{font-size:11px;opacity:.8}.tr-node.locked{opacity:.4;cursor:default}.tr-node.can{border-color:#e8c45a;box-shadow:0 0 6px rgba(232,196,90,.4)}.tr-node.got{background:rgba(201,162,74,.22)}.tr-node.skill{border-style:double;border-width:3px}#tree-info{font-size:12px;opacity:.85;min-height:32px}.us-cat{margin-top:6px;font-weight:700;opacity:.8}.us-row{display:flex;align-items:center;gap:8px;font-size:12px;margin:2px 0}.us-row span{width:72px}.us-bar{flex:1;height:6px;background:rgba(0,0,0,.3);border-radius:3px;overflow:hidden}.us-bar i{display:block;height:100%;background:linear-gradient(90deg,#8a6a2a,#e8c45a)}.us-row b{width:26px;text-align:right}.us-row small{width:44px;opacity:.75}</style>
   <div id="journal" class="gpanel hidden">
     <div class="gp-head"><span>Jornada</span><button class="gp-x" data-close="journal">✕</button></div>
     <div class="gp-sub">Contratos ativos</div>
@@ -134,6 +140,8 @@
       <div id="pz-body" class="pz-body"></div>
       <div class="pz-sec">Sobrevivência</div>
       <div id="pz-surv" class="pz-body"></div>
+      <div class="pz-sec">Habilidades por uso</div>
+      <div id="pz-use" class="pz-body"></div>
       <div class="pz-sec">Sala</div>
       <div class="pz-room">Código <b id="room-code"></b></div>
       <button class="pz-btn" id="btn-copy">Copiar convite</button>
@@ -226,5 +234,6 @@
 <script src="js/server.js"></script>
 <script src="js/game.js"></script>
 <script src="js/life.js"></script>
+<script src="js/progress.js"></script>
 </body>
 </html>
