@@ -526,7 +526,7 @@ function updateInv() {
   $('inv-gold').textContent = me.gold;
   const list = [];
   if (me.pots && me.pots.hp) list.push({ k: 'hp', n: me.pots.hp, name: ITEMS.hp.name, icon: '🧪', color: '#e85a5a', desc: ITEMS.hp.desc + ' Clique para beber (Q).', use: () => drinkPot('hp') });
-  if (me.pots && me.pots.water) list.push({ k: 'water', n: me.pots.water, name: 'Odre', icon: '💧', color: '#6ab8ff', desc: 'Goles de água. Clique para beber; encha em rios, poços e fontes (F).', use: () => Net.send({ t: 'use', k: 'water' }) });
+  list.push({ k: 'water', n: '∞', name: 'Cantil', icon: '💧', color: '#6ab8ff', desc: 'Um cantil que nunca seca. Você bebe sozinho quando a sede aperta; ou aperte 0 (ou clique) para beber.', use: () => Net.send({ t: 'use', k: 'water' }) });
   if (me.pots && me.pots.mp) list.push({ k: 'mp', n: me.pots.mp, name: ITEMS.mp.name, icon: '🧪', color: '#5a8ae8', desc: ITEMS.mp.desc + ' Clique para beber (E).', use: () => drinkPot('mp') });
   for (const k in (me.inv || {})) { const it = LOOT[k]; if (it && me.inv[k] > 0) list.push({ k, n: me.inv[k], name: it.name, icon: it.icon, color: it.color, desc: it.desc + ' Vale ' + it.price + ' de ouro cada no Empório.', use: FOOD[k] || k === 'ointment' || k === 'firewood' || k === 'herb' ? () => Net.send({ t: 'use', k }) : null }); }
   grid.innerHTML = '';
@@ -754,6 +754,10 @@ canvas.addEventListener('mousedown', e => {
     const me = G.me; $('chat-input').blur();
     if (e.button === 3 || e.button === 4) { e.preventDefault(); strike('under'); return; }
     if (e.button === 2) { G.parrying = true; Net.send({ t: 'parry', on: 1, a: me.fa ?? 0 }); return; }
+    if (e.button === 0 && me.cls !== 'knight') {   // arqueiro e mago: clique esquerdo dispara (segure para continuar)
+      const mon = monsterUnderMouse(e.clientX, e.clientY); if (mon) setTarget(mon.id);
+      G.shootHeld = true; G.shootT = performance.now(); Net.send({ t: 'shoot', a: me.fa ?? 0, id: mon ? mon.id : (G.target || 0) }); return;
+    }
     if (e.button === 0) {
       const mon = monsterUnderMouse(e.clientX, e.clientY); if (mon) setTarget(mon.id);
       const h = G.mouseHist || [], dx = h.length > 1 ? h[h.length - 1].x - h[0].x : 0, p = iso(me.rx, me.ry), mx = (p.sx + G.view.ox) * SCALE;
@@ -807,7 +811,7 @@ function strike(k) {
   const a = me.fa ?? 0; Net.send({ t: 'atk', k, a });
 }
 canvas.addEventListener('mousemove', e => { if (G.started) { G.mouseW = screenToWorld(e.clientX, e.clientY); G.mouseHist = (G.mouseHist || []).filter(q => performance.now() - q.t < 180).concat([{ t: performance.now(), x: e.clientX }]); } });
-canvas.addEventListener('mouseup', e => { if (e.button === 3 || e.button === 4) e.preventDefault(); if (e.button === 2 && G.parrying) { G.parrying = false; Net.send({ t: 'parry', on: 0 }); } });
+canvas.addEventListener('mouseup', e => { if (e.button === 0) G.shootHeld = false; if (e.button === 3 || e.button === 4) e.preventDefault(); if (e.button === 2 && G.parrying) { G.parrying = false; Net.send({ t: 'parry', on: 0 }); } });
 window.addEventListener('auxclick', e => { if (e.button === 3 || e.button === 4) e.preventDefault(); });
 window.addEventListener('mouseup', e => { if (e.button === 2 && G.parrying) { G.parrying = false; Net.send({ t: 'parry', on: 0 }); } });
 
@@ -834,6 +838,7 @@ window.addEventListener('keydown', e => {
   if (k === 'f' && !e.repeat) { const d = nearestDowned(); if (d) { G.reviving = d.id; Net.send({ t: 'revive', id: d.id, on: true }); } return; }
   if (k === 'g' && !e.repeat) { liftOrThrow(); return; }
   if (k === 'x') { attackNearest(); return; }
+  if (k === '0' && !e.repeat) { Net.send({ t: 'use', k: 'water' }); return; }
   if (k === 'v' && !e.repeat) { if (G.me.sit) standUp(); else if (!G.me.walking) sitDown(null); return; }
   if (k === 'i' && !e.repeat) { togglePanel('inv'); return; }
   if (k === 'b' && !e.repeat) { Net.send({ t: 'band' }); return; }
@@ -876,6 +881,7 @@ function frame() {
   let cam = lobbyCam;
   if (G.started) {
     updateLocal(now, dt); updateFalls(now); updateLooting(now);
+    if (G.shootHeld && inCombatZone() && now - (G.shootT || 0) > 220) { G.shootT = now; Net.send({ t: 'shoot', a: G.me.fa ?? 0, id: G.target || 0 }); }
     { // luta com o dragão: a câmera se afasta devagar para caber tudo na tela (só se o zoom não foi mudado à mão)
       let near = false; for (const id in G.monsters) { const q = G.monsters[id]; if (MON[q.type].dragon && !q.dieAt && !(q.flags & 4) && dist(q.rx, q.ry, G.me.rx, G.me.ry) < 22) near = true; }
       G.dragonZoom = (G.dragonZoom || 1) + ((near ? 0.6 : 1) - (G.dragonZoom || 1)) * Math.min(1, dt * 1.2);

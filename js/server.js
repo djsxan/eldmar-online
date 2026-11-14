@@ -170,6 +170,14 @@ function hostOnClient(from, m) {
   switch (m.t) {
     case 'mv': handleMove(p, m); break;
     case 'target': p.target = m.id && S.monsters[m.id] ? m.id : null; break;
+    case 'shoot': {
+      const now = now_(); if (p.cls === 'knight' || p.downed || p.carrying || p.lifted || p.atk || p.casting || p.grabbed || inSafe(p.x, p.y) || now < p.nextAtk) break;
+      const rng = CLASSES[p.cls].range, a = +m.a || 0, ok = q => q && Math.abs((q.z || 0) - (p.z || 0)) < 0.5 && (q.alt || 0) < 1.2 && dist(p.x, p.y, q.x, q.y) <= rng + (MON[q.type].rad || 0);
+      let q = S.monsters[m.id]; if (!ok(q)) q = null;
+      if (!q) { let best = 1e9; for (const o of Object.values(S.monsters)) { if (!ok(o)) continue; const da = Math.abs(angDiff(Math.atan2(o.y - p.y, o.x - p.x), a)); if (da > 0.5) continue; const sc = da * 4 + dist(p.x, p.y, o.x, o.y); if (sc < best) { best = sc; q = o; } } }
+      if (!q) break;
+      p.target = q.id; basicAttack(p, q, now); break;
+    }
     case 'chat': { const text = String(m.text || '').slice(0, 140).trim(); if (text) Net.toAll({ t: 'chat', id: from, name: p.name, text }); break; }
     case 'skill': if (!p.downed) useSkill(p, m.i | 0); break;
     case 'pot': if (!p.downed) usePot(p, m.k); break;
@@ -268,11 +276,7 @@ function hostOnClient(from, m) {
     case 'drinkw': cookOrDrink(p, 'drink'); break;
     case 'skin': {
       const c = S.corpses && S.corpses[m.id]; if (!c || c.looted || p.downed || dist(p.x, p.y, c.x, c.y) > 1.9) break;
-      c.looted = true;
-      if (c.gold) { p.gold += c.gold; Net.toOne(p.id, { t: 'lootgold', g: c.gold }); }
-      for (const k of c.items) { if (!p.inv[k] && Object.keys(p.inv).length >= INV_SLOTS) { tell(p, 'Inventário cheio.'); break; } p.inv[k] = Math.min(999, (p.inv[k] || 0) + 1); Net.toOne(p.id, { t: 'loot', k }); }
-      if (!c.gold && !c.items.length) tell(p, 'Nada de útil aqui.');
-      sendStat(p); break;
+      lootCorpse(p, c); break;
     }
     case 'open': {
       const c = S.chests && S.chests[m.id]; if (!c || p.downed || dist(p.x, p.y, c.x, c.y) > 2) break;
@@ -367,6 +371,14 @@ function hitMonster(p, m, mult, delay = 0) {
   if (m.hp <= 0) killMonster(m, p, delay);
 }
 
+function lootCorpse(p, c, auto) {
+  c.looted = true;
+  if (c.gold) { p.gold += c.gold; Net.toOne(p.id, { t: 'lootgold', g: c.gold }); }
+  for (const k of c.items) { if (!p.inv[k] && Object.keys(p.inv).length >= INV_SLOTS) { tell(p, 'Inventário cheio.'); c.looted = false; c.gold = 0; c.items = c.items.slice(c.items.indexOf(k)); break; } p.inv[k] = Math.min(999, (p.inv[k] || 0) + 1); Net.toOne(p.id, { t: 'loot', k }); }
+  if (c.looted) c.items = [];
+  if (!auto && !c.gold && !c.items.length && c.looted) tell(p, 'Nada de útil aqui.');
+  sendStat(p);
+}
 function killMonster(m, p, delay) {
   delete S.monsters[m.id];
   near(m.x, m.y, { t: 'mdie', id: m.id, d: delay });
@@ -377,6 +389,7 @@ function killMonster(m, p, delay) {
   for (const [k, ch] of MON_LOOT[m.type] || []) if (Math.random() < ch) drops.push(k);
   if (Math.random() < 0.03) drops.push('gem');
   if (m.type !== 'wisp') (S.corpses = S.corpses || {})[m.id] = { lost: m.lost || 0, id: m.id, type: m.type, x: m.x, y: m.y, z: m.z || 0, gold, items: drops, looted: !gold && !drops.length, until: now_() + (m.bs && (BASTIONS.find(b => b.id === m.bs) || {}).fast ? 20000 : def.dragon ? (BASTIONS.find(b => b.id === 'dragon') || {}).respawn || BOSS_RESPAWN : def.boss ? BOSS_RESPAWN : BASTION_RESPAWN), ix: m.x - p.x, iy: m.y - p.y };
+  { const c = S.corpses && S.corpses[m.id]; if (c && !c.looted && p && S.players[p.id] && !p.downed && dist(p.x, p.y, c.x, c.y) < 16) setTimeout(() => { if (!c.looted && S.players[p.id]) lootCorpse(p, c, true); }, (delay || 0) + 250); }
   if (def.boss) spawnChest(m);
   const group = Object.values(S.players).filter(q => !q.downed && dist(q.x, q.y, m.x, m.y) <= 10);
   if (!group.includes(p)) group.push(p);
@@ -441,6 +454,7 @@ function survivalTick(p, now, dt) {
   const busy = (p.running && p.walking) || now - p.lastCombat < 4000 ? 1.5 : 1, sick = now < (p.sickUntil || 0);
   p.food = Math.max(0, (p.food ?? 100) - dt * 100 / (SURV.foodMin * 60) * busy);
   p.water = Math.max(0, (p.water ?? 100) - dt * 100 / (SURV.waterMin * 60) * busy * (sick ? 2.5 : 1));
+  if (p.water < 25 && !p.atk && !p.parry) drinkCanteen(p, now);   // bebe sozinho do cantil quando a sede aperta
   // frio: à noite, fora da cidade, longe do fogo e fora de casa
   const night = dayInfo().night, indoor = p.fl > 0 || bldAt(p.x, p.y) >= 0, warm = !night || indoor || nearFire(p);
   p.cold = clamp((p.cold || 0) + dt * (warm ? -2.5 : inSafe(p.x, p.y) ? 0.2 : 100 / (SURV.coldMin * 60)), 0, 100);
@@ -453,9 +467,15 @@ function survivalTick(p, now, dt) {
   const drain = ((p.food <= 0 ? 0.1 : 0) + (p.water <= 0 ? 0.17 : 0) + (p.cold >= 100 ? 0.125 : 0) + (p.infect === 1 ? 0.05 : p.infect === 2 ? 0.2 : 0)) / 100 * p.maxHp * dt;
   if (drain > 0) { p.survAcc = (p.survAcc || 0) + drain; if (p.survAcc >= 1) { const h = Math.floor(p.survAcc); p.survAcc -= h; p.hp -= h; if (p.hp <= 0) { p.hp = 0; goDown(p, null); } } }
 }
+function drinkCanteen(p, now, manual) {
+  if (p.downed || p.grabbed || now < (p.drinkT || 0)) return;
+  if ((p.water ?? 100) >= 99) { if (manual) tell(p, 'Você não está com sede.'); return; }
+  p.drinkT = now + 2600; p.water = Math.min(100, (p.water ?? 100) + 45);
+  near(p.x, p.y, { t: 'anim', w: 'p', id: p.id, a: 'drinkb', ms: 1600 }); sendStat(p);
+}
 function useItem(p, k) {
   const now = now_(); if (p.downed || now < (p.useT || 0)) return; p.useT = now + 600;
-  if (k === 'water') { if (!(p.pots.water > 0)) return; p.pots.water--; p.water = Math.min(100, p.water + 35); tell(p, 'Você bebeu do odre.'); sendStat(p); return; }
+  if (k === 'water') { drinkCanteen(p, now, true); return; }
   if (!p.inv[k]) return;
   const take = () => { if (--p.inv[k] <= 0) delete p.inv[k]; };
   if (FOOD[k]) { take(); p.food = Math.min(100, p.food + FOOD[k]); if (k === 'cookedmeat') p.water = Math.max(0, p.water - 5); if ((k === 'venison' || k === 'pork') && Math.random() < 0.3) { p.sickUntil = now + 120000; tell(p, 'A carne crua caiu mal. Você está enjoado (sede dobrada por 2 min).'); } else tell(p, 'Você comeu ' + LOOT[k].name.toLowerCase() + '.'); }
@@ -478,7 +498,7 @@ function cookOrDrink(p, what) {
     p.inv.cookedmeat = (p.inv.cookedmeat || 0) + n; tell(p, n + ' carne' + (n > 1 ? 's assadas' : ' assada') + '.'); sendStat(p);
   } else if (what === 'drink') {
     let ok = false; for (let y = Math.round(p.y) - 2; y <= Math.round(p.y) + 2 && !ok; y++) for (let x = Math.round(p.x) - 2; x <= Math.round(p.x) + 2; x++) { if (!inBounds(x, y)) continue; const i = y * MAP_W + x, g = WORLD.ground[i], o = WORLD.obj[i]; if ((g === T.WATER || g === T.SHALLOW || o === O.WELL || o === O.FOUNTAIN) && dist(x, y, p.x, p.y) < 1.9) { ok = true; break; } }
-    if (!ok) return; p.water = 100; if (p.hasSkin) p.pots.water = 5; tell(p, p.hasSkin ? 'Você bebeu e encheu o odre.' : 'Você bebeu até matar a sede.'); sendStat(p);
+    if (!ok) return; near(p.x, p.y, { t: 'anim', w: 'p', id: p.id, a: 'scoop', ms: 1500 }); p.water = 100; if (p.hasSkin) p.pots.water = 5; tell(p, p.hasSkin ? 'Você bebeu e encheu o odre.' : 'Você bebeu até matar a sede.'); sendStat(p);
   }
 }
 // morte permanente: o personagem acaba
@@ -932,7 +952,8 @@ function resolveMonStrike(m, A, now) {
     }
     const crit = MON_MELEE[m.type] && A.k !== 'stab' && A.k !== 'bite' && Math.random() < (d.big ? 0.12 : 0.07);
     damagePlayer(p, Math.round(rint(d.dmg[0], d.dmg[1]) * STRIKES[A.k].mult * ((m.lost || 0) & 6 ? 0.4 : 1) * (crit ? 1.6 : 1)), m, 0, STRIKES[A.k].zone);
-    if (crit && !p.downed) severPlayer(p, severPart(A.k, p.lost || 0), m);
+    const svp = crit && !p.downed ? severPart(A.k, p.lost || 0) : null;
+    if (svp && (p.body[svp] ?? 100) <= 30 && Math.random() < 0.5) severPlayer(p, svp, m);
     else if (d.big && !p.downed && Math.random() < 0.35) knockPlayer(p, m, now);
     if (d.drain && !p.downed) { p.mp = Math.max(0, p.mp - d.drain); sendStat(p); }
     if (p.atk && !p.atk.done) { p.atk = null; near(p.x, p.y, { t: 'anim', w: 'p', id: p.id, a: 'hurt' }); }   // levar golpe interrompe a preparação
@@ -1322,7 +1343,7 @@ function hostTick() {
     if (!p.target) continue;
     const m = S.monsters[p.target];
     if (!m) { p.target = null; continue; }
-    if (p.cls !== 'knight' && dist(p.x, p.y, m.x, m.y) > 2.2 && !p.atk && !p.parry && !p.casting && !p.carrying && !p.lifted && now >= p.nextAtk && !inSafe(p.x, p.y) && Math.abs(p.z - (m.z || 0)) < 0.5 && dist(p.x, p.y, m.x, m.y) <= CLASSES[p.cls].range + (MON[m.type].rad || 0)) basicAttack(p, m, now);
+    if (false && p.cls !== 'knight' && dist(p.x, p.y, m.x, m.y) > 2.2 && !p.atk && !p.parry && !p.casting && !p.carrying && !p.lifted && now >= p.nextAtk && !inSafe(p.x, p.y) && Math.abs(p.z - (m.z || 0)) < 0.5 && dist(p.x, p.y, m.x, m.y) <= CLASSES[p.cls].range + (MON[m.type].rad || 0)) basicAttack(p, m, now);
   }
 
   for (const m of Object.values(S.monsters)) monsterThink(m, players, now, dt);

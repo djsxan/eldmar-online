@@ -286,7 +286,7 @@ function heroPoseFor(e, now) {
   if (e.cast && e.cast.end > now) P.act = { k: 'cast', f: Math.floor(now / 70) % 12 };
   if (!P.act && e.emote && !e.walking) { const ms = ACT_MS[e.emote.k], t = (now - e.emote.t0) / ms; if (e.emote.k === 'dance') P.act = { k: 'dance', f: Math.floor(t * 12) % 12 }; else if (t < 1) P.act = { k: e.emote.k + (e.cls === 'knight' && ACTS[e.emote.k + '_k'] ? '_k' : ''), f: Math.min(11, Math.floor(t * 12)) }; else e.emote = null; }
   else if (e.walking && e.emote) e.emote = null;
-  if (e.sit && !P.act) { P.sit = e.sit.chair ? 'c' : 'g'; P.walk = -1; return P; }
+  if (e.sit && !P.act) { P.sit = e.sit.chair ? 'c' : 'g'; P.walk = -1; e._sseed = e._sseed ?? Math.random() * 20000; const sv = Math.floor((now + e._sseed) / 6500) % 3; if (sv) P.sv = sv; return P; }
   if (!e.isNpc) {
     if (e.slide) { P.sl = 1; P.walk = -1; P.run = 0; P.act = null; return P; }
     if (e.crouch || (e === G.me && performance.now() < (G.banding || 0))) { P.cr = 1; P.run = 0; }
@@ -305,6 +305,26 @@ function heroPoseFor(e, now) {
   return P;
 }
 
+// aura do Tecelão: flutua sobre um anel de luz, fios brancos orbitando, partículas subindo e halo pulsando
+function drawWeaverAura(ctx, sx, sy, now) {
+  const fy = 14 + Math.sin(now / 600) * 3, pulse = 0.5 + Math.sin(now / 420) * 0.5;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  softDab(ctx, sx, sy - fy - 28, 40 + pulse * 8, '#f4f8ff', 0.16 + pulse * 0.06);
+  softDab(ctx, sx, sy + 1, 26, '#ffffff', 0.12);
+  ctx.lineWidth = 1;
+  for (let r = 0; r < 2; r++) { const rr = 15 + r * 6 + ((now / 900 + r * 0.5) % 1) * 6, al = 0.5 * (1 - ((now / 900 + r * 0.5) % 1)); ctx.strokeStyle = 'rgba(255,255,255,' + al.toFixed(2) + ')'; ctx.beginPath(); ctx.ellipse(sx, sy + 1, rr, rr * 0.42, 0, 0, 7); ctx.stroke(); }
+  for (let k = 0; k < 3; k++) {   // fios de luz girando em elipses inclinadas
+    ctx.strokeStyle = 'rgba(235,242,255,0.35)'; ctx.beginPath();
+    for (let q = 0; q <= 1.0001; q += 0.08) { const a = now / (700 + k * 260) * (k % 2 ? -1 : 1) + q * 2.2 + k * 2.1, x = sx + Math.cos(a) * (13 + k * 3), y = sy - fy - 12 - k * 11 + Math.sin(a) * 4 + Math.sin(a + k) * 3; q ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+    ctx.stroke();
+  }
+  for (let k = 0; k < 10; k++) {   // partículas de luz subindo
+    const ph = (now / 1700 + k * 0.137) % 1, x = sx + Math.sin(k * 7.3 + now / 650) * (8 + (k % 4) * 3), y = sy - ph * 72 - 4, al = Math.sin(ph * Math.PI) * 0.85;
+    ctx.fillStyle = 'rgba(255,255,255,' + al.toFixed(2) + ')'; ctx.fillRect(x - 0.7, y - 0.7, 1.4, 1.4);
+  }
+  ctx.restore();
+  G.lights.push({ x: sx, y: sy - 30, r: 80, c: '235,245,255', a: 0.85 });
+}
 function drawHeroEntity(ctx, e, sx, sy, now) {
   if (R3.ok && e.knockUntil && now < e.knockUntil && !e.downed) { const kf = FALLS['kp' + e.id]; if (now < e.knockUntil - 650 && kf) { drawFall(ctx, kf, sx, sy, now, 1, woundLevel(e)); e._spr = null; return; } }
   if (R3.ok && e.fling) {
@@ -325,11 +345,8 @@ function drawHeroEntity(ctx, e, sx, sy, now) {
     softDab(ctx, sx, sy, 10, '#000000', 0.35);
     const kb = knockOf(e, now); sx += kb.x * 0.6; sy += kb.y * 0.6;
     if (e !== G.me && e.anim && e.anim.W && e.anim.reach && now - e.anim.t0 < e.anim.W + 120) drawTelegraph(ctx, e, sx, sy, now);
-    if (e.skin === 'weaver') {   // o Tecelão flutua, com runas girando aos pés
-      const fy = 12 + Math.sin(now / 600) * 3; ctx.save(); ctx.strokeStyle = 'rgba(232,200,96,0.45)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(sx, sy + 2, 18, 8, 0, 0, 7); ctx.stroke();
-      ctx.fillStyle = 'rgba(255,230,150,0.85)'; ctx.font = '8px serif'; ctx.textAlign = 'center'; for (let k = 0; k < 8; k++) { const a = now / 1500 + k * Math.PI / 4; ctx.fillText('✦◇✧◆✦◇✧◆'[k], sx + Math.cos(a) * 18, sy + 5 + Math.sin(a) * 8); } ctx.restore();
-      G.lights.push({ x: sx, y: sy - 30, r: 60, c: '255,220,140', a: 0.8 }); sy -= fy;
-    }
+    if (e.skin === 'weaver') drawWeaverAura(ctx, sx, sy, now);
+    if (e.skin === 'weaver') sy -= 14 + Math.sin(now / 600) * 3;
     pblit(ctx, s, sx, sy); e._spr = s; e._sx = sx; e._sy = sy;
     if (e.hitAt && now - e.hitAt < 110) pblit(ctx, whiteOf(s, 'w3|' + e.id + (e.cls || e.kind)), sx, sy, 0.65);
     return;

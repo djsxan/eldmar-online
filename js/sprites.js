@@ -125,10 +125,13 @@ const ACTS = {
   salute_k: [[0, {}], [0.25, { aA: [1.35, 0.12, 1.25], wp: 3.05, ht: -0.08 }], [0.75, { aA: [1.35, 0.12, 1.25], wp: 3.05, ht: -0.08 }], [1, {}]],
   point_k: [[0, {}], [0.2, { aA: [1.55, 0.05, 0.05], wp: 1.6, tw: -0.25, ht: 0.05 }], [0.8, { aA: [1.55, 0.05, 0.05], wp: 1.6, tw: -0.25, ht: 0.05 }], [1, {}]],
   dance: [[0, { aA: [2.6, 0.7, 0.4], aB: [0.5, 0.6, 1.2], tw: 0.35, lA: [0.4, -0.6], kn: -0.2, ht: 0.1 }], [0.25, { aA: [1.4, 0.9, 0.9], aB: [1.4, 0.9, 0.9], tw: 0, kn: -0.45 }], [0.5, { aA: [0.5, 0.6, 1.2], aB: [2.6, 0.7, 0.4], tw: -0.35, lB: [0.4, -0.6], kn: -0.2, ht: -0.1 }], [0.75, { aA: [1.4, 0.9, 0.9], aB: [1.4, 0.9, 0.9], tw: 0, kn: -0.45 }], [1, { aA: [2.6, 0.7, 0.4], aB: [0.5, 0.6, 1.2], tw: 0.35, lA: [0.4, -0.6], kn: -0.2, ht: 0.1 }]],
+  // ---- beber: do cantil (gole com a cabeça para trás) e com as mãos num riacho/poça (ajoelhado) ----
+  drinkb: [[0, {}], [0.18, { aA: [1.7, 0.15, 2.2], bot: 1, ht: -0.05 }], [0.32, { aA: [2.45, 0.1, 2.55], bot: 1, ht: -0.5, tl: -0.08 }], [0.78, { aA: [2.5, 0.1, 2.55], bot: 1, ht: -0.55, tl: -0.1 }], [0.9, { aA: [1.6, 0.15, 2.1], bot: 1 }], [1, { bot: 0 }]],
+  scoop: [[0, {}], [0.22, { lA: [1.55, -1.6], lB: [-0.15, -1.95], tl: 0.75, ht: 0.45, aA: [0.55, 0.2, 0.35], aB: [0.55, 0.2, 0.35] }], [0.45, { lA: [1.55, -1.6], lB: [-0.15, -1.95], tl: 0.85, ht: 0.5, aA: [0.25, 0.12, 0.25], aB: [0.25, 0.12, 0.25] }], [0.7, { lA: [1.55, -1.6], lB: [-0.15, -1.95], tl: 0.3, ht: -0.15, aA: [1.55, 0.3, 2.35], aB: [1.55, 0.3, 2.35] }], [0.85, { lA: [1.55, -1.6], lB: [-0.15, -1.95], tl: 0.3, ht: -0.15, aA: [1.55, 0.3, 2.35], aB: [1.55, 0.3, 2.35] }], [1, {}]],
   // ---- reação ao golpe ----
   hurt: [[0, {}], [0.25, { tl: -0.38, aA: [0.7, 0.55, 0.6], aB: [0.7, 0.55, 0.6], ht: -0.45, kn: -0.35 }], [1, {}]],
 };
-const ACT_MS = { hurt_head: 420, hurt_leg: 420, getup: 650, kick: 520, execute: 720, quiver: 760, turnshot: 950, dualcast: 560, turncast: 950, salute: 1200, point: 1300, dance: 900, hurt: 300, swing: 440, bash: 560, spin: 560, block: 650, warcry: 700, shoot: 440, double: 620, pierce: 640, rain: 560, dash: 560, bolt: 400, fireball: 520, nova: 620, heal: 680, meteor: 720, cast: 600, bite: 320 };
+const ACT_MS = { drinkb: 1600, scoop: 1500, hurt_head: 420, hurt_leg: 420, getup: 650, kick: 520, execute: 720, quiver: 760, turnshot: 950, dualcast: 560, turncast: 950, salute: 1200, point: 1300, dance: 900, hurt: 300, swing: 440, bash: 560, spin: 560, block: 650, warcry: 700, shoot: 440, double: 620, pierce: 640, rain: 560, dash: 560, bolt: 400, fireball: 520, nova: 620, heal: 680, meteor: 720, cast: 600, bite: 320 };
 const IDLES = {
   look: [[0, {}], [0.25, { hw: 0.6 }], [0.6, { hw: -0.6 }], [1, {}]],
   stretch: [[0, {}], [0.4, { aA: [3.0, 0.3, 0.2], aB: [3.0, 0.3, 0.2], tl: -0.12, mouth: 1, wp: 3.1 }], [0.7, { aA: [3.0, 0.3, 0.2], aB: [3.0, 0.3, 0.2], tl: -0.12, wp: 3.1 }], [1, {}]],
@@ -158,7 +161,7 @@ function mixField(base, a, b, t, key) {
 // calcula a pose final (ângulos) a partir de caminhada + ação + idle
 function buildPose(cls, P) {
   const base = BASE[cls] || BASE.knight;
-  const Q = { aA: base.aA.slice(), aB: base.aB.slice(), wp: base.wp, tl: base.tl, tw: 0, lA: [0.04, -0.06], lB: [-0.04, -0.06], kn: 0, drop: 0, ht: 0, hw: 0, mouth: 0, pull: 0, glow: 0 };
+  const Q = { aA: base.aA.slice(), aB: base.aB.slice(), wp: base.wp, tl: base.tl, tw: 0, lA: [0.04, -0.06], lB: [-0.04, -0.06], kn: 0, drop: 0, ht: 0, hw: 0, mouth: 0, pull: 0, glow: 0, bot: 0 };
   if (P.walk >= 0) {
     // ciclo de passada: a perna de apoio fica quase reta; o joelho dobra quando a perna avança
     const ph = P.walk / 12 * Math.PI * 2;
@@ -182,7 +185,7 @@ function buildPose(cls, P) {
   }
   const apply = (keys, p) => {
     const { a, b, t } = sampleKeys(keys, p);
-    for (const k of ['aA', 'aB', 'wp', 'tl', 'tw', 'lA', 'lB', 'kn', 'drop', 'ht', 'hw', 'mouth', 'pull', 'glow', 'yaw']) {
+    for (const k of ['aA', 'aB', 'wp', 'tl', 'tw', 'lA', 'lB', 'kn', 'drop', 'ht', 'hw', 'mouth', 'pull', 'glow', 'yaw', 'bot']) {
       if (a[k] == null && b[k] == null) continue;
       const v = mixField(Q, a, b, t, k);
       if (v !== undefined) Q[k] = v;
@@ -231,6 +234,15 @@ function buildPose(cls, P) {
   if (P.armw && !P.act) { Q.aA = [Q.tl * -0.5, 0.18, 0.12]; Q.wp = cls === 'knight' ? Q.aA[0] + Q.aA[2] + 0.2 : Q.wp; }
   if (P.sit === 'g') { Q.lA = [2.45, -2.35]; Q.lB = [2.2, -2.0]; Q.drop = 12; Q.aA = [1.15, 0.35, 1.35]; Q.aB = [1.05, 0.4, 1.25]; Q.tl = -0.22; Q.ht = 0.12; }
   else if (P.sit) { Q.lA = [1.5, -1.55]; Q.lB = [1.45, -1.5]; Q.drop = 12; Q.aA = [0.45, 0.25, 0.7]; Q.aB = [0.45, 0.25, 0.7]; Q.tl = -0.02; }
+  if (P.sit && P.sv) {
+    if (P.sit === 'g') {
+      if (P.sv === 1) { Q.lA = [1.45, -0.12]; Q.lB = [1.25, -0.55]; Q.tl = -0.55; Q.aA = [-0.75, 0.32, 0.05]; Q.aB = [-0.75, 0.32, 0.05]; Q.ht = -0.15; }
+      else { Q.lA = [2.75, -2.7]; Q.lB = [2.7, -2.65]; Q.tl = 0.4; Q.aA = [1.0, 0.12, 1.85]; Q.aB = [1.0, 0.12, 1.85]; Q.ht = 0.3; }
+    } else {
+      if (P.sv === 1) { Q.tl = -0.22; Q.aA = [2.75, 0.55, 2.4]; Q.aB = [2.75, 0.55, 2.4]; Q.lB = [1.75, -0.7]; Q.ht = -0.12; }
+      else { Q.tl = 0.48; Q.aA = [0.85, 0.15, 1.55]; Q.aB = [0.85, 0.15, 1.55]; Q.ht = 0.2; }
+    }
+  }
   if (P.carry) { Q.aA = [2.75, 0.25, 0.4]; Q.aB = [2.75, 0.25, 0.4]; Q.wp = 0.4; }
   if (Q.kn) { Q.lA = [Q.lA[0] - Q.kn * 0.5, Q.lA[1] + Q.kn]; Q.lB = [Q.lB[0] - Q.kn * 0.5, Q.lB[1] + Q.kn]; }
   return Q;

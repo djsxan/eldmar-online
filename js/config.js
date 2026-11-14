@@ -3,8 +3,8 @@
 //  Mexa aqui para balancear o jogo.
 // ============================================================
 const GAME_NAME = 'World of Sxan';
-const VERSION = 'v1.13.0';
-const VERSION_NAME = 'O Dragão';
+const VERSION = 'v1.14.0';
+const VERSION_NAME = 'Cantil e Ajustes';
 
 const PLAYER_SPEED = 2.7;          // tiles por segundo (1 tile ≈ 2 m)
 // configurações do jogador (menu de pausa)
@@ -13,7 +13,7 @@ function saveSettings() { try { localStorage.setItem('wos-settings', JSON.string
 const STAIR_N = 5;                 // escadas: 5 tiles de rampa até o alto da muralha
 const SKIN_LVL = [1, 10, 20];      // nível para liberar cada skin (comum, rara, lendária)
 const RUN_MUL = 1.65;              // correr (SHIFT) multiplica a velocidade
-const STAM_MAX = 100, STAM_DRAIN = 22, STAM_REGEN = 17, STAM_DELAY = 900; // estamina: gasta correndo, volta parado/andando
+const STAM_MAX = 200, STAM_DRAIN = 22, STAM_REGEN = 17, STAM_DELAY = 900; // estamina: gasta correndo, volta parado/andando
 const OUT_OF_COMBAT_MS = 5000;     // sem lutar por 5s = fora de combate (regenera)
 const DOWNED_MS = 30000;           // tempo caído antes de renascer no templo
 const REVIVE_MS = 3000;            // segurar F por 3s para reanimar
@@ -191,7 +191,7 @@ const MON_LOOT = {
 };
 const INV_SLOTS = 24;
 // modo criador (O Tecelão): abrir com ?criador e digitar a senha. Aqui fica só o hash SHA-256 da senha.
-const DEV_HASH = '33345481d244e1b08304a2f808f595f84bffc248ffbb9169fd6bb9dd41e0ab68';
+const DEV_HASH = '28d187fa0b8863acc0ac63f8abaa45bd8f2871bf1e5c1f03564a805168fafbbc';
 // bastiões: cada monstro volta ~3 min depois de morrer (sem jogador perto); chefe ~10 min; o baú do chefe dura 2 min
 const BASTION_RESPAWN = 180000, BOSS_RESPAWN = 600000, CHEST_MS = 120000, MAX_WILD = 200;
 // ===== corpo: partes, feridas e sangramento (fase 1) =====
@@ -218,7 +218,7 @@ const STRIKES = {
   stab:   { n: 'estocada',  W: 330, R: 130, C: 360, reach: 1.9,  arc: 0.24, mult: 0.95, zone: 'torso', st: 7 },
   bite:   { n: 'mordida',   W: 340, R: 120, C: 480, reach: 1.25, arc: 0.6,  mult: 1.0,  zone: 'legs',  st: 0 },
 };
-const PARRY_PERFECT = 300, PARRY_ARC = 1.15, RIPOSTE_MS = 1300, FEINT_COST = 10, CST_MAX = 100, CST_REGEN = 24;
+const PARRY_PERFECT = 300, PARRY_ARC = 1.15, RIPOSTE_MS = 1300, FEINT_COST = 10, CST_MAX = 200, CST_REGEN = 24;
 const DODGE = { dist: 1.4, ms: 230, iframe: 280, cost: 18, cd: 650 }, KICK = { reach: 1.35, arc: 0.6, W: 240, stun: 1000, cost: 12, push: 1.8 };
 // monstros com arma: golpes que usam, chance de bloquear e quanto a preparação é mais lenta (dá tempo de reagir)
 const MON_MELEE = {
@@ -235,7 +235,7 @@ const SEVER_FROM = { slashL: [['head', 0.35], ['armA', 0.35], ['armB', 0.3]], sl
 const SURV = { foodMin: 45, waterMin: 30, coldMin: 5, infectChance: 0.12 };   // minutos até esvaziar / esfriar
 const PERMADEATH = true;   // morrer (sangrar até o fim, desistir, decapitação) apaga o personagem; cair da conexão nunca mata
 const FOOD = { bread: 28, cookedmeat: 40, venison: 22, pork: 22, berries: 12 };
-const KNOCK_MS = 1700, PROSTH_PRICE = 150, RITUAL_PRICE = 600;
+const KNOCK_MS = 1700, PROSTH_PRICE = 75, RITUAL_PRICE = 300;
 const STRIKE_PART = { head: ['head', 'head', 'torso', 'armA'], legs: ['legL', 'legR', 'legL', 'torso'], torso: ['torso', 'torso', 'armA', 'armB'] };
 const BUFF_NAMES = { warcry: 'Grito de Guerra', wall: 'Muralha de Ferro', agile: 'Passo Ágil', bless: 'Bênção da Aurora', mead: 'Hidromel', whet: 'Lâmina Afiada' };
 const BUFF_BITS = { wall: 16, agile: 32, bless: 64, warcry: 128 };

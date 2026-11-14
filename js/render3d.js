@@ -325,6 +325,9 @@ function applyPose(R, Q, P, walkPh) {
   }
   // quadril balança
   R.hips.rotation.z = Q.sway || 0; R.hips.rotation.y = Q.yaw || 0;
+  // cantil na mão (e a arma some enquanto bebe)
+  { const b = (Q.bot || 0) > 0.5; if (b && !R.bottle) { const g = new THREE.Group(), lm = mat('#6a4a2a', 'leather'); g.add(mesh(capG(0.035, 0.07), lm, 0, -0.05, 0.02)); g.add(mesh(cylG(0.012, 0.016, 0.04, 8), mat('#3a2a1a', 'wood'), 0, 0.0, 0.02)); R.A.hand.add(g); R.bottle = g; }
+    if (R.bottle) R.bottle.visible = b; if (R.weapon && !R.weapon.bow) R.weapon.obj.visible = !b; }
   // arco e escudo seguem a mão, mas ficam "de pé" (orientados pelo tronco)
   if ((R.weapon && R.weapon.bow) || R.shield) {
     R.root.updateMatrixWorld(true);
@@ -418,7 +421,7 @@ function applyLost(R, mask = 0, pro = 0) {
   if (R.shield) R.shield.visible = !lost('armB');
   for (const k in R.stumps) { R.stumps[k].visible = lost(k) && !pr(k); if (R.pegs[k]) R.pegs[k].visible = lost(k) && pr(k); }
 }
-function pose3Key(P) { return (P.dir | 0) + '|' + (P.walk >= 0 ? (P.run ? 'r' : 'w') + P.walk : '') + (P.act ? P.act.k + P.act.f : '') + (P.idle ? P.idle.k + P.idle.f : '') + (P.sit ? 's' + P.sit : '') + (P.carry ? 'c' : '') + (P.down ? 'd' : '') + (P.cr ? 'K' : '') + (P.sl ? 'L' : '') + (P.hs ? 'h' + P.hs : '') + (P.br != null ? 'b' + P.br : '') + (P.limp ? 'm' + P.limp : '') + (P.armw ? 'W' : '') + (P.lost ? 'X' + P.lost + '_' + (P.pro || 0) : ''); }
+function pose3Key(P) { return (P.dir | 0) + '|' + (P.walk >= 0 ? (P.run ? 'r' : 'w') + P.walk : '') + (P.act ? P.act.k + P.act.f : '') + (P.idle ? P.idle.k + P.idle.f : '') + (P.sit ? 's' + P.sit + (P.sv || '') : '') + (P.carry ? 'c' : '') + (P.down ? 'd' : '') + (P.cr ? 'K' : '') + (P.sl ? 'L' : '') + (P.hs ? 'h' + P.hs : '') + (P.br != null ? 'b' + P.br : '') + (P.limp ? 'm' + P.limp : '') + (P.armw ? 'W' : '') + (P.lost ? 'X' + P.lost + '_' + (P.pro || 0) : ''); }
 function heroSprite3D(cls, skin, color, P) {
   const lk = cls + ':' + skin + ':' + color;
   return cache3('h3|' + lk + '|' + pose3Key(P) , () => {
@@ -453,9 +456,13 @@ MON_LOOK.deserterchief = () => ({ skin: tone('#b89070'), hair: tone('#2a1a10'), 
 MON_LOOK.orcchief = () => ({ ...MON_LOOK.orc(), accent: tone('#9a1a14'), trim: tone('#c8a040'), head: 'horned', weapon: 'axe', capeTone: tone('#5a0e0a') });
 MON_LOOK.cryptlord = () => ({ ...MON_LOOK.skeleton(), head: 'circlet', weapon: 'darkblade', accent: tone('#3a1a4a'), trim: tone('#c8a850'), capeTone: tone('#2a1a3a') });
 // O Tecelão de Sxan: manto cinza esfarrapado com fios de ouro, capuz sem rosto, olhos de luz
-const WEAVER_LOOK = () => ({ skin: tone('#1a1714'), hair: null, armor: 'cloth', body: tone('#55514a'), body2: tone('#34312c'), accent: tone('#c9a24a'), legs: tone('#34312c'), boots: tone('#221f1b'), trim: tone('#e2c46a'), head: 'hood', headTone: tone('#47433d'), weapon: 'starstaff', capeTone: tone('#47433d') });
+// O Tecelão: entidade careca, pele pálida, olhos brancos de luz, todo de branco e descalço
+const WEAVER_LOOK = () => ({ skin: tone('#dcd8d0'), hair: null, armor: 'robe', body: tone('#f6f4ee'), body2: tone('#e6e2d8'), accent: tone('#ffffff'), legs: tone('#f2f0ea'), boots: tone('#dcd8d0'), trim: tone('#ffffff'), head: 'none', weapon: null });
 function weaverExtras(R) {
-  const S = 1.12, h = R.head;
+  const S = 1.12, h = R.head, glow = mat('#ffffff', 'gem', { emissive: '#ffffff', emissiveIntensity: 5 });
+  for (const s of [-1, 1]) h.add(mesh(sphG(0.02 * S), glow, s * 0.036 * S, 0.015 * S, 0.093 * S));
+  const ring = mesh(torG(0.17 * S, 0.004 * S), mat('#ffffff', 'gem', { emissive: '#eef4ff', emissiveIntensity: 3, transparent: true, opacity: 0.75 }), 0, 0.1 * S, -0.05 * S); ring.rotation.x = Math.PI / 2 - 0.35; h.add(ring);
+  return;
   h.add(mesh(sphG(0.095 * S), mat('#050404', 'cloth'), 0, -0.01 * S, 0.035 * S));
   for (const s of [-1, 1]) h.add(mesh(sphG(0.016 * S), mat('#fff0b0', 'gem', { emissive: '#ffd060', emissiveIntensity: 3.5 }), s * 0.036 * S, 0.012 * S, 0.11 * S));
   for (let k = 0; k < 7; k++) { const t = mesh(cylG(0.004 * S, 0.002 * S, (0.25 + (k % 3) * 0.1) * S, 4), mat('#e8c860', 'gold', { emissive: '#8a6a10', emissiveIntensity: 1.2 }), (k - 3) * 0.04 * S, -0.25 * S, -0.06 * S); t.rotation.z = (k - 3) * 0.08; R.chest.add(t); }
