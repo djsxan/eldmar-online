@@ -105,8 +105,16 @@ function sellerState(now) {
 }
 function updateLife(now) {
   if (!lifeInit()) return;
-  const e = G.npcs.fruit; if (!e || e.npDown || e.npDead || e.dragged || e.onBackBy) return;
-  const s = sellerState(now);
+  const e = G.npcs.fruit; if (!e) return;
+  if (e.npDown || e.npDead || e.dragged || e.onBackBy) { e._off = true; e._lt = now; return; }
+  const s = sellerState(now), dt = Math.min(0.1, (now - (e._lt || now)) / 1000); e._lt = now;
+  if (e._off) { e._off = false; let path = null; try { path = findPath(e.rx, e.ry, s.x, s.y, 0, 0); } catch (er) { } e.back = { path: path || [], t: now }; }
+  if (e.back) {
+    const s2 = sellerState(now), tg = e.back.path.length ? e.back.path[0] : [s2.x, s2.y], dx = tg[0] - e.rx, dy = tg[1] - e.ry, d = Math.hypot(dx, dy);
+    if (d < 0.15 && e.back.path.length) e.back.path.shift();
+    else if (d > 0.01) { const st = Math.min(d, 1.5 * dt); e.rx += dx / d * st; e.ry += dy / d * st; e.x = e.rx; e.y = e.ry; e.dir = dirFromVec(dx, dy, e.dir); e.walking = true; e.walkDist = (e.walkDist || 0) + st; e.custP = null; e.sleepB = null; }
+    if ((!e.back.path.length && Math.hypot(s2.x - e.rx, s2.y - e.ry) < 0.3) || now - e.back.t > 40000) e.back = null; else { LIFE.atStall = false; LIFE.busyText = 'Ai, que susto... já volto para o meu lugar.'; return; }
+  }
   e.x = e.rx = s.x; e.y = e.ry = s.y; if (!(e.lookUntil > now)) e.dir = s.dir;
   if (!s.walking && !(s.cust && (s.cust.down || s.cust.act))) { let q = null, bd = 6; for (const id in G.players) { const p = G.players[id]; if (!p.visible) continue; const d = dist(p.rx, p.ry, e.rx, e.ry); if (d < bd) { bd = d; q = p; } } if (q) e.dir = dirFromVec(q.rx - e.rx, q.ry - e.ry, e.dir); }
   e.walking = !!s.walking; if (s.walking) e.walkDist = s.wd || 0;

@@ -277,7 +277,8 @@ function heroPoseFor(e, now) {
   const view0 = DIR_VIEW[e.dir || 0];
   const P = { view: view0 === 'W' ? 'E' : view0, walk: -1, act: null, idle: null, sit: false, carry: !!e.lifted };
   if (e.dragMode) P.drag = e.dragMode; else if (e.carrying && !e.lifted) P.drag = 'back';
-  if (P.drag === 'arms' && e.walking) P.walkRev = 1;
+  if (e.gripped) P.held = e.choked ? 2 : 1;
+  if (e.escorted) { P.tied = 1; P.drag = null; }
   P.dir = e.dir || 0;
   if (e.custP && !e.walking) { Object.assign(P, e.custP); if (P.sit) P.walk = -1; return P; }
   if (e.custP && e.custP.sweep && e.walking) P.act = e.custP.act;
@@ -373,7 +374,8 @@ function drawHeroEntity(ctx, e, sx, sy, now) {
     const P = heroPoseFor(e, now);
     if (!P.act && e.hitAt && now - e.hitAt < 300) P.act = { k: 'hurt', f: Math.min(11, Math.floor((now - e.hitAt) / 300 * 12)) };
     if (e.custP && e.custP.stool && typeof drawStool === 'function') drawStool(ctx, sx, sy);
-    const s = e.isNpc ? npcSprite3D(e.kind, P) : woundOf(heroSprite3D(e.cls, e.skin, e.color, P), woundLevel(e));
+    let s = null; if (typeof TOWS !== 'undefined') for (const k in TOWS) { const f = TOWS[k]; if (f.combined && f.c === e) { s = carrySprite(e, f, P); if (s && !e.isNpc) s = woundOf(s, woundLevel(e)); break; } }
+    if (!s) s = e.isNpc ? npcSprite3D(e.kind, P) : woundOf(heroSprite3D(e.cls, e.skin, e.color, P), woundLevel(e));
     ctx.imageSmoothingEnabled = true;
     softDab(ctx, sx, sy, 10, '#000000', 0.35);
     const kb = knockOf(e, now); sx += kb.x * 0.6; sy += kb.y * 0.6;

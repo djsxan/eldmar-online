@@ -20,7 +20,7 @@ function openCook() {
     const rc = RECIPES[id], ok = haveFor(rc), b = document.createElement('button');
     b.className = 'tr-node' + (ok ? ' can' : ' locked'); b.style.width = '100%'; b.style.margin = '3px 0';
     b.innerHTML = '<b>' + rc.name + '</b><span>' + Object.entries(rc.need).map(([k, n]) => n + 'x ' + (k === 'meat' ? 'carne crua' : LOOT[k].name)).join(' + ') + '</span>';
-    b.title = rc.desc; b.onclick = () => { if (!haveFor(rc)) { showToast('Faltam ingredientes.'); return; } Net.send({ t: 'cookat', r: id }); el.classList.add('hidden'); };
+    b.title = rc.desc; b.onclick = () => { if (!haveFor(rc)) { showToast('Faltam ingredientes.'); return; } const st = nearStove(2.2); Net.send({ t: 'cookat', r: id }); el.classList.add('hidden'); G.busyUntil = performance.now() + 3100; G.busyFace = st ? { x: st.x, y: st.y } : null; G.me.anim = { a: 'cook', t0: performance.now(), ms: 3000 }; };
     box.appendChild(b);
   }
   el.classList.remove('hidden');

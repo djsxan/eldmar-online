@@ -202,13 +202,19 @@ function buildPose(cls, P) {
   }
   if (P.drag === 'arms') {   // de costas, curvado para trás fazendo força, as duas mãos nos pulsos do corpo; tranco a cada passo
     const ph = P.walk >= 0 ? P.walk / 12 * Math.PI * 2 : 0, jerk = P.walk >= 0 ? Math.max(0, Math.sin(ph * 2)) * 0.12 : 0;
-    Q.aA = [0.75 + jerk, 0.12, 0.12]; Q.aB = [0.75 + jerk, 0.12, 0.12]; Q.tl = -0.32 - jerk; Q.kn = -0.38; Q.ht = 0.25; Q.wp = Q.aA[0] + 0.3;
+    Q.aA = [0.42 + jerk, 0.1, 0.06]; Q.aB = [0.42 + jerk, 0.1, 0.06]; Q.tl = -0.22 - jerk; Q.kn = -0.62; Q.ht = 0.3; Q.wp = Q.aA[0] + 0.3;
     if (P.walk >= 0) { Q.lA = [Q.lA[0] * 0.55, Q.lA[1] * 0.7 - 0.25]; Q.lB = [Q.lB[0] * 0.55, Q.lB[1] * 0.7 - 0.25]; }
   } else if (P.drag === 'foot') {   // de frente, inclinado, um braço esticado para trás segurando o tornozelo
     Q.aA = [-0.62, 0.18, 0.05]; Q.tl = 0.32; Q.kn = -0.2; Q.ht = -0.1; Q.wp = -0.4;
   } else if (P.drag === 'back') {   // corpo dobrado sobre o ombro: a mão segura as pernas, o tronco curvado com o peso
     Q.aA = [1.55, 0.3, 2.35]; Q.tl = 0.18; Q.kn = -0.15; Q.ht = 0.08;
-  } else if (P.drag === 'grip') { Q.aA = [1.3, 0.05, 1.25]; Q.aB = [1.3, 0.05, 1.25]; Q.tl += 0.1; }
+  } else if (P.drag === 'grip') {   // mata-leão: um braço em volta do pescoço, a outra mão travando por trás da cabeça
+    Q.aA = [1.35, -0.55, 2.0]; Q.aB = [1.75, 0.35, 2.45]; Q.tl = -0.12; Q.kn = -0.25; Q.ht = 0.15;
+  }
+  if (P.held) {   // preso no mata-leão: mãos puxando o braço do pescoço; sufocando, se debate e as pernas fraquejam
+    const sh = P.held === 2 ? [0, 0.12, -0.08, 0.1][Math.floor(Date.now() / 90) % 4] : 0;
+    Q.aA = [1.85 + sh, 0.2, 2.45]; Q.aB = [1.8 - sh, 0.2, 2.4]; Q.ht = -0.35 - (P.held === 2 ? 0.15 : 0); Q.tl = -0.1; if (P.held === 2) { Q.kn = -0.5; Q.lA = [0.4, -0.7]; Q.lB = [0.1, -0.5 + sh]; }
+  }
   const apply = (keys, p) => {
     const { a, b, t } = sampleKeys(keys, p);
     for (const k of ['aA', 'aB', 'wp', 'tl', 'tw', 'lA', 'lB', 'kn', 'drop', 'ht', 'hw', 'mouth', 'pull', 'glow', 'yaw', 'bot', 'harrow', 'broom']) {

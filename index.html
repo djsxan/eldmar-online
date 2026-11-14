@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Cinzel+Decorative:wght@700;900&family=Alegreya:ital,wght@0,400;0,500;0,700;1,400;1,500&family=Alegreya+Sans+SC:wght@500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=1.24.0">
 </head>
 <body>
 <canvas id="game"></canvas>
@@ -73,11 +73,12 @@
   </div>
   <!-- jornada (J): contratos -->
   <div id="tree" class="gpanel hidden">
-    <div class="gp-head"><span>Árvore de Talentos</span><span id="tree-pts" class="gp-gold"></span><button class="gp-x" data-close="tree">✕</button></div>
+    <div class="gp-head"><span>Constelações</span><span id="tree-pts" class="gp-gold"></span><button class="gp-x" data-close="tree">✕</button></div>
     <div id="tree-body"></div>
     <div id="tree-info">1 ponto por nível. Cada ramo libera o próximo talento conforme você investe nele; o último é uma habilidade (teclas 5, 6 e 7). A Irmã Lúmina reinicia a árvore por ouro.</div>
   </div>
   <style>#tree{width:min(760px,94vw)}#tree-body{display:flex;gap:10px;margin:8px 0}.tr-col{flex:1;display:flex;flex-direction:column;gap:6px}.tr-head{font-weight:700;text-align:center;padding:4px;border-bottom:1px solid rgba(201,162,74,.4)}.tr-head small{display:block;font-weight:400;opacity:.7}.tr-ic{margin-right:6px}.tr-node{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:7px 9px;border-radius:6px;border:1px solid rgba(201,162,74,.35);background:rgba(0,0,0,.2);color:inherit;font:inherit;font-size:13px;cursor:pointer;text-align:left}.tr-node span{font-size:11px;opacity:.8}.tr-node.locked{opacity:.4;cursor:default}.tr-node.can{border-color:#e8c45a;box-shadow:0 0 6px rgba(232,196,90,.4)}.tr-node.got{background:rgba(201,162,74,.22)}.tr-node.skill{border-style:double;border-width:3px}#tree-info{font-size:12px;opacity:.85;min-height:32px}.us-cat{margin-top:6px;font-weight:700;opacity:.8}.us-row{display:flex;align-items:center;gap:8px;font-size:12px;margin:2px 0}.us-row span{width:72px}.us-bar{flex:1;height:6px;background:rgba(0,0,0,.3);border-radius:3px;overflow:hidden}.us-bar i{display:block;height:100%;background:linear-gradient(90deg,#8a6a2a,#e8c45a)}.us-row b{width:26px;text-align:right}.us-row small{width:44px;opacity:.75}</style>
+  <style>#tree{width:min(980px,97vw);background:radial-gradient(ellipse at 50% 40%,#1c2140 0%,#0b0c16 75%);border-color:#4a5280}#tree-body{display:block;margin:6px 0}#tree .tr-sky{width:100%;height:auto;display:block}.tr-btitle{fill:#e8dcb0;font:700 17px Cinzel,serif;text-anchor:middle;letter-spacing:1px}.tr-bsub{fill:#9aa4c8;font:12px serif;text-anchor:middle}.tr-link{stroke:#4a5276;stroke-width:1.2;stroke-dasharray:3 4}.tr-link.lit{stroke:#e8c870;stroke-width:1.6;stroke-dasharray:none;filter:drop-shadow(0 0 3px #e8c870)}.tr-star{cursor:pointer}.tr-star .tr-core{fill:#5a6080;stroke:#8890b8;stroke-width:1}.tr-star.can .tr-core{fill:#dce8ff;stroke:#fff;animation:trPulse 1.6s ease-in-out infinite}.tr-star.got .tr-core{fill:#fff2c0;stroke:#f0c860;stroke-width:1.5}.tr-star.locked{opacity:.45;cursor:default}.tr-star:hover .tr-core{stroke:#fff;stroke-width:2}.tr-rank{fill:#2a2e48;stroke:#7a82a8;stroke-width:.8}.tr-rank.on{fill:#f0c860;stroke:#fff2c0}.tr-name{fill:#cfd6f0;font:12px serif;text-anchor:middle;paint-order:stroke;stroke:#0b0c16;stroke-width:3px}.tr-star.got .tr-name{fill:#f6e6b0}.tr-twinkle{animation:trTw 3s ease-in-out infinite}@keyframes trPulse{50%{opacity:.55}}@keyframes trTw{50%{opacity:.15}}#tree-info{color:#cfd6f0}</style>
   <div id="journal" class="gpanel hidden">
     <div class="gp-head"><span>Jornada</span><button class="gp-x" data-close="journal">✕</button></div>
     <div class="gp-sub">Contratos ativos</div>
@@ -217,27 +218,27 @@
 </div>
 
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="js/config.js"></script>
-<script src="js/world.js"></script>
-<script src="js/net.js"></script>
-<script src="js/pixel.js"></script>
-<script src="js/paint.js"></script>
-<script src="js/sprites.js"></script>
-<script src="js/props.js"></script>
-<script src="js/terrain.js"></script>
+<script src="js/config.js?v=1.24.0"></script>
+<script src="js/world.js?v=1.24.0"></script>
+<script src="js/net.js?v=1.24.0"></script>
+<script src="js/pixel.js?v=1.24.0"></script>
+<script src="js/paint.js?v=1.24.0"></script>
+<script src="js/sprites.js?v=1.24.0"></script>
+<script src="js/props.js?v=1.24.0"></script>
+<script src="js/terrain.js?v=1.24.0"></script>
 <script src="https://unpkg.com/three@0.149.0/build/three.min.js"></script>
-<script src="js/render.js"></script>
-<script src="js/render3d.js"></script>
-<script src="js/dragon.js"></script>
-<script src="js/ragdoll.js"></script>
-<script src="js/scene3d.js"></script>
-<script src="js/server.js"></script>
-<script src="js/game.js"></script>
-<script src="js/life.js"></script>
-<script src="js/progress.js"></script>
-<script src="js/bow.js"></script>
-<script src="js/drag.js"></script>
-<script src="js/npclife.js"></script>
-<script src="js/kitchen.js"></script>
+<script src="js/render.js?v=1.24.0"></script>
+<script src="js/render3d.js?v=1.24.0"></script>
+<script src="js/dragon.js?v=1.24.0"></script>
+<script src="js/ragdoll.js?v=1.24.0"></script>
+<script src="js/scene3d.js?v=1.24.0"></script>
+<script src="js/server.js?v=1.24.0"></script>
+<script src="js/game.js?v=1.24.0"></script>
+<script src="js/life.js?v=1.24.0"></script>
+<script src="js/progress.js?v=1.24.0"></script>
+<script src="js/bow.js?v=1.24.0"></script>
+<script src="js/drag.js?v=1.24.0"></script>
+<script src="js/npclife.js?v=1.24.0"></script>
+<script src="js/kitchen.js?v=1.24.0"></script>
 </body>
 </html>

@@ -141,7 +141,7 @@ function clientOnServer(m) {
     case 'carry': { const c = G.players[m.by]; if (c) c.carrying = m.id || null; break; }
     case 'respawned': showBanner('Capela da Aurora', 'Você despertou nas ruínas e perdeu metade da experiência do nível.', true); break;
     case 'chestopen': showBanner('Baú do chefe', '+' + m.gold + ' de ouro, 2 poções e ' + m.items.filter(k => LOOT[k]).map(k => LOOT[k].name).join(', ')); break;
-    case 'dev': if (m.ok && m.mode === 'normal') { G.devTools = true; showBanner('Modo criador', 'Vocação normal · F2 abre o painel'); buildDevPanel(); } else if (m.ok) { G.dev = true; G.noclip = true; G.me.skin = 'weaver'; showBanner('O Tecelão desperta', 'F2 abre o painel do criador'); buildDevPanel(); } else showToast('Senha do criador incorreta.'); break;
+    case 'dev': G.devAnswered = true; if (m.ok && m.mode === 'normal') { G.devTools = true; showBanner('Modo criador', 'Vocação normal · F2 abre o painel'); buildDevPanel(); } else if (m.ok) { G.dev = true; G.noclip = true; G.me.skin = 'weaver'; showBanner('O Tecelão desperta', 'F2 abre o painel do criador'); buildDevPanel(); } else showToast('Senha do criador incorreta.'); break;
     case 'shake': G.shake = Math.max(G.shake, m.s || 6); break;
     case 'tele': G.teles.push({ ...m, t0: now }); break;
     case 'fires': for (const [x, y, r, ms] of m.l) { const t = Math.round(y) * MAP_W + Math.round(x); G.fires.push({ x, y, r, z: m.z != null ? m.z : (WORLD.ground[t] === T.CLIFF && WORLD.fl1[t] > 0 ? 1 : 0), t0: now + (m.ms || 0), until: now + ms }); } if (!m.nb) G.breaths.push({ t0: now, ms: 650 }); break;
@@ -203,11 +203,12 @@ function applySnapshot(m, now) {
     e.flags = fl; e.visible = true; e.carrying = carrying || null; e.lifted = lifted || 0; if (id !== G.myId) { e.lost = (lp || 0) & 31; e.pro = ((lp || 0) >> 5) & 31; } e.parrying = !!((bb || 0) & 32); e.stunned = !!((bb || 0) & 64); e.duel = !!((bb || 0) & 128); e.limp = (bb || 0) & 3; e.armWeak = !!((bb || 0) & 4); e.dizzy = !!((bb || 0) & 8); e.bleeding = !!((bb || 0) & 16); e.carriedBy = !!(fl & 4); z = z / 100;
     e.tow = tow || null; e.tied = !!(fl & 16777216); e.dragged = !!(fl & 131072); e.prone = !!(fl & 262144); e.gripped = !!(fl & 8388608);
     e.dragMode = fl & 524288 ? 'arms' : fl & 1048576 ? 'foot' : fl & 2097152 ? 'back' : fl & 4194304 ? 'grip' : null;
-    if (e === G.me && e.dragged) { e.x = e.rx = x; e.y = e.ry = y; G.path = null; }   // sendo puxado/agarrado: a posição vem do servidor
+    if (e === G.me && e.dragged) { e.cx = x; e.cy = y; if (e.rx == null || Math.hypot(x - e.rx, y - e.ry) > 4) { e.x = e.rx = x; e.y = e.ry = y; } G.path = null; }
+    e.choked = !!(fl & 33554432); e.choking = !!(fl & 67108864); e.escorted = !!(fl & 134217728); e.pullHelp = !!(fl & 268435456);   // sendo puxado/agarrado: a posição vem do servidor
     const wasDown = e.downed; e.downed = !!(fl & 2);
     if (e.downed && !wasDown && !e.downUntil) e.downUntil = now + DOWNED_MS;
     if (id === G.myId) {
-      if (e.carriedBy) { e.x = x; e.y = y; e.z = z; e.rx = x; e.ry = y; }
+      if (e.carriedBy) { e.cx = x; e.cy = y; e.z = z; if (e.rx == null || Math.hypot(x - e.rx, y - e.ry) > 4) { e.x = e.rx = x; e.y = e.ry = y; } }
       continue;
     }
     e.hp = hpPct; e.maxHp = 100; e.z = z;
@@ -273,7 +274,9 @@ function myInput() {
 
 function updateLocal(now, dt) {
   const me = G.me;
+  if (me && (me.carriedBy || me.dragged) && me.cx != null) { const k = Math.min(1, dt * 9); me.rx += (me.cx - me.rx) * k; me.ry += (me.cy - me.ry) * k; me.x = me.rx; me.y = me.ry; if (me.escorted) { me.walking = Math.hypot(me.cx - me.rx, me.cy - me.ry) > 0.03; if (me.walking) me.walkDist = (me.walkDist || 0) + Math.hypot(me.cx - me.rx, me.cy - me.ry) * k; } }
   if (!me || me.carriedBy) { if (me) { me.walking = false; } return; }
+  if (now < (G.busyUntil || 0)) { me.walking = false; G.path = null; if (G.busyFace) me.dir = dirFromVec(G.busyFace.x - me.x, G.busyFace.y - me.y, me.dir); return; }   // cozinhando: parado de frente para o fogão
   if (G.climbing) { stepClimb(now); return; }
   if (me.grab && now < me.grab.until) { const d = G.monsters[me.grab.mid]; if (d) { me.x = me.rx = d.rx; me.y = me.ry = d.ry; } me.walking = false; G.path = null; return; }
   if (me.fling) { stepFling(me, now); return; }
@@ -774,6 +777,7 @@ canvas.addEventListener('mousedown', e => {
     if (e.button === 3 || e.button === 4) { e.preventDefault(); strike('under'); return; }
     if (e.button === 2) { G.parrying = true; Net.send({ t: 'parry', on: 1, a: me.fa ?? 0 }); return; }
     if (e.button === 0) G.mouse0 = true;
+    if (e.button === 0 && me.dragMode === 'grip') { Net.send({ t: 'choke', on: 1 }); G.choking = true; return; }
     if (e.button === 0 && me.cls === 'archer') { const mon = monsterUnderMouse(e.clientX, e.clientY); if (mon) setTarget(mon.id); bowPress(); return; }   // arco: segurar puxa
     if (e.button === 2 && me.cls === 'archer' && G.bow.st === 'drawing') { bowCancel(); return; }                          // botão direito relaxa a corda
     if (e.button === 0 && me.cls !== 'knight') {   // mago: clique esquerdo dispara (segure para continuar)
@@ -848,7 +852,7 @@ function strike(k) {
   const a = me.fa ?? 0; Net.send({ t: 'atk', k, a });
 }
 canvas.addEventListener('mousemove', e => { if (G.started) { G.mouseW = screenToWorld(e.clientX, e.clientY); G.mouseHist = (G.mouseHist || []).filter(q => performance.now() - q.t < 180).concat([{ t: performance.now(), x: e.clientX }]); } });
-canvas.addEventListener('mouseup', e => { if (e.button === 0) { G.shootHeld = false; G.mouse0 = false; if (isArcher()) bowRelease(); } if (e.button === 3 || e.button === 4) e.preventDefault(); if (e.button === 2 && G.parrying) { G.parrying = false; Net.send({ t: 'parry', on: 0 }); } });
+canvas.addEventListener('mouseup', e => { if (e.button === 0 && G.choking) { G.choking = false; Net.send({ t: 'choke', on: 0 }); } if (e.button === 0) { G.shootHeld = false; G.mouse0 = false; if (isArcher()) bowRelease(); } if (e.button === 3 || e.button === 4) e.preventDefault(); if (e.button === 2 && G.parrying) { G.parrying = false; Net.send({ t: 'parry', on: 0 }); } });
 window.addEventListener('auxclick', e => { if (e.button === 3 || e.button === 4) e.preventDefault(); });
 window.addEventListener('mouseup', e => { if (e.button === 2 && G.parrying) { G.parrying = false; Net.send({ t: 'parry', on: 0 }); } });
 
@@ -870,6 +874,7 @@ window.addEventListener('keydown', e => {
   if (k === 'r' && G.me.downed) { if (!PERMADEATH || window.confirm('Desistir é MORTE PERMANENTE: seu personagem será apagado. Tem certeza?')) Net.send({ t: 'giveup' }); return; }
   if (k === 'f' && !e.repeat && openNearChest(1.8)) return;
   if (k === 'f' && !e.repeat && G.me && (G.me.carrying || G.me.dragMode === 'arms' || G.me.dragMode === 'foot') && STAGE.x >= 0 && dist(G.me.x, G.me.y, STAGE.x, STAGE.y) < 3.4) { Net.send({ t: 'exec' }); return; }
+  if (k === 'y' && !e.repeat && G.me && G.me.wantedUntil > performance.now()) { Net.send({ t: 'surrender' }); return; }
   if (k === 'h' && !e.repeat && typeof grabKeyDown === 'function') { grabKeyDown(); return; }   // segurar H: menu radial (puxar / carregar / agarrar / soltar)
   if (k === 'f' && !e.repeat && !nearestDowned()) { const c = nearCorpse(); if (c) { G.loot = { id: c.id, t0: performance.now() }; G.keys.add('f'); return; } }
   if (k === 'f' && !e.repeat && typeof nearStove === 'function' && nearStove() && !nearestDowned()) { openCook(); return; }
@@ -1068,6 +1073,7 @@ function createRoom(code = 'S1', tries = 0) {
     }
     Net.infoFn = () => ({ name: (S.players[Net.myId] || {}).name || $('name').value.trim() || 'Aventureiro', n: Object.keys(S.players).length, ver: VERSION });
     startHostLoop(); hostTick(); showRoom(code); Net.send(helloMsg());
+    if (G.devPw) setTimeout(() => { if (!G.devAnswered) showToast('O pedido de criador não foi respondido. Recarregue a página (Ctrl+F5) e tente de novo.'); }, 6000);
   });
 }
 function joinRoom() {
@@ -1337,7 +1343,7 @@ $('pz-quit').addEventListener('click', () => { try { saveChar(); saveFog && G.fo
 applySettings();
 
 // ---------- modo criador: O Tecelão ----------
-if (/[?&]criador\b/.test(location.search)) { const pw = window.prompt('Senha do Tecelão:'); if (pw) { G.devPw = pw; G.devMode = 'weaver';
+if (/[?&]criador\b/.test(location.search)) { const pw = window.prompt('Senha do Tecelão:'); if (pw) { G.devPw = pw.trim().toUpperCase(); G.devMode = 'weaver';
   const box = document.createElement('div'); box.id = 'devmode'; box.style.cssText = 'margin:10px 0;display:flex;gap:8px;align-items:center;justify-content:center';
   box.innerHTML = '<b>Entrar como:</b><button class="btn gold" data-m="weaver">O Tecelão</button><button class="btn" data-m="normal">Vocação escolhida</button>';
   const set = m => { G.devMode = m; box.querySelectorAll('button').forEach(b => b.className = 'btn' + (b.dataset.m === m ? ' gold' : '')); };
@@ -1400,7 +1406,7 @@ function updateNeeds() {
   if (me.sick > 0) out.push(['🤢', 'Enjoado', 1]);
   el.innerHTML = out.map(([i, t, s]) => '<span class="nd s' + s + '" title="' + t + '">' + i + '</span>').join('');
   document.body.classList.toggle('cold', (me.cold || 0) > 50); document.body.classList.toggle('fever', !!me.infect);
-  const pr = $('prompt'); if (!G.loot && !nearCorpse()) { const raw = me.inv && (me.inv.venison || me.inv.pork); const stN = typeof nearStove === 'function' && nearStove(), hv = nearHarvest(), exN = me.carrying && STAGE.x >= 0 && dist(me.x, me.y, STAGE.x, STAGE.y) < 3.4; const txt = exN ? 'F: entregar ao carrasco (execução)' : stN ? 'F: cozinhar' : hv >= 0 ? (WORLD.obj[hv] === O.BERRY ? 'F: colher frutas' : 'F: colher erva') : raw && nearFireC() ? 'F: assar a carne' : nearWaterC() && (me.water ?? 100) < 98 ? 'F: beber' : ''; if (txt) { pr.textContent = txt; pr.classList.remove('hidden'); } else pr.classList.add('hidden'); }
+  const pr = $('prompt'); if (!G.loot && !nearCorpse()) { const raw = me.inv && (me.inv.venison || me.inv.pork); const stN = typeof nearStove === 'function' && nearStove(), hv = nearHarvest(), exN = me.carrying && STAGE.x >= 0 && dist(me.x, me.y, STAGE.x, STAGE.y) < 3.4; const txt = me.wantedUntil > performance.now() && !me.escorted ? 'Y: render-se às sentinelas' : me.dragMode === 'grip' ? 'Segure o clique esquerdo: apertar o pescoço · H solta' : exN ? 'F: entregar ao carrasco (execução)' : stN ? 'F: cozinhar' : hv >= 0 ? (WORLD.obj[hv] === O.BERRY ? 'F: colher frutas' : 'F: colher erva') : raw && nearFireC() ? 'F: assar a carne' : nearWaterC() && (me.water ?? 100) < 98 ? 'F: beber' : ''; if (txt) { pr.textContent = txt; pr.classList.remove('hidden'); } else pr.classList.add('hidden'); }
   if ($('pz-use') && typeof useHtml === 'function') $('pz-use').innerHTML = useHtml();
   if ($('pz-surv')) $('pz-surv').innerHTML = '<div><b>Fome</b> ' + Math.round(100 - (me.food ?? 100)) + '% · <b>Sede</b> ' + Math.round(100 - (me.water ?? 100)) + '% · <b>Frio</b> ' + Math.round(me.cold || 0) + '%</div><div><b>Infecção</b> ' + ['nenhuma', 'febre', 'grave'][me.infect || 0] + (me.sick > 0 ? ' · <b>enjoado</b>' : '') + '</div><div class="gp-note">Coma e beba, fique perto do fogo à noite, trate feridas graves com bandagem. A morte é permanente.</div>';
 }

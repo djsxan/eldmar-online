@@ -157,7 +157,7 @@ function hostOnClient(from, m) {
     np.hp = np.maxHp; np.mp = np.maxMp;
     if (!m.lvl) { np.gold = 30; np.pots.hp = 3; np.pots.mp = 2; np.pots.band = 3; } // kit inicial
     S.players[from] = np;
-    if (m.dev && typeof crypto !== 'undefined' && crypto.subtle) crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(m.dev))).then(buf => {
+    if (m.dev && typeof crypto !== 'undefined' && crypto.subtle) crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(m.dev).trim().toUpperCase())).then(buf => {
       const h = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
       if (h !== DEV_HASH || !S.players[from]) { Net.toOne(from, { t: 'dev', ok: 0 }); return; }
       if (m.devMode === 'normal') { np.devPowers = true; Net.toOne(from, { t: 'dev', ok: 1, mode: 'normal' }); return; }   // criador com a vocação normal (toma dano, monstros atacam), mas com o painel
@@ -185,6 +185,8 @@ function hostOnClient(from, m) {
     case 'loose': bowLoose(p, m); break;
     case 'pullarrow': pullArrow(p); break;
     case 'grab': startGrab(p, m); break;
+    case 'surrender': if (now_() < (p.wanted || 0) && !p.downed && !p.escortBy && !(p.jailUntil > now_())) { p.surrendered = true; p.atk = null; tell(p, 'Você se rendeu. Fique parado: uma sentinela vem te buscar.'); sys(p.name + ' se rendeu às sentinelas.'); } break;
+    case 'choke': p.choking = !!m.on && !!(p.drag && p.drag.mode === 'grip'); break;
     case 'cookat': cookAt(p, String(m.r)); break;
     case 'release': stopDrag(p); break;
     case 'struggle': if (!tiedStruggle(p)) struggle(p); break;
@@ -335,7 +337,8 @@ function hostOnClient(from, m) {
 
 function handleMove(p, m) {
   if (p.carriedBy) return;
-  if (p.grabbed || p.dragBy || p.gripBy || now_() < (p.flungUntil || 0) || now_() < (p.knockUntil || 0)) return;
+  if (p.grabbed || p.dragBy || p.gripBy || p.surrendered || now_() < (p.flungUntil || 0) || now_() < (p.knockUntil || 0)) return;
+  if (p.jailUntil) { if (now_() > p.jailUntil) { p.jailUntil = 0; tell(p, 'Você cumpriu a pena e está livre.'); } else { const J = jailSpot(), tx = +m.x, ty = +m.y; if (J && isFinite(tx) && WORLD.bld[tileAt(tx, ty)] !== J.bi) { Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: p.z, fl: p.fl || 0, fb: p.fb ?? -1 }); return; } } }
   if (p.sleep != null && m.w) p.sleep = null;   // voando / derrubado
   if (p.dev) { const x = +m.x, y = +m.y; if (isFinite(x) && isFinite(y)) { p.x = clamp(x, 1, MAP_W - 2); p.y = clamp(y, 1, MAP_H - 2); p.z = +m.z || 0; p.dir = m.d | 0; p.walking = !!m.w; p.lastMv = now_(); } return; }
   const now = now_();
@@ -580,7 +583,7 @@ function damagePlayer(p, raw, m, delay = 0, zone = null, exactPart = null) {
   if (p.sleep != null) p.sleep = null;
   if (p.downed) {
     // lobos atacam quem está caído: a pessoa sangra mais rápido
-    if (m && MON[m.type] && MON[m.type].beh === 'pred' && m.id != null && S.monsters[m.id] && !m.dragging && !p.dragBy && !p.carriedBy && !p.tied && Math.random() < 0.3) { m.dragging = p.id; m.dragUntil = now_() + 6000; p.dragBy = 'w:' + m.id; p.dragMode = 'foot'; }
+    if (m && MON[m.type] && MON[m.type].beh === 'pred' && m.id != null && S.monsters[m.id] && !m.dragging && !p.dragBy && !p.carriedBy && !p.tied && Math.random() < 0.5) { m.dragging = p.id; m.dragUntil = now_() + 6000; p.dragBy = 'w:' + m.id; p.dragMode = 'foot'; }
     if (m && MON[m.type] && MON[m.type].beh === 'pred') { p.downed.until -= 2500; near(p.x, p.y, { t: 'hit', k: 'p', id: p.id, x: p.x, y: p.y, dmg: 0, d: delay, ax: m.x, ay: m.y }); }
     return;
   }
@@ -944,6 +947,8 @@ function monsterThink(m, players, now, dt) {
       const tx = tgt.x, ty = tgt.y, ms = 320 + dd * 75;
       anim('m', m, 'bite', tx, ty); near(m.x, m.y, { t: 'throwfx', o: O.ROCK, fx: m.x, fy: m.y, tx, ty, ms, big: d.big ? 1 : 0 });
       setTimeout(() => { if (!S.monsters[m.id] || tgt.downed || dist(tgt.x, tgt.y, tx, ty) > 1.1) return; damagePlayer(tgt, Math.round(rint(d.dmg[0], d.dmg[1]) * 1.15), m, 0); }, ms);
+    } else if (pred && tgt.downed && dd <= reach + 0.5) {
+      if (now >= m.nextAtk) { m.nextAtk = now + 1600; anim('m', m, 'bite', tgt.x, tgt.y); damagePlayer(tgt, 0, m, 0); }
     } else if (dd <= reach + 0.25) {
       if (now >= m.nextAtk && now >= (m.stunUntil || 0)) startMonStrike(m, tgt, now);
     } else {
@@ -1010,7 +1015,7 @@ function resolveMonStrike(m, A, now) {
     const crit = MON_MELEE[m.type] && A.k !== 'stab' && A.k !== 'bite' && Math.random() < (d.big ? 0.12 : 0.07);
     damagePlayer(p, Math.round(rint(d.dmg[0], d.dmg[1]) * STRIKES[A.k].mult * ((m.lost || 0) & 6 ? 0.4 : 1) * (crit ? 1.6 : 1)), m, 0, STRIKES[A.k].zone);
     const svp = crit && !p.downed ? severPart(A.k, p.lost || 0) : null;
-    if (svp && (p.body[svp] ?? 100) <= 30 && Math.random() < 0.5) severPlayer(p, svp, m);
+    if (svp && svp !== 'head' && (p.body[svp] ?? 100) <= 30 && Math.random() < 0.5) severPlayer(p, svp, m);
     else if (d.big && !p.downed && Math.random() < 0.35 * Math.max(0, 1 - treeEff(p, 'knockRes'))) knockPlayer(p, m, now);
     if (d.drain && !p.downed) { p.mp = Math.max(0, p.mp - d.drain); sendStat(p); }
     if (p.atk && !p.atk.done) { p.atk = null; near(p.x, p.y, { t: 'anim', w: 'p', id: p.id, a: 'hurt' }); }   // levar golpe interrompe a preparação
@@ -1512,6 +1517,13 @@ function startGrab(p, m) {
     p.drag = { k, id: t.id, mode, w, a: Math.atan2(t.y - p.y, t.x - p.x) };
     near(p.x, p.y, { t: 'drag', by: p.id, k, id: t.id, mode }); tell(t, 'Você foi agarrado! Aperte ESPAÇO várias vezes para se soltar.'); witnessCrime(p, p.x, p.y); sendStat(p); sendStat(t); return;
   }
+  if ((mode === 'arms' || mode === 'foot') && t.dragBy && !t.dragBy2 && !String(t.dragBy).includes(':')) {
+    const pr = S.players[t.dragBy];
+    if (pr && pr.drag && pr.drag.id === t.id && (pr.drag.mode === 'arms' || pr.drag.mode === 'foot')) {
+      const other = pr.drag.mode === 'arms' ? 'foot' : 'arms';
+      p.drag = { k, id: t.id, mode: other, w, helper: true }; t.dragBy2 = p.id; near(p.x, p.y, { t: 'drag', by: p.id, k, id: t.id, mode: other }); tell(p, 'Você pegou a outra ponta.'); return;
+    }
+  }
   if (k === 'p' && (!t.downed || t.carriedBy || t.dragBy || t.execAt || t.tied)) return;
   if (k === 'n' && ((!t.downed && !t.dead) || t.dragBy)) return;
   if (k === 'c' && t.dragBy) return;
@@ -1526,9 +1538,11 @@ function startGrab(p, m) {
 function stopDrag(p, why) {
   const d = p.drag; if (!d) return; p.drag = null;
   const t = dragTarget(d.k, d.id);
+  if (t && d.helper) { t.dragBy2 = null; near(p.x, p.y, { t: 'drag', by: p.id, k: d.k, id: d.id, mode: null }); if (why) tell(p, why); return; }
+  if (t && t.dragBy2 && S.players[t.dragBy2] && S.players[t.dragBy2].drag) { const h = S.players[t.dragBy2]; t.dragBy = h.id; t.dragBy2 = null; h.drag.helper = false; t.dragMode = h.drag.mode; near(p.x, p.y, { t: 'drag', by: p.id, k: d.k, id: d.id, mode: null }); if (why) tell(p, why); return; }
   if (t) {
     t.dragBy = null; t.dragMode = null;
-    if (d.mode === 'grip') { t.gripBy = null; t.esc = 0; if (d.k === 'p') sendStat(t); }
+    if (d.mode === 'grip') { t.gripBy = null; t.esc = 0; t.choked = false; t.faintAt = 0; p.choking = false; p.chokeT = 0; if (d.k === 'p') sendStat(t); }
     if ((d.k === 'c' || d.k === 'n') && d.mode === 'back') { t.onBack = null; for (const [dx, dy] of [[0.7, 0], [-0.7, 0], [0, 0.7], [0, -0.7], [0, 0]]) if (canStand(p.x + dx, p.y + dy, p.z || 0, 0.2)) { t.x = p.x + dx; t.y = p.y + dy; break; } }
   }
   near(p.x, p.y, { t: 'drag', by: p.id, k: d.k, id: d.id, mode: null });
@@ -1536,21 +1550,40 @@ function stopDrag(p, why) {
 }
 function struggle(p) {
   if (!p.gripBy) return; const g = S.players[p.gripBy]; if (!g) { p.gripBy = null; p.dragBy = null; return; }
-  p.esc = (p.esc || 0) + 6 + 6 * clamp((p.cst ?? 0) / cstMaxOf(p), 0, 1); p.cst = Math.max(0, (p.cst ?? 0) - 2); g.cst = Math.max(0, (g.cst ?? 0) - 2.5);
+  p.esc = (p.esc || 0) + (6 + 6 * clamp((p.cst ?? 0) / cstMaxOf(p), 0, 1)) * (p.choked ? 0.45 : 1); p.cst = Math.max(0, (p.cst ?? 0) - 2); g.cst = Math.max(0, (g.cst ?? 0) - 2.5);
   if (p.esc >= 100) { stopDrag(g, p.name + ' se soltou!'); tell(p, 'Você se soltou!'); near(p.x, p.y, { t: 'anim', w: 'p', id: g.id, a: 'hurt', ms: 500 }); g.stunUntil = now_() + 500; }
   else sendStat(p);
 }
 function dragTick(p, now, dt) {
   const d = p.drag; if (!d) return;
   const t = dragTarget(d.k, d.id);
-  if (!t || p.downed || p.carriedBy || (d.k === 'p' && d.mode !== 'grip' && !t.downed) || (d.k === 'n' && !t.downed && !t.dead) || (d.mode === 'grip' && t.downed) || (d.k === 'p' && t.carriedBy)) { stopDrag(p); return; }
+  if (!t || p.downed || p.carriedBy || (d.k === 'p' && d.mode !== 'grip' && !t.downed) || (d.k === 'n' && d.mode !== 'grip' && !t.downed && !t.dead) || (d.mode === 'grip' && t.downed && !t.downed.faint && !t.faintAt) || (d.k === 'p' && t.carriedBy)) { stopDrag(p); return; }
+  if (d.helper) { const pr = S.players[t.dragBy]; if (!pr || !pr.drag || pr.drag.id !== t.id) { d.helper = false; t.dragBy = p.id; t.dragBy2 = null; } else { if (dist(p.x, p.y, t.x, t.y) > 3) stopDrag(p, 'A ponta escapou da sua mão.'); return; } }
+  if (t.dragBy2) { const h = S.players[t.dragBy2]; if (h && h.drag && h.drag.id === t.id) { t.x = (p.x + h.x) / 2; t.y = (p.y + h.y) / 2; t.z = p.z; t.lastMv = now; return; } t.dragBy2 = null; }
   if (p._lx != null) { const mx = p.x - p._lx, my = p.y - p._ly; if (mx * mx + my * my > 0.0004) p._dragA = Math.atan2(my, mx); } p._lx = p.x; p._ly = p.y;
   const a = p._dragA ?? Math.atan2(t.y - p.y, t.x - p.x) + Math.PI;
   if (d.mode === 'back') { t.x = p.x; t.y = p.y; t.z = p.z; p.cst -= (d.w >= 2 ? 8 : 2) * dt; p.cstT = now; if (p.cst <= 0) { p.cst = 0; stopDrag(p, 'O peso venceu: você largou.'); } return; }
   if (d.mode === 'grip') {   // a vítima fica presa na frente de quem agarra
-    const ga = Math.atan2(t.y - p.y, t.x - p.x), nx = p.x + Math.cos(ga) * 0.55, ny = p.y + Math.sin(ga) * 0.55;
-    if (canStand(nx, ny, p.z || 0, 0.2)) { t.x = nx; t.y = ny; } t.lastMv = now; t.walking = false;
-    p.cst -= 9 * dt; p.cstT = now; if (p.cst <= 0) { p.cst = 0; stopDrag(p, 'Sem fôlego: você soltou.'); tell(t, 'Você se soltou!'); }
+    const [fx, fy] = dirVec(p.dir), nx = p.x + fx * 0.36, ny = p.y + fy * 0.36;
+    if (canStand(nx, ny, p.z || 0, 0.15)) { t.x = nx; t.y = ny; } t.lastMv = now; t.walking = false; t.dir = p.dir;
+    t.choked = !!p.choking;
+    if (p.choking) {   // apertando o pescoço: a vítima perde o fôlego, desmaia em ~5s e morre se continuar mais ~5s
+      p.chokeT = (p.chokeT || 0) + dt; if (inSafe(p.x, p.y)) witnessCrime(p, p.x, p.y);
+      if (d.k === 'p') { t.cst = Math.max(0, (t.cst ?? 0) - 40 * dt); t.esc = Math.max(0, (t.esc || 0) - 12 * dt); }
+      if (d.k === 'n') t.escAt = Math.max(t.escAt || 0, now + 1500);
+      if (d.k === 'm') { t.escAt = Math.max(t.escAt || 0, now + 1500); if (p.chokeT > 5) { killMonster(t, p, 0); stopDrag(p); return; } }
+      if (p.chokeT > 5 && !t.faintAt) {
+        t.faintAt = now;
+        if (d.k === 'p') { goDown(t, { x: p.x, y: p.y, name: p.name }); if (t.downed) { t.downed.faint = true; t.downed.until = now + 30000; } tell(t, 'Tudo escurece... você desmaiou.'); }
+        else if (d.k === 'n') { t.downed = { until: now + 30000 }; sys(t.name + ' desmaiou.'); }
+      }
+      if (p.chokeT > 10) {
+        if (d.k === 'p') { if (t.downed) t.downed.faint = false; if (PERMADEATH && !t.dev && !t.devPowers) permaDeath(t, 'estrangulado'); else respawnTemple(t); }
+        else if (d.k === 'n') npcDie(t, p);
+        stopDrag(p); return;
+      }
+    } else { p.chokeT = Math.max(0, (p.chokeT || 0) - dt * 0.6); if (t.faintAt && !(t.downed && t.downed.faint)) t.faintAt = 0; }
+    p.cst -= (p.choking ? 5 : 9) * dt; p.cstT = now; if (p.cst <= 0) { p.cst = 0; stopDrag(p, 'Sem fôlego: você soltou.'); if (d.k === 'p') tell(t, 'Você se soltou!'); }
     return;
   }
   const back = d.mode === 'arms' ? 1.0 : 1.2, nx = p.x - Math.cos(a) * back, ny = p.y - Math.sin(a) * back;
@@ -1559,6 +1592,7 @@ function dragTick(p, now, dt) {
   t.z = p.z; t.lastMv = now;
 }
 function dragCleanup() {
+  for (const L of [Object.values(S.players), Object.values(S.corpses || {}), Object.values(S.npcs || {})]) for (const q of L) if (q.dragBy2 && (!S.players[q.dragBy2] || !S.players[q.dragBy2].drag || S.players[q.dragBy2].drag.id !== q.id)) q.dragBy2 = null;
   for (const q of Object.values(S.players)) if (q.dragBy && !String(q.dragBy).startsWith('w:') && (!S.players[q.dragBy] || !S.players[q.dragBy].drag || S.players[q.dragBy].drag.id !== q.id)) { q.dragBy = null; q.gripBy = null; q.dragMode = null; q.esc = 0; }
   for (const c of Object.values(S.npcs || {})) if (c.dragBy && (!S.players[c.dragBy] || !S.players[c.dragBy].drag || S.players[c.dragBy].drag.id !== c.id)) { c.dragBy = null; c.dragMode = null; c.onBack = null; }
   for (const c of Object.values(S.corpses || {})) if (c.dragBy && (!S.players[c.dragBy] || !S.players[c.dragBy].drag || S.players[c.dragBy].drag.id !== c.id)) { c.dragBy = null; c.dragMode = null; c.onBack = null; }
@@ -1590,16 +1624,27 @@ function npcDropCarried(c) { const q = S.players[c.carrying]; c.carrying = null;
 // movimento simples de NPC (sem a regra de "monstro não entra na cidade"), seguindo um caminho quando o anfitrião tem o pathfinder
 function npcWalk(n, tx, ty, speed, dt) {
   if (n.path && n.path.length && (n.pathTo[0] !== Math.round(tx) || n.pathTo[1] !== Math.round(ty))) n.path = null;
-  if (!n.path && typeof findPath === 'function' && dist(n.x, n.y, tx, ty) > 2) { try { n.path = findPath(n.x, n.y, tx, ty, 0, 1) || []; } catch (e) { n.path = []; } n.pathTo = [Math.round(tx), Math.round(ty)]; }
+  if (!n.path && typeof findPath === 'function' && dist(n.x, n.y, tx, ty) > 2) { try { n.path = findPath(n.x, n.y, tx, ty, 0, 0) || findPath(n.x, n.y, tx, ty, 0, 1) || []; } catch (e) { n.path = []; } n.pathTo = [Math.round(tx), Math.round(ty)]; }
   let gx = tx, gy = ty; if (n.path && n.path.length) { [gx, gy] = n.path[0]; if (dist(n.x, n.y, gx, gy) < 0.35) n.path.shift(); }
   const dx = gx - n.x, dy = gy - n.y, d = Math.hypot(dx, dy); if (d < 0.05) return dist(n.x, n.y, tx, ty) < 0.6;
   const s = Math.min(d, speed * dt), nx = n.x + dx / d * s, ny = n.y + dy / d * s;
-  if (canStand(nx, ny, 0, 0.22)) { n.x = nx; n.y = ny; } else if (canStand(nx, n.y, 0, 0.22)) n.x = nx; else if (canStand(n.x, ny, 0, 0.22)) n.y = ny; else { n.x = nx; n.y = ny; }
+  const px = n.x, py = n.y;
+  if (canStand(nx, ny, 0, 0.22)) { n.x = nx; n.y = ny; } else if (Math.abs(nx - n.x) > 0.002 && canStand(nx, n.y, 0, 0.22)) n.x = nx; else if (Math.abs(ny - n.y) > 0.002 && canStand(n.x, ny, 0, 0.22)) n.y = ny; else { n.x = nx; n.y = ny; }
+  if (Math.hypot(n.x - px, n.y - py) < s * 0.3) { n._stuck = (n._stuck || 0) + 1; if (n._stuck > 8) { n._stuck = 0; n.path = null; n.x = nx; n.y = ny; } } else n._stuck = 0;   // travou numa quina: refaz o caminho
   n.walk = true; return dist(n.x, n.y, tx, ty) < 0.6;
+}
+const JAIL_MS = 120000;
+const dirFromVecS = (dx, dy) => { const sx = dx - dy, sy = (dx + dy) * 0.5; return ((Math.round(Math.atan2(sx, sy) / (Math.PI / 4)) % 8) + 8) % 8; };
+function jailSpot() {
+  if (S.jail !== undefined) return S.jail; S.jail = null;
+  const bi = BUILDINGS.findIndex(b => b.kind === 'barracks'); if (bi < 0) return null; const b = BUILDINGS[bi];
+  for (let y = b.y + 1; y < b.y + b.h - 1 && !S.jail; y++) for (let x = b.x + 1; x < b.x + b.w - 1 && !S.jail; x++) if (WORLD.bld[y * MAP_W + x] === bi && canStand(x, y, 0, 0.25)) S.jail = { x, y, bi };
+  return S.jail;
 }
 // execução no cadafalso (usada pelo jogador e pela sentinela)
 function startExecution(v, by) {
-  if (!npcAlive('executioner')) return false;
+  if (!npcAlive('executioner') || v.execAt) return false;
+  if (v.wanted) { v.wanted = 0; Net.toAll({ t: 'wanted', id: v.id, ms: 0 }); }
   const now = now_(); v.x = STAGE.x; v.y = STAGE.y; v.z = 0; v.execAt = now + 2600; v.downed.until = Math.max(v.downed.until, now + 12000);
   near(STAGE.x, STAGE.y, { t: 'exec', id: v.id, x: STAGE.x, y: STAGE.y, ms: 2600 }); sys(by + ' levou ' + v.name + ' ao cadafalso!');
   setTimeout(() => { const q = S.players[v.id]; if (!q) return; q.execAt = 0; if (!q.downed) return; q.downed = null; severPlayer(q, 'head', { x: STAGE.x, y: STAGE.y + 1, name: 'o Carrasco' }); }, 2600);
@@ -1607,6 +1652,22 @@ function startExecution(v, by) {
 }
 function guardThink(n, now, dt) {
   n.walk = false;
+  if (n.escort) {   // escoltando um preso até a cela
+    const q = S.players[n.escort]; if (!q || q.downed) { if (q) { q.escortBy = null; q.dragBy = null; } n.escort = null; return; }
+    const J = jailSpot(); if (!J) { n.escort = null; q.escortBy = null; q.dragBy = null; return; }
+    const ox = n.x, oy = n.y, arrived = npcWalk(n, J.x, J.y, 1.5, dt), mx = n.x - ox, my = n.y - oy, ml = Math.hypot(mx, my);
+    if (ml > 0.001) { const nx = n.x - mx / ml * 0.8, ny = n.y - my / ml * 0.8; if (canStand(nx, ny, 0, 0.2)) { q.x = nx; q.y = ny; } q.dir = n.dir = dirFromVecS(mx, my); }
+    q.lastMv = now;
+    if (arrived) { q.x = J.x; q.y = J.y; q.escortBy = null; q.dragBy = null; q.surrendered = false; q.jailUntil = now + JAIL_MS; q.wanted = 0; Net.toAll({ t: 'wanted', id: q.id, ms: 0 }); n.escort = null; tell(q, 'Você está preso no quartel por ' + Math.round(JAIL_MS / 60000) + ' minutos. Depois disso a ficha fica limpa.'); sys(q.name + ' foi preso no quartel.'); }
+    return;
+  }
+  for (const q of Object.values(S.players)) {   // procurado que se rendeu: vai buscar
+    if (!q.surrendered || q.escortBy || q.downed) continue; if (Object.values(S.npcs).some(o => o !== n && o.escort === q.id)) continue;
+    const d = dist(n.x, n.y, q.x, q.y); if (d > 22) continue;
+    if (d < 1.2) { n.escort = q.id; q.escortBy = n.id; q.dragBy = 'n:' + n.id; tell(q, n.name + ' amarra suas mãos e te leva para o quartel.'); }
+    else npcWalk(n, q.x, q.y, 2.0, dt);
+    return;
+  }
   // carregando alguém: procurado vai ao cadafalso; ferido inocente vai à sacerdotisa
   if (n.carrying) {
     const q = S.players[n.carrying]; if (!q || !q.downed) { if (q) npcDropCarried(n); else n.carrying = null; return; }
@@ -1617,7 +1678,7 @@ function guardThink(n, now, dt) {
   }
   // procurados à vista: persegue e ataca; caído, carrega
   let tgt = null, bd = 14;
-  for (const q of Object.values(S.players)) { if (q.dev || q.carriedBy || !(now < (q.wanted || 0) || n.aggro === q.id)) continue; const d = dist(n.x, n.y, q.x, q.y); if (d < bd && (d < 3 || sightClear(n.x, n.y, q.x, q.y))) { bd = d; tgt = q; } }
+  for (const q of Object.values(S.players)) { if (q.dev || q.carriedBy || q.execAt || q.jailUntil > now || q.escortBy || q.surrendered || !(now < (q.wanted || 0) || n.aggro === q.id)) continue; const d = dist(n.x, n.y, q.x, q.y); if (d < bd && (d < 3 || sightClear(n.x, n.y, q.x, q.y))) { bd = d; tgt = q; } }
   if (tgt) {
     if (tgt.downed) { if (bd < 1.3) { entCarry(n, tgt, 'n:' + n.id); n.mission = 'stage'; n.aggro = null; sys(n.name + ' prendeu ' + tgt.name + ' e o leva ao cadafalso!'); } else npcWalk(n, tgt.x, tgt.y, 2.3, dt); return; }
     if (bd > 1.3) { npcWalk(n, tgt.x, tgt.y, 2.3, dt); return; }
@@ -1631,7 +1692,7 @@ function guardThink(n, now, dt) {
   n.aggro = null;
   // socorro: jogador caído (não procurado) dentro da cidade, sem ninguém cuidando
   for (const q of Object.values(S.players)) {
-    if (!q.downed || q.carriedBy || q.dragBy || q.tied || q.execAt || !inSafe(q.x, q.y) || now < (q.wanted || 0)) continue;
+    if (!q.downed || q.downed.faint || q.carriedBy || q.dragBy || q.tied || q.execAt || !inSafe(q.x, q.y) || now < (q.wanted || 0)) continue;
     if (Object.values(S.npcs).some(o => o !== n && o.carrying === q.id)) continue;
     const d = dist(n.x, n.y, q.x, q.y); if (d > 16 || now - (q.downed.until - DOWNED_MS) < 4000) continue;
     if (d < 1.3) { entCarry(n, q, 'n:' + n.id); n.mission = 'temple'; tell(q, 'Uma sentinela te pegou para levar à sacerdotisa.'); } else npcWalk(n, q.x, q.y, 2.2, dt);
@@ -1643,7 +1704,8 @@ function npcTick(now, dt) {
   initNpcs();
   for (const n of Object.values(S.npcs)) {
     if (n.dead) continue;
-    if (n.downed) { if (now > n.downed.until && !n.dragBy) { n.downed = null; n.hp = Math.round(n.maxHp * 0.3); sys(n.name + ' se levantou, ferido.'); } continue; }
+    if (n.downed) { if (now > n.downed.until && !n.dragBy) { n.downed = null; n.hp = Math.round(n.maxHp * 0.3); n.goHome = n.id !== 'fruit'; sys(n.name + ' se levantou, ferido.'); } continue; }
+    if (n.goHome && !n.dragBy && !n.gripBy) { if (npcWalk(n, n.postX, n.postY, 1.3, dt)) { n.goHome = false; n.x = n.postX; n.y = n.postY; } continue; }
     if (n.gripBy && !n.downed) { const g = S.players[n.gripBy]; if (!g || !g.drag || g.drag.id !== n.id || now > n.escAt) { n.gripBy = null; n.dragBy = null; if (g && g.drag && g.drag.id === n.id) stopDrag(g, n.name + ' se soltou!'); } continue; }
     if (n.dragBy) continue;
     if (n.kind === 'guard') { guardThink(n, now, dt); continue; }
@@ -1812,7 +1874,7 @@ function hostTick() {
       }
       // levado até a capela: a Irmã Lúmina reanima
       if (p.downed) { const pr = NPCS[0]; if (dist(p.x, p.y, pr.x, pr.y) <= 2.6) { revivePlayer(p, 1); near(p.x, p.y, { t: 'chat', name: '', text: 'A Irmã Lúmina reanimou ' + p.name + '.' }); } }
-      if (p.downed && now >= p.downed.until) respawnTemple(p);
+      if (p.downed && now >= p.downed.until) { if (p.downed.faint) { revivePlayer(p, 0.3, 'você mesmo'); tell(p, 'Você recupera os sentidos, tossindo.'); } else respawnTemple(p); }
       continue;
     }
     if (p.aid) {
@@ -1854,7 +1916,7 @@ function hostTick() {
     for (const p of players) {
       if (dist(p.x, p.y, r.x, r.y) > VIEW_RADIUS) continue;
       if (p.devHidden && p.id !== r.id) continue;
-      let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0) | (p.running && p.walking ? 256 : 0) | (p.sit ? 512 : 0) | (p.sit === 'c' ? 1024 : 0) | (p.sleep != null ? 32768 : 0) | (p.drawT ? 65536 : 0) | (p.dragBy ? 131072 : 0) | (p.dragMode === 'foot' ? 262144 : 0) | (p.drag && p.drag.mode === 'arms' ? 524288 : 0) | (p.drag && p.drag.mode === 'foot' ? 1048576 : 0) | (p.drag && p.drag.mode === 'back' ? 2097152 : 0) | (p.drag && p.drag.mode === 'grip' ? 4194304 : 0) | (p.gripBy ? 8388608 : 0) | (p.tied ? 16777216 : 0) | ((p.fl || 0) << 11) | (p.crouch ? 8192 : 0) | (p.slide ? 16384 : 0);
+      let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0) | (p.running && p.walking ? 256 : 0) | (p.sit ? 512 : 0) | (p.sit === 'c' ? 1024 : 0) | (p.sleep != null ? 32768 : 0) | (p.drawT ? 65536 : 0) | (p.dragBy ? 131072 : 0) | (p.dragMode === 'foot' ? 262144 : 0) | (p.drag && p.drag.mode === 'arms' ? 524288 : 0) | (p.drag && p.drag.mode === 'foot' ? 1048576 : 0) | (p.drag && p.drag.mode === 'back' ? 2097152 : 0) | (p.drag && p.drag.mode === 'grip' ? 4194304 : 0) | (p.gripBy ? 8388608 : 0) | (p.tied ? 16777216 : 0) | (p.choked ? 33554432 : 0) | (p.choking ? 67108864 : 0) | (p.escortBy || p.surrendered ? 134217728 : 0) | (p.drag && (p.drag.helper || ((dragTarget(p.drag.k, p.drag.id) || {}).dragBy2)) ? 268435456 : 0) | ((p.fl || 0) << 11) | (p.crouch ? 8192 : 0) | (p.slide ? 16384 : 0);
       for (const b in BUFF_BITS) if (buffOn(p, b)) fl |= BUFF_BITS[b];
       pl.push([p.id, Math.round(p.x * 100), Math.round(p.y * 100), Math.round(p.z * 100), p.dir | 0, fl, Math.round(p.hp / p.maxHp * 100), p.carrying || 0, p.lifted || 0, bodyBits(p), (p.lost || 0) | ((p.pro || 0) << 5), p.drag ? p.drag.k + ':' + p.drag.id : 0]);
     }
