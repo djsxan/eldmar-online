@@ -50,7 +50,7 @@ function clientOnServer(m) {
   const now = performance.now();
   switch (m.t) {
     case 'welcome':
-      G.myId = m.you;
+      G.myId = m.you; setTimeout(() => Net.send({ t: 'duel', on: SET.duel ? 1 : 0 }), 500);
       for (const p of m.players) G.players[p.id] = mkEnt({ ...p });
       for (const i in m.objs || {}) WORLD.obj[+i] = m.objs[i];
       G.me = G.players[G.myId];
@@ -149,6 +149,7 @@ function clientOnServer(m) {
     case 'throwfx': G.throws.push({ ...m, t0: now }); break;
     case 'wound': showToast(BODY_NAMES[m.part] + ': ' + PART_STATE_NAMES[m.st] + (m.st >= 2 ? ' — está sangrando' : '')); flashDamage(); break;
     case 'banding': G.banding = performance.now() + m.ms; break;
+    case 'push': G.push = { t0: now, v: [Math.cos(m.a), Math.sin(m.a)], d: m.d }; G.shake = Math.max(G.shake, 4); break;
     case 'clang': { const w = tileW(m.x, m.y, 26); for (let k = 0; k < (m.perfect ? 26 : 12); k++) spawnPart('spark', w.x, w.y, { color: m.perfect ? 'rgba(255,230,120,A)' : 'rgba(255,240,200,A)' }); G.shake = Math.max(G.shake, m.perfect ? 5 : 2.5); if (m.blockBy) { const q = G.monsters[m.blockBy]; if (q) q.blockAt = now; } break; }
     case 'whiff': case 'swoosh': break;
     case 'miss': { const e = G.monsters[m.id]; if (e) { const w = tileW(e.rx, e.ry, 30); for (let k = 0; k < 5; k++) spawnPart('dust', w.x, w.y); } break; }
@@ -168,7 +169,7 @@ function applySnapshot(m, now) {
     let e = G.players[id];
     if (!e) e = G.players[id] = mkEnt({ id, name: '...', cls: 'knight', skin: 'iron', color: '#888888', lvl: 1 });
     const x = x100 / 100, y = y100 / 100;
-    e.flags = fl; e.visible = true; e.carrying = carrying || null; e.lifted = lifted || 0; e.parrying = !!((bb || 0) & 32); e.stunned = !!((bb || 0) & 64); e.limp = (bb || 0) & 3; e.armWeak = !!((bb || 0) & 4); e.dizzy = !!((bb || 0) & 8); e.bleeding = !!((bb || 0) & 16); e.carriedBy = !!(fl & 4); z = z / 100;
+    e.flags = fl; e.visible = true; e.carrying = carrying || null; e.lifted = lifted || 0; e.parrying = !!((bb || 0) & 32); e.stunned = !!((bb || 0) & 64); e.duel = !!((bb || 0) & 128); e.limp = (bb || 0) & 3; e.armWeak = !!((bb || 0) & 4); e.dizzy = !!((bb || 0) & 8); e.bleeding = !!((bb || 0) & 16); e.carriedBy = !!(fl & 4); z = z / 100;
     const wasDown = e.downed; e.downed = !!(fl & 2);
     if (e.downed && !wasDown && !e.downUntil) e.downUntil = now + DOWNED_MS;
     if (id === G.myId) {
@@ -268,6 +269,7 @@ function updateLocal(now, dt) {
   me.slide = !!G.slide; me.crouch = crouchKey && !G.slide;
   if (now < (G.stunUntil || 0)) v = null;   // atordoado / guarda quebrada
   if (G.dodge) { const kd = (now - G.dodge.t0) / DODGE.ms; if (kd >= 1) G.dodge = null; else v = G.dodge.v; }
+  if (G.push) { const kp = (now - G.push.t0) / 260; if (kp >= 1) G.push = null; else v = G.push.v; }
   const running = !!v && !kneel && !(me.body && Math.max(PART_STATE(me.body.legL), PART_STATE(me.body.legR)) >= 3) && G.keys.has('shift') && !crouchKey && !G.tired && !me.downed && !me.carrying && G.stam > 0;
   if (running) { G.stam = Math.max(0, G.stam - STAM_DRAIN * dt); G.stamT = now; if (G.stam <= 0) G.tired = true; }
   else if (now - G.stamT > STAM_DELAY) G.stam = Math.min(STAM_MAX, G.stam + STAM_REGEN * dt * (v ? 0.6 : me.sit ? 2.5 : 1));
@@ -286,6 +288,7 @@ function updateLocal(now, dt) {
     if (me.anim && /^atk_/.test(me.anim.a) && now - me.anim.t0 < (me.anim.ms || 900)) sp *= 0.45;
     if (G.parrying) sp *= 0.55;
     if (G.dodge) sp = DODGE.dist / (DODGE.ms / 1000);
+    if (G.push) sp = G.push.d / 0.26;
     if (G.dev) sp = PLAYER_SPEED * (G.keys.has('shift') ? 10 : 4);   // Tecelão: voo livre ultrarrápido
     if (G.slide) { const k = (now - G.slide.t0) / SLIDE_MS; sp = PLAYER_SPEED * RUN_MUL * 1.5 * (1 - k * 0.65); if (Math.random() < 0.5) { const w = tileW(me.x, me.y, 0); spawnPart('dust', w.x, w.y); } }
     if (me.carrying || me.lifted) sp *= 0.75;
@@ -339,7 +342,9 @@ function updateLocal(now, dt) {
   }
   const stF = (me.crouch ? 1 : 0) | (me.slide ? 2 : 0);
   if (combatFacing() && G.mouseW) { let a = Math.atan2(G.mouseW.y - me.y, G.mouseW.x - me.x);
-    { let best = null, bd = 3.4; for (const id in G.monsters) { const q = G.monsters[id]; if (q.dieAt || !q.visible || Math.abs((q.z || 0) - (me.z || 0)) > 0.5) continue; const d = dist(q.rx, q.ry, me.x, me.y), aq = Math.atan2(q.ry - me.y, q.rx - me.x); let df = Math.abs(aq - a) % (Math.PI * 2); if (df > Math.PI) df = Math.PI * 2 - df; if (d < bd && df < 0.95) { bd = d; best = aq; } } if (best != null) a = best; }   /* assistência de mira: o inimigo perto, na direção do cursor */
+    { let best = null, bd = 3.4; for (const id in G.monsters) { const q = G.monsters[id]; if (q.dieAt || !q.visible || Math.abs((q.z || 0) - (me.z || 0)) > 0.5) continue; const d = dist(q.rx, q.ry, me.x, me.y), aq = Math.atan2(q.ry - me.y, q.rx - me.x); let df = Math.abs(aq - a) % (Math.PI * 2); if (df > Math.PI) df = Math.PI * 2 - df; if (d < bd && df < 0.95) { bd = d; best = aq; } }
+      if (SET.duel) for (const id in G.players) { const q = G.players[id]; if (id === G.myId || !q.duel || !q.visible || q.downed) continue; const d = dist(q.rx, q.ry, me.x, me.y), aq = Math.atan2(q.ry - me.y, q.rx - me.x); let df = Math.abs(aq - a) % (Math.PI * 2); if (df > Math.PI) df = Math.PI * 2 - df; if (d < bd && df < 0.95) { bd = d; best = aq; } }
+      if (best != null) a = best; }   /* assistência de mira: o inimigo perto, na direção do cursor */
     me.fa = a; me.dir = dirFromVec(Math.cos(a), Math.sin(a), me.dir); if (G.parrying && now - (G.parryAT || 0) > 150) { G.parryAT = now; Net.send({ t: 'parrya', a }); } }
   if (now - me.sendT > 100 && (moved || me.walking !== me.sentWalk || stF !== me.sentSt || me.dir !== me.sentDir)) { me.sentDir = me.dir;
     me.sendT = now; me.sentWalk = me.walking; me.sentSt = stF;
@@ -1205,8 +1210,13 @@ function applySettings() {
   $('pz-bright').value = SET.bright; $('pz-bright-v').textContent = Math.round(SET.bright * 100) + '%';
   $('pz-zoom').value = SET.zoom; $('pz-zoom-v').textContent = Math.round(SET.zoom * 100) + '%';
   for (const b of document.querySelectorAll('#pz-phys button')) b.classList.toggle('on', b.dataset.p === (SET.phys || 'ragdoll'));
+  for (const b of document.querySelectorAll('#pz-tele button')) b.classList.toggle('on', b.dataset.t === (SET.tele || 'soft'));
+  for (const b of document.querySelectorAll('#pz-duel button')) b.classList.toggle('on', (b.dataset.d === '1') === !!SET.duel);
+  if ($('duelicon')) $('duelicon').classList.toggle('hidden', !SET.duel);
   document.documentElement.style.setProperty('--pad', SET.pad); $('pz-pad').value = SET.pad; $('pz-pad-v').textContent = Math.round(SET.pad * 100) + '%';
 }
+for (const b of document.querySelectorAll('#pz-tele button')) b.addEventListener('click', () => { SET.tele = b.dataset.t; saveSettings(); applySettings(); });
+for (const b of document.querySelectorAll('#pz-duel button')) b.addEventListener('click', () => { SET.duel = b.dataset.d === '1'; saveSettings(); applySettings(); Net.send({ t: 'duel', on: SET.duel ? 1 : 0 }); showToast(SET.duel ? 'Modo duelo LIGADO: outros jogadores em duelo podem te atingir fora da cidade.' : 'Modo duelo desligado.'); });
 for (const b of document.querySelectorAll('#pz-phys button')) b.addEventListener('click', () => { SET.phys = b.dataset.p; saveSettings(); applySettings(); });
 $('pz-pad').addEventListener('input', e => { SET.pad = +e.target.value; saveSettings(); applySettings(); });
 function togglePause(force) {

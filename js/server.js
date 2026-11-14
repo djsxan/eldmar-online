@@ -106,7 +106,7 @@ function tickBastions(now) {
 }
 // objetos do cenário que mudaram (levantados/quebrados) — todos os clientes recebem
 function bodyBits(p) {
-  const extra = (p.parry ? 32 : 0) | (now_() < (p.stunUntil || 0) ? 64 : 0);
+  const extra = (p.parry ? 32 : 0) | (now_() < (p.stunUntil || 0) ? 64 : 0) | (p.duel ? 128 : 0);
   if (!p.body) return extra; const leg = Math.max(PART_STATE(p.body.legL), PART_STATE(p.body.legR));
   let bl = 0; for (const k of BODY_PARTS) bl += p.bleed[k] || 0;
   return extra | leg | (PART_STATE(p.body.armA) >= 2 ? 4 : 0) | (PART_STATE(p.body.head) >= 2 ? 8 : 0) | (bl > 0 ? 16 : 0);
@@ -249,6 +249,7 @@ function hostOnClient(from, m) {
     case 'parrya': if (p.parry && isFinite(+m.a)) p.parry.a = +m.a; break;
     case 'dodge': { const now = now_(); if (p.downed || now < (p.dodgeCd || 0) || p.cst < DODGE.cost || now < (p.stunUntil || 0)) break; p.cst -= DODGE.cost; p.dodgeCd = now + DODGE.cd; p.dodgeUntil = now + DODGE.iframe; p.dodgeAllow = now + DODGE.ms + 400; p.parry = null; if (p.atk && !p.atk.done) p.atk = null; near(p.x, p.y, { t: 'anim', w: 'p', id: p.id, a: 'dash', ms: DODGE.ms + 120 }); sendStat(p); break; }
     case 'kick': playerKick(p, +m.a || 0, now_()); break;
+    case 'duel': p.duel = !!m.on; break;
     case 'aim': if (['head', 'torso', 'legs'].includes(m.z)) p.aim = m.z; break;
     case 'band': bandage(p); break;
     case 'skin': {
@@ -447,7 +448,7 @@ function damagePlayer(p, raw, m, delay = 0, zone = null) {
   if (p.dev) return;   // o Tecelão não se fere
   if (p.downed) {
     // lobos atacam quem está caído: a pessoa sangra mais rápido
-    if (m && MON[m.type].beh === 'pred') { p.downed.until -= 2500; near(p.x, p.y, { t: 'hit', k: 'p', id: p.id, x: p.x, y: p.y, dmg: 0, d: delay, ax: m.x, ay: m.y }); }
+    if (m && MON[m.type] && MON[m.type].beh === 'pred') { p.downed.until -= 2500; near(p.x, p.y, { t: 'hit', k: 'p', id: p.id, x: p.x, y: p.y, dmg: 0, d: delay, ax: m.x, ay: m.y }); }
     return;
   }
   const c = CLASSES[p.cls];
@@ -473,7 +474,7 @@ function goDown(p, m) {
   if (p.carrying) dropCarried(p);
   for (const id in S.monsters) { const q = S.monsters[id]; if (q.aggro === p.id) q.aggro = null; if (q.taunt && q.taunt.pid === p.id) q.taunt = null; }
   near(p.x, p.y, { t: 'down', id: p.id });
-  sys(`${p.name} caiu diante de ${m ? MON[m.type].name : 'um inimigo'}. Ajude-o!`);
+  sys(`${p.name} caiu diante de ${m ? (m.name || (MON[m.type] && MON[m.type].name) || 'um inimigo') : 'um inimigo'}. Ajude-o!`);
   sendStat(p);
 }
 function revivePlayer(p, frac, by) {
@@ -838,7 +839,22 @@ function playerStrike(p, k, a, now) {
   anim('p', p, 'atk_' + k, p.x + Math.cos(p.atk.a), p.y + Math.sin(p.atk.a), { ms: W + R + C, W, ang: p.atk.a, reach: p.atk.reach, arc: B.arc });
   sendStat(p);
 }
+// duelo: só vale se os dois ligaram o modo duelo e estão fora da cidade
+const pvpOk = (a, b) => a !== b && a.duel && b.duel && !a.dev && !b.dev && !b.downed && !inSafe(a.x, a.y) && !inSafe(b.x, b.y) && Math.abs((a.z || 0) - (b.z || 0)) < 0.5 && !(a.fl > 0) && !(b.fl > 0);
+function pvpHit(p, q, A, now) {
+  if (now < (q.dodgeUntil || 0)) { near(q.x, q.y, { t: 'whiff', id: q.id }); return; }
+  const toP = Math.atan2(p.y - q.y, p.x - q.x);
+  if (q.parry && Math.abs(angDiff(q.parry.a, toP)) <= PARRY_ARC) {
+    if (now - q.parry.t0 <= PARRY_PERFECT + A.W * 0.25) { p.stunUntil = now + 750; q.ripUntil = now + RIPOSTE_MS; q.cst = Math.min(CST_MAX, q.cst + 5); near(q.x, q.y, { t: 'clang', x: (p.x + q.x) / 2, y: (p.y + q.y) / 2, perfect: 1 }); near(p.x, p.y, { t: 'anim', w: 'p', id: p.id, a: 'hurt', ms: 750 }); sendStat(p); }
+    else { q.cst -= 14; near(q.x, q.y, { t: 'clang', x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 }); if (q.cst <= 0) guardBreak(q, now); }
+    sendStat(q); return;
+  }
+  const B = STRIKES[A.k], M = MELEE[p.cls] || MELEE.knight, { dmg } = roll(p, B.mult * M.dmg * (A.rip ? 1.25 : 1));
+  damagePlayer(q, dmg, { x: p.x, y: p.y, name: p.name }, 0, B.zone);
+  if (q.atk && !q.atk.done) { q.atk = null; near(q.x, q.y, { t: 'anim', w: 'p', id: q.id, a: 'hurt' }); }
+}
 function resolvePlayerStrike(p, A, now) {
+  { const B0 = STRIKES[A.k]; let n = 0; for (const q of Object.values(S.players)) { if (n >= (B0.multi || 1) || !pvpOk(p, q) || !inArc(p.x, p.y, A.a, q.x, q.y, A.reach, A.arc, 0.3)) continue; pvpHit(p, q, A, now); n++; } if (n) return; }
   const B = STRIKES[A.k], M = MELEE[p.cls] || MELEE.knight;
   const targets = Object.values(S.monsters).filter(q => Math.abs((q.z || 0) - (p.z || 0)) < 0.5 && inArc(p.x, p.y, A.a, q.x, q.y, A.reach, A.arc, MON[q.type].rad || 0.3)).sort((a, b) => dist(a.x, a.y, p.x, p.y) - dist(b.x, b.y, p.x, p.y)).slice(0, B.multi || 1);
   for (const q of targets) {
@@ -862,8 +878,13 @@ function playerKick(p, a, now) {
     for (const q of Object.values(S.monsters)) {
       if (!inArc(p.x, p.y, a, q.x, q.y, KICK.reach, KICK.arc, MON[q.type].rad || 0.3) || MON[q.type].dragon) continue;
       q.guardBreak = now_() + 1600; q.stunUntil = Math.max(q.stunUntil, now_() + (MON[q.type].big ? 350 : KICK.stun)); if (q.atk && !q.atk.done) q.atk = null;
-      const nx = q.x + Math.cos(a) * 0.6, ny = q.y + Math.sin(a) * 0.6; if (!MON[q.type].big && monStand(nx, ny, q)) { q.x = nx; q.y = ny; }
+      if (!MON[q.type].big) for (let s = 1; s <= 6; s++) setTimeout(() => { if (!S.monsters[q.id]) return; const nx = q.x + Math.cos(a) * KICK.push / 6, ny = q.y + Math.sin(a) * KICK.push / 6; if (monStand(nx, ny, q)) { q.x = nx; q.y = ny; } }, s * 35);   // empurrão longo
       hitRolled(p, q, Math.max(1, Math.round(p.lvl * 1.5 + 3)), false, 0, 0);
+    }
+    for (const q of Object.values(S.players)) {   // duelo: o chute quebra a guarda e empurra o outro jogador
+      if (!pvpOk(p, q) || !inArc(p.x, p.y, a, q.x, q.y, KICK.reach, KICK.arc, 0.3)) continue;
+      if (q.parry) { q.parry = null; q.stunUntil = now_() + 700; near(q.x, q.y, { t: 'anim', w: 'p', id: q.id, a: 'hurt', ms: 700 }); }
+      q.dodgeAllow = now_() + 700; Net.toOne(q.id, { t: 'push', a, d: KICK.push }); damagePlayer(q, Math.max(1, Math.round(p.lvl + 3)), { x: p.x, y: p.y, name: p.name }, 0, 'torso'); sendStat(q);
     }
   }, KICK.W);
   sendStat(p);

@@ -321,6 +321,7 @@ function drawHeroEntity(ctx, e, sx, sy, now) {
     ctx.imageSmoothingEnabled = true;
     softDab(ctx, sx, sy, 10, '#000000', 0.35);
     const kb = knockOf(e, now); sx += kb.x * 0.6; sy += kb.y * 0.6;
+    if (e !== G.me && e.anim && e.anim.W && e.anim.reach && now - e.anim.t0 < e.anim.W + 120) drawTelegraph(ctx, e, sx, sy, now);
     if (e.skin === 'weaver') {   // o Tecelão flutua, com runas girando aos pés
       const fy = 12 + Math.sin(now / 600) * 3; ctx.save(); ctx.strokeStyle = 'rgba(232,200,96,0.45)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(sx, sy + 2, 18, 8, 0, 0, 7); ctx.stroke();
       ctx.fillStyle = 'rgba(255,230,150,0.85)'; ctx.font = '8px serif'; ctx.textAlign = 'center'; for (let k = 0; k < 8; k++) { const a = now / 1500 + k * Math.PI / 4; ctx.fillText('✦◇✧◆✦◇✧◆'[k], sx + Math.cos(a) * 18, sy + 5 + Math.sin(a) * 8); } ctx.restore();
@@ -374,7 +375,13 @@ const PAINT_AS = { dragon: 'troll', deer: 'wolf', boar: 'wolf', bandit: 'goblin'
 const MON_H = { dragon: 260, bandit: 84, deserter: 90, wisp: 70, orcchief: 140, cryptlord: 120, deserterchief: 104, elderslime: 70, deer: 70, boar: 46, rat: 30, slime: 40, wolf: 58, spider: 52, toad: 44, goblin: 68, skeleton: 92, orc: 104, troll: 150 };
 // aviso do golpe inimigo: arco vermelho no chão que enche durante a preparação (dá tempo de aparar ou esquivar)
 function drawTelegraph(ctx, e, sx, sy, now) {
-  const an = e.anim, k = Math.min(1, (now - an.t0) / an.W), seg = 10, pts = [[sx, sy]];
+  const an = e.anim, k = Math.min(1, (now - an.t0) / an.W), seg = 10, pts = [[sx, sy]], mode = SET.tele || 'soft';
+  if (mode === 'off') return;
+  if (mode === 'soft') {   // discreto: arco fino na ponta do alcance, só na segunda metade da preparação
+    if (k < 0.45 && k < 1) return; const a2 = Math.min(1, (k - 0.45) / 0.55);
+    ctx.beginPath(); for (let q = -seg; q <= seg; q++) { const a = an.ang + an.arc * q / seg, p = iso(e.rx + Math.cos(a) * an.reach, e.ry + Math.sin(a) * an.reach), x = p.sx + G.view.ox, y = p.sy + G.view.oy - (e.z || 0) * FLOOR_PX; q === -seg ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+    ctx.strokeStyle = k >= 1 ? 'rgba(255,255,255,0.7)' : 'rgba(255,70,40,' + (0.15 + a2 * 0.45).toFixed(2) + ')'; ctx.lineWidth = 1.2 + a2; ctx.stroke(); return;
+  }
   for (let q = -seg; q <= seg; q++) { const a = an.ang + an.arc * q / seg, wx = e.rx + Math.cos(a) * an.reach, wy = e.ry + Math.sin(a) * an.reach, p = iso(wx, wy); pts.push([p.sx + G.view.ox, p.sy + G.view.oy - (e.z || 0) * FLOOR_PX]); }
   ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
   const flash = k >= 1; ctx.fillStyle = flash ? 'rgba(255,240,220,0.35)' : 'rgba(210,30,15,' + (0.08 + k * 0.22).toFixed(2) + ')'; ctx.fill();

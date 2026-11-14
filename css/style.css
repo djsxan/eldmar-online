@@ -346,3 +346,5 @@ body.touch #btn-crouch { display: block; } #btn-crouch.on { background: rgba(140
 /* tontura: cabeça ferida */
 body.dizzy #game { animation: dizzy 3.2s ease-in-out infinite; }
 @keyframes dizzy { 0%, 100% { transform: rotate(0deg) scale(1.01); filter: blur(0.4px); } 25% { transform: rotate(0.6deg) scale(1.015); filter: blur(1.1px); } 75% { transform: rotate(-0.6deg) scale(1.015); filter: blur(0.7px); } }
+#duelicon { position: fixed; z-index: 5; left: 50px; top: 12px; font-size: 18px; color: #e84a3a; text-shadow: 0 1px 3px #000; pointer-events: none; }
+#duelicon.hidden { display: none; }

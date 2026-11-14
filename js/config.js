@@ -3,12 +3,12 @@
 //  Mexa aqui para balancear o jogo.
 // ============================================================
 const GAME_NAME = 'World of Sxan';
-const VERSION = 'v1.9.1';
+const VERSION = 'v1.9.2';
 const VERSION_NAME = 'Lâmina e Guarda';
 
 const PLAYER_SPEED = 2.7;          // tiles por segundo (1 tile ≈ 2 m)
 // configurações do jogador (menu de pausa)
-const SET = (() => { const d = { quality: (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches) ? 'low' : 'high', bright: 1, zoom: 1, phys: 'ragdoll', pad: (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches) ? 0.75 : 0.5 }; try { return Object.assign(d, JSON.parse(localStorage.getItem('wos-settings') || '{}')); } catch (e) { return d; } })();
+const SET = (() => { const d = { quality: (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches) ? 'low' : 'high', bright: 1, zoom: 1, phys: 'ragdoll', tele: 'soft', duel: false, pad: (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches) ? 0.75 : 0.5 }; try { return Object.assign(d, JSON.parse(localStorage.getItem('wos-settings') || '{}')); } catch (e) { return d; } })();
 function saveSettings() { try { localStorage.setItem('wos-settings', JSON.stringify(SET)); } catch (e) { } }
 const STAIR_N = 5;                 // escadas: 5 tiles de rampa até o alto da muralha
 const SKIN_LVL = [1, 10, 20];      // nível para liberar cada skin (comum, rara, lendária)
@@ -212,7 +212,7 @@ const STRIKES = {
   bite:   { n: 'mordida',   W: 340, R: 120, C: 480, reach: 1.25, arc: 0.6,  mult: 1.0,  zone: 'legs',  st: 0 },
 };
 const PARRY_PERFECT = 300, PARRY_ARC = 1.15, RIPOSTE_MS = 1300, FEINT_COST = 10, CST_MAX = 100, CST_REGEN = 24;
-const DODGE = { dist: 1.4, ms: 230, iframe: 280, cost: 18, cd: 650 }, KICK = { reach: 1.2, arc: 0.6, W: 230, stun: 850, cost: 12 };
+const DODGE = { dist: 1.4, ms: 230, iframe: 280, cost: 18, cd: 650 }, KICK = { reach: 1.35, arc: 0.6, W: 240, stun: 1000, cost: 12, push: 1.8 };
 // monstros com arma: golpes que usam, chance de bloquear e quanto a preparação é mais lenta (dá tempo de reagir)
 const MON_MELEE = {
   goblin: { s: ['slashL', 'slashR', 'stab'], blk: 0.1, W: 1.2 }, orc: { s: ['over', 'slashL', 'slashR'], blk: 0.2, W: 1.35 }, skeleton: { s: ['slashL', 'slashR', 'over', 'stab'], blk: 0.15, W: 1.25 },
