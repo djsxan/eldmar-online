@@ -3,8 +3,8 @@
 //  Mexa aqui para balancear o jogo.
 // ============================================================
 const GAME_NAME = 'World of Sxan';
-const VERSION = 'v1.9.2';
-const VERSION_NAME = 'Lâmina e Guarda';
+const VERSION = 'v1.10.0';
+const VERSION_NAME = 'Aço e Sangue';
 
 const PLAYER_SPEED = 2.7;          // tiles por segundo (1 tile ≈ 2 m)
 // configurações do jogador (menu de pausa)
@@ -220,6 +220,11 @@ const MON_MELEE = {
   deserterchief: { s: ['over', 'under', 'slashL', 'slashR', 'stab'], blk: 0.4, W: 1.05 }, orcchief: { s: ['over', 'slashL', 'slashR', 'under'], blk: 0.3, W: 1.3 },
   cryptlord: { s: ['over', 'under', 'slashL', 'slashR', 'stab'], blk: 0.35, W: 1.15 }, troll: { s: ['over', 'slashL', 'slashR'], blk: 0, W: 1.55 },
 };
+// membros perdidos (bits) — decepados por golpe crítico cortante na direção certa
+const LOST = { head: 1, armA: 2, armB: 4, legL: 8, legR: 16 };
+const LOST_NAMES = { head: 'a cabeça', armA: 'o braço da arma', armB: 'o outro braço', legL: 'a perna esquerda', legR: 'a perna direita' };
+const SEVER_FROM = { slashL: [['head', 0.35], ['armA', 0.35], ['armB', 0.3]], slashR: [['head', 0.35], ['armA', 0.35], ['armB', 0.3]], over: [['head', 0.25], ['armA', 0.4], ['armB', 0.35]], under: [['legL', 0.5], ['legR', 0.5]] };
+const KNOCK_MS = 1700, PROSTH_PRICE = 150, RITUAL_PRICE = 600;
 const STRIKE_PART = { head: ['head', 'head', 'torso', 'armA'], legs: ['legL', 'legR', 'legL', 'torso'], torso: ['torso', 'torso', 'armA', 'armB'] };
 const BUFF_NAMES = { warcry: 'Grito de Guerra', wall: 'Muralha de Ferro', agile: 'Passo Ágil', bless: 'Bênção da Aurora', mead: 'Hidromel', whet: 'Lâmina Afiada' };
 const BUFF_BITS = { wall: 16, agile: 32, bless: 64, warcry: 128 };

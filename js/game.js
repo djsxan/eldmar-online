@@ -65,8 +65,9 @@ function clientOnServer(m) {
       const e = G.me; if (!e || m.id !== G.myId) break;
       const oldLvl = e.lvl;
       if (m.slow) G.slowUntil = now + m.slow;
+      if (m.knock) G.knockUntil = now + m.knock;
       G.cst = m.cst ?? CST_MAX; G.stunUntil = now + (m.stun || 0); G.ripUntil = now + (m.rip || 0);
-      Object.assign(e, { hp: m.hp, maxHp: m.maxHp, mp: m.mp, maxMp: m.maxMp, lvl: m.lvl, xp: m.xp, gold: m.gold, pots: m.pots, body: m.body, bleed: m.bleed, inv: m.inv || {}, combat: m.combat, quests: m.quests, qdone: m.qdone });
+      Object.assign(e, { hp: m.hp, maxHp: m.maxHp, mp: m.mp, maxMp: m.maxMp, lvl: m.lvl, xp: m.xp, gold: m.gold, pots: m.pots, body: m.body, bleed: m.bleed, lost: m.lost || 0, pro: m.pro || 0, inv: m.inv || {}, combat: m.combat, quests: m.quests, qdone: m.qdone });
       setBuffs(e, m.buffs);
       G.cdEnd = m.cds.map(r => now + r);
       e.downed = m.downed > 0; e.downUntil = now + m.downed;
@@ -91,7 +92,9 @@ function clientOnServer(m) {
         if (m.by === G.myId) G.shake = Math.max(G.shake, m.crit || m.hv ? 4 : 1.6);
         const mine = m.k === 'p' && m.id === G.myId;
         if (false) G.nums.push({ wx: pos.x, wy: pos.y, text: String(m.dmg), color: m.k === 'm' ? (m.crit ? '#f8d850' : '#ffffff') : (mine ? '#f05040' : '#f0a090'), crit: m.crit, big: m.crit, t0: t, vx: (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.6) });
-        for (let k = 0; k < 6; k++) spawnPart(m.k === 'p' ? 'blood' : 'spark', pos.x, pos.y - 26, { color: 'rgba(255,240,180,A)' });
+        if (e && !(m.k === 'm' && NO_BLOOD.has(e.type)) && m.ax != null) sprayBlood(pos.x, pos.y - 26, m.x - m.ax, m.y - m.ay, m.crit ? 18 : 9);
+        else for (let k = 0; k < 6; k++) spawnPart(m.k === 'p' ? 'blood' : 'spark', pos.x, pos.y - 26, { color: 'rgba(255,240,180,A)' });
+        if (e && m.z && m.k === 'p' && !(e.anim && /^atk_/.test(e.anim.a) && t - e.anim.t0 < (e.anim.ms || 0))) e.anim = { a: m.z === 'head' ? 'hurt_head' : m.z === 'legs' ? 'hurt_leg' : 'hurt', t0: t, ms: 420 };
         if (mine) { G.shake = Math.max(G.shake, 2.5); flashDamage(); }
       });
       break;
@@ -149,6 +152,21 @@ function clientOnServer(m) {
     case 'throwfx': G.throws.push({ ...m, t0: now }); break;
     case 'wound': showToast(BODY_NAMES[m.part] + ': ' + PART_STATE_NAMES[m.st] + (m.st >= 2 ? ' — está sangrando' : '')); flashDamage(); break;
     case 'banding': G.banding = performance.now() + m.ms; break;
+    case 'sever': {
+      const e = m.k === 'm' ? G.monsters[m.id] : G.players[m.id]; if (!e) break;
+      e.lost = (e.lost || 0) | LOST[m.part]; spawnGib(e, m.k, m.part, m.x - m.ax, m.y - m.ay);
+      const w = tileW(e.rx, e.ry, 30 + (e.z || 0) * FLOOR_PX); sprayBlood(w.x, w.y, m.x - m.ax, m.y - m.ay, 30); addBlood(e.rx, e.ry, e.z || 0, 0.7, 300000);
+      if (dist(e.rx, e.ry, G.me.x, G.me.y) < 8) G.shake = Math.max(G.shake, 6);
+      if (m.k === 'p' && m.id === G.myId) { G.me.lost = e.lost; flashDamage(); showBanner(m.part === 'head' ? 'Decapitado' : 'Você perdeu ' + LOST_NAMES[m.part], m.part === 'head' ? '' : 'Estanque o sangue com B. Prótese no ferreiro, ritual na catedral.', true); }
+      break;
+    }
+    case 'knock': {
+      const e = m.k === 'm' ? G.monsters[m.id] : G.players[m.id]; if (!e) break;
+      e.knockUntil = now + m.ms; e.lastHit = [e.rx - m.ax, e.ry - m.ay]; const key = 'k' + m.k + m.id; delete FALLS[key];
+      startFall({ key, type: e.type, hero: m.k === 'p' ? { cls: e.cls, skin: e.skin, color: e.color } : null, cls: e.cls || 'knight', x: e.rx, y: e.ry, dir: e.dir || 0, ix: e.lastHit[0], iy: e.lastHit[1], force: 0.85, lost: e.lost || 0, pro: e.pro || 0, stand: e._spr });
+      if (m.k === 'p' && m.id === G.myId) { G.knockUntil = now + m.ms; G.shake = Math.max(G.shake, 7); }
+      break;
+    }
     case 'push': G.push = { t0: now, v: [Math.cos(m.a), Math.sin(m.a)], d: m.d }; G.shake = Math.max(G.shake, 4); break;
     case 'clang': { const w = tileW(m.x, m.y, 26); for (let k = 0; k < (m.perfect ? 26 : 12); k++) spawnPart('spark', w.x, w.y, { color: m.perfect ? 'rgba(255,230,120,A)' : 'rgba(255,240,200,A)' }); G.shake = Math.max(G.shake, m.perfect ? 5 : 2.5); if (m.blockBy) { const q = G.monsters[m.blockBy]; if (q) q.blockAt = now; } break; }
     case 'whiff': case 'swoosh': break;
@@ -162,14 +180,14 @@ function clientOnServer(m) {
 
 function applySnapshot(m, now) {
   G.chests = (m.ch || []).map(c => ({ id: c[0], x: c[1] / 100, y: c[2] / 100, open: !!c[3], mine: !!c[4] }));
-  G.corpses = (m.co || []).map(c => ({ id: c[0], type: MON_TYPES[c[1]], x: c[2] / 100, y: c[3] / 100, z: c[4], looted: !!c[5], ix: c[6] / 10, iy: c[7] / 10 }));
+  G.corpses = (m.co || []).map(c => ({ id: c[0], type: MON_TYPES[c[1]], x: c[2] / 100, y: c[3] / 100, z: c[4], looted: !!c[5], ix: c[6] / 10, iy: c[7] / 10, lost: c[8] || 0 }));
   const seenP = new Set();
-  for (let [id, x100, y100, z, dir, fl, hpPct, carrying, lifted, bb] of m.p) {
+  for (let [id, x100, y100, z, dir, fl, hpPct, carrying, lifted, bb, lp] of m.p) {
     seenP.add(id);
     let e = G.players[id];
     if (!e) e = G.players[id] = mkEnt({ id, name: '...', cls: 'knight', skin: 'iron', color: '#888888', lvl: 1 });
     const x = x100 / 100, y = y100 / 100;
-    e.flags = fl; e.visible = true; e.carrying = carrying || null; e.lifted = lifted || 0; e.parrying = !!((bb || 0) & 32); e.stunned = !!((bb || 0) & 64); e.duel = !!((bb || 0) & 128); e.limp = (bb || 0) & 3; e.armWeak = !!((bb || 0) & 4); e.dizzy = !!((bb || 0) & 8); e.bleeding = !!((bb || 0) & 16); e.carriedBy = !!(fl & 4); z = z / 100;
+    e.flags = fl; e.visible = true; e.carrying = carrying || null; e.lifted = lifted || 0; if (id !== G.myId) { e.lost = (lp || 0) & 31; e.pro = ((lp || 0) >> 5) & 31; } e.parrying = !!((bb || 0) & 32); e.stunned = !!((bb || 0) & 64); e.duel = !!((bb || 0) & 128); e.limp = (bb || 0) & 3; e.armWeak = !!((bb || 0) & 4); e.dizzy = !!((bb || 0) & 8); e.bleeding = !!((bb || 0) & 16); e.carriedBy = !!(fl & 4); z = z / 100;
     const wasDown = e.downed; e.downed = !!(fl & 2);
     if (e.downed && !wasDown && !e.downUntil) e.downUntil = now + DOWNED_MS;
     if (id === G.myId) {
@@ -188,7 +206,7 @@ function applySnapshot(m, now) {
     const x = x100 / 100, y = y100 / 100;
     let e = G.monsters[id];
     if (!e) { const type = MON_TYPES[ti]; e = G.monsters[id] = mkEnt({ id, type, x, y, rx: x, ry: y, maxHp: MON[type].hp, visible: true }); }
-    e.hp = hp; e.flags = flags; e.face = face; if (dg != null && dg >= 0) e.dg = dg;
+    e.hp = hp; e.flags = flags; e.face = face; e.lost = (flags >> 5) & 31; if (dg != null && dg >= 0) e.dg = dg;
     { const t = Math.round(y) * MAP_W + Math.round(x); e.z = WORLD.ground[t] === T.CLIFF && WORLD.fl1[t] > 0 ? 1 : 0; }
     e.buf.push({ t: now, x, y });
     if (e.buf.length > 6) e.buf.shift();
@@ -267,10 +285,10 @@ function updateLocal(now, dt) {
   if (G.slide && now - G.slide.t0 > SLIDE_MS) G.slide = null;
   if (G.slide) v = G.slide.v;
   me.slide = !!G.slide; me.crouch = crouchKey && !G.slide;
-  if (now < (G.stunUntil || 0)) v = null;   // atordoado / guarda quebrada
+  if (now < (G.stunUntil || 0) || now < (G.knockUntil || 0)) v = null;   // atordoado / guarda quebrada / derrubado
   if (G.dodge) { const kd = (now - G.dodge.t0) / DODGE.ms; if (kd >= 1) G.dodge = null; else v = G.dodge.v; }
   if (G.push) { const kp = (now - G.push.t0) / 260; if (kp >= 1) G.push = null; else v = G.push.v; }
-  const running = !!v && !kneel && !(me.body && Math.max(PART_STATE(me.body.legL), PART_STATE(me.body.legR)) >= 3) && G.keys.has('shift') && !crouchKey && !G.tired && !me.downed && !me.carrying && G.stam > 0;
+  const running = !!v && !kneel && !((me.lost || 0) & 24) && !(me.body && Math.max(PART_STATE(me.body.legL), PART_STATE(me.body.legR)) >= 3) && G.keys.has('shift') && !crouchKey && !G.tired && !me.downed && !me.carrying && G.stam > 0;
   if (running) { G.stam = Math.max(0, G.stam - STAM_DRAIN * dt); G.stamT = now; if (G.stam <= 0) G.tired = true; }
   else if (now - G.stamT > STAM_DELAY) G.stam = Math.min(STAM_MAX, G.stam + STAM_REGEN * dt * (v ? 0.6 : me.sit ? 2.5 : 1));
   revealFog(me.x, me.y);
@@ -283,7 +301,10 @@ function updateLocal(now, dt) {
     if (running) sp *= RUN_MUL * (healthState(me) === 1 ? 0.75 : 1);   // cansado corre pesado e mais devagar
     if (me.crouch) sp *= CROUCH_MUL;
     if (kneel) sp *= KNEEL_MUL;
-    if (me.body) { const l1 = PART_STATE(me.body.legL), l2 = PART_STATE(me.body.legR); sp *= LEG_SPEED[Math.max(l1, l2)] * (l1 >= 2 && l2 >= 2 ? 0.8 : 1); }
+    if (me.body) {
+      const lf = k => ((me.lost || 0) & LOST[k]) ? (((me.pro || 0) & LOST[k]) ? 0.72 : 0.28) : LEG_SPEED[PART_STATE(me.body[k])], a1 = lf('legL'), a2 = lf('legR');
+      sp *= Math.min(a1, a2) * (a1 < 0.7 && a2 < 0.7 ? 0.55 : 1);
+    }
     if (now < (G.slowUntil || 0)) sp *= 0.5;   // rugido do dragão
     if (me.anim && /^atk_/.test(me.anim.a) && now - me.anim.t0 < (me.anim.ms || 900)) sp *= 0.45;
     if (G.parrying) sp *= 0.55;
@@ -421,7 +442,7 @@ function saveChar() {
   const me = G.me;
   try {
     const all = loadChars();
-    all[charKey(me.name, me.cls)] = { name: me.name, cls: me.cls, skin: me.skin, color: me.color, lvl: me.lvl, xp: me.xp, gold: me.gold, pots: me.pots, body: me.body, bleed: me.bleed, inv: me.inv, quests: me.quests, qdone: me.qdone, t: Date.now() };
+    all[charKey(me.name, me.cls)] = { name: me.name, cls: me.cls, skin: me.skin, color: me.color, lvl: me.lvl, xp: me.xp, gold: me.gold, pots: me.pots, body: me.body, bleed: me.bleed, lost: (me.lost || 0) & 30, pro: me.pro || 0, inv: me.inv, quests: me.quests, qdone: me.qdone, t: Date.now() };
     localStorage.setItem(SAVE_KEY, JSON.stringify(all));
   } catch (e) { }
 }
@@ -602,11 +623,11 @@ const NPC_DIALOG = {
     ['Poção de Mana — 25 ouro', { a: 'buy', item: 'mp', qty: 1 }], ['5 Poções de Mana — 125 ouro', { a: 'buy', item: 'mp', qty: 5 }],
     ['Bandagem — 8 ouro', { a: 'buy', item: 'band', qty: 1 }], ['5 Bandagens — 40 ouro', { a: 'buy', item: 'band', qty: 5 }],
     ['Vender todo o saque', { a: 'sell' }]] },
-  priest: { greet: 'Paz, viajante. A capela é pequena, mas a Aurora ainda escuta quem pede. Traga aqui os que caírem; eu cuido deles.', opts: [['Receber a bênção (grátis)', { a: 'bless' }]] },
+  priest: { greet: 'Paz, viajante. A capela é pequena, mas a Aurora ainda escuta quem pede. Traga aqui os que caírem; eu cuido deles.', opts: [['Receber a bênção (grátis)', { a: 'bless' }], ['Ritual de restauração dos membros — 600 ouro', { a: 'ritual' }]] },
   innkeeper: { greet: 'Sente-se. Tem fogo, comida quente e gente falando demais. Do que precisa?', opts: [
     ['Hidromel — 15 ouro (+10% de dano por 3 min)', { a: 'mead' }], ['Ensopado de javali — 10 ouro (recupera tudo)', { a: 'stew' }], ['Ouvir as conversas da taverna', { a: 'rumor' }]] },
   guard: { greet: 'Fique atento lá fora. Quanto mais longe da cidadela, mais o mundo tenta te matar.', opts: [['Quais são as regiões?', { local: GUARD_TEXT }]] },
-  smith: { greet: 'Hrodgar. Ferreiro da cidadela. Se a lâmina está cega, eu resolvo.', opts: [['Afiar a arma — 25 ouro (+15% de dano por 4 min)', { a: 'whet' }], ['Conversar', { a: 'talk' }]] },
+  smith: { greet: 'Hrodgar. Ferreiro da cidadela. Se a lâmina está cega, eu resolvo.', opts: [['Afiar a arma — 25 ouro (+15% de dano por 4 min)', { a: 'whet' }], ['Prótese (perna de pau / gancho) — 150 ouro', { a: 'prosth' }], ['Conversar', { a: 'talk' }]] },
   captain: { greet: 'Sou a Capitã Varn. Temos poucos braços e muitas ameaças. Aceite um contrato e eu pago pelo serviço.', opts: [] },
 };
 function npcUnderMouse(mx, my) {
@@ -957,7 +978,7 @@ function lockLobby(b) { for (const el of document.querySelectorAll('#lobby butto
 function helloMsg() {
   const name = $('name').value.trim() || 'Aventureiro';
   const saved = loadChars()[charKey(name, chosenClass)] || {};
-  return { t: 'hello', dev: G.devPw || undefined, name, color: chosenColor, cls: chosenClass, skin: chosenSkin[chosenClass], lvl: saved.lvl, xp: saved.xp, gold: saved.gold, pots: saved.pots, body: saved.body, bleed: saved.bleed, inv: saved.inv, quests: saved.quests, qdone: saved.qdone };
+  return { t: 'hello', dev: G.devPw || undefined, name, color: chosenColor, cls: chosenClass, skin: chosenSkin[chosenClass], lvl: saved.lvl, xp: saved.xp, gold: saved.gold, pots: saved.pots, body: saved.body, bleed: saved.bleed, lost: saved.lost, pro: saved.pro, inv: saved.inv, quests: saved.quests, qdone: saved.qdone };
 }
 function showRoom(code) { $('room-code').textContent = Net.offline ? 'offline' : code; }
 function createRoom(code = randomCode(), tries = 0) {
@@ -1274,17 +1295,29 @@ function buildDevPanel() {
   });
 }
 function devTp(x, y) { const me = G.me; Object.assign(me, { x, y, rx: x, ry: y, z: 0, fl: 0, fb: -1 }); Net.send({ t: 'dev', a: 'tp', x, y, z: 0 }); }
+// ---------- sangue em jato e pedaços decepados ----------
+function sprayBlood(x, y, dx, dy, n) {
+  const sx = dx - dy, sy = (dx + dy) * 0.5, l = Math.hypot(sx, sy) || 1;
+  for (let k = 0; k < n; k++) { if (G.parts.length > 340) break; const s = 0.03 + Math.random() * 0.07, sp = (Math.random() - 0.5) * 0.9, c = Math.cos(sp), si = Math.sin(sp), ux = (sx / l) * c - (sy / l) * si, uy = (sx / l) * si + (sy / l) * c;
+    G.parts.push({ kind: 'blood', x: x - G.view.ox, y: y - G.view.oy, vx: ux * s, vy: uy * s - 0.03 - Math.random() * 0.03, t0: performance.now(), life: 600 + Math.random() * 300, seed: Math.random() * 100 }); }
+}
+function spawnGib(e, k, part, dx, dy) {
+  const s = gibSprite(e, k, part); if (!s) return;
+  const l = Math.hypot(dx, dy) || 1; G.gibs = (G.gibs || []).filter(g => performance.now() < g.until).slice(-40);
+  G.gibs.push({ s, x: e.rx, y: e.ry, z: e.z || 0, dx: dx / l, dy: dy / l, d: 1 + Math.random() * 1.2, t0: performance.now(), spin: (Math.random() < 0.5 ? -1 : 1) * (4 + Math.random() * 4), until: performance.now() + 300000, rot: Math.random() * 6 });
+}
 // ---------- quedas: monstros e jogadores caídos ----------
 function beginMonsterFall(e) {
   if (e.type === 'wisp' || FALLS['m' + e.id]) return;
   const h = e.lastHit || [Math.random() - 0.5, Math.random() - 0.5];
   const stand = e._spr || null;
-  startFall({ key: 'm' + e.id, type: e.type, x: e.rx, y: e.ry, z: e.z || 0, dir: e.dg ?? e.dir ?? 0, ix: h[0], iy: h[1], cls: 'knight', big: MON[e.type].big, force: MON[e.type].big ? 0.7 : 1, stand });
+  startFall({ lost: e.lost || 0, key: 'm' + e.id, type: e.type, x: e.rx, y: e.ry, z: e.z || 0, dir: e.dg ?? e.dir ?? 0, ix: h[0], iy: h[1], cls: 'knight', big: MON[e.type].big, force: MON[e.type].big ? 0.7 : 1, stand });
 }
 function updateFalls(now) {
   for (const id in G.players) {
     const e = G.players[id];
-    if (e.downed && !e._fell && e.visible) { e._fell = true; const h = e.lastHit || [Math.random() - 0.5, Math.random() - 0.5]; startFall({ key: 'p' + id, hero: { cls: e.cls, skin: e.skin, color: e.color }, cls: e.cls, x: e.rx, y: e.ry, dir: e.dir || 0, ix: h[0], iy: h[1], stand: e._spr }); }
+    if (e.downed && !e._fell && e.visible) { e._fell = true; const h = e.lastHit || [Math.random() - 0.5, Math.random() - 0.5]; startFall({ key: 'p' + id, hero: { cls: e.cls, skin: e.skin, color: e.color }, cls: e.cls, x: e.rx, y: e.ry, dir: e.dir || 0, ix: h[0], iy: h[1], stand: e._spr, lost: e.lost || 0, pro: e.pro || 0 }); }
+    if (e.knockUntil && performance.now() > e.knockUntil) { e.knockUntil = 0; delete FALLS['kp' + id]; }
     else if (!e.downed && e._fell) { e._fell = false; delete FALLS['p' + id]; }
   }
   for (const k in FALLS) if (k[0] === 'm' && !(G.corpses || []).some(c => 'm' + c.id === k) && now - FALLS[k].t0 > 4000) delete FALLS[k];

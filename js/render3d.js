@@ -403,13 +403,29 @@ function cache3(key, make, who) {
   return s;
 }
 function rigFor(key, L, opts) { let r = _rigs.get(key); if (!r) { r = buildHumanoid(L, opts); _rigs.set(key, r); } return r; }
-function pose3Key(P) { return (P.dir | 0) + '|' + (P.walk >= 0 ? (P.run ? 'r' : 'w') + P.walk : '') + (P.act ? P.act.k + P.act.f : '') + (P.idle ? P.idle.k + P.idle.f : '') + (P.sit ? 's' + P.sit : '') + (P.carry ? 'c' : '') + (P.down ? 'd' : '') + (P.cr ? 'K' : '') + (P.sl ? 'L' : '') + (P.hs ? 'h' + P.hs : '') + (P.br != null ? 'b' + P.br : '') + (P.limp ? 'm' + P.limp : '') + (P.armw ? 'W' : ''); }
+// membros perdidos: esconde a parte, mostra coto ensanguentado ou prótese (perna de pau / gancho)
+function applyLost(R, mask = 0, pro = 0) {
+  if (!R || !R.A) return;
+  if (!R.stumps) {
+    R.stumps = {}; R.pegs = {}; const blood = mat('#6a0a08', 'skin', { emissive: '#2a0000' }), wood = mat('#6a4a2a', 'wood'), iron = mat('#4a4a50', 'metal');
+    const add = (name, parent, child, peg) => { const st = mesh(sphG(0.05), blood, child.position.x, child.position.y, child.position.z); st.visible = false; parent.add(st); R.stumps[name] = st; if (peg) { peg.visible = false; parent.add(peg); R.pegs[name] = peg; } };
+    add('head', R.neckJ, { position: new THREE.Vector3(0, 0.02, 0) });
+    for (const [nm, L] of [['armA', R.A], ['armB', R.B]]) { const hk = new THREE.Group(); hk.add(mesh(cylG(0.03, 0.03, 0.2, 8), wood, 0, -0.1, 0)); const t = mesh(torG(0.04, 0.009, Math.PI * 1.3), iron, 0.02, -0.24, 0); hk.add(t); hk.position.copy(L.el.position); add(nm, L.sh, L.el, hk); }
+    for (const [nm, L] of [['legL', R.LA], ['legR', R.LB]]) { const pg = new THREE.Group(); const len = L.ft.position.length(); pg.add(mesh(cylG(0.035, 0.025, len, 8), wood, 0, -len / 2, 0)); pg.position.copy(L.kn.position); add(nm, L.hp, L.kn, pg); }
+  }
+  const lost = k => !!(mask & LOST[k]), pr = k => !!(pro & LOST[k]);
+  R.head.visible = !lost('head'); R.A.el.visible = !lost('armA'); R.B.el.visible = !lost('armB'); R.LA.kn.visible = !lost('legL'); R.LB.kn.visible = !lost('legR');
+  if (R.shield) R.shield.visible = !lost('armB');
+  for (const k in R.stumps) { R.stumps[k].visible = lost(k) && !pr(k); if (R.pegs[k]) R.pegs[k].visible = lost(k) && pr(k); }
+}
+function pose3Key(P) { return (P.dir | 0) + '|' + (P.walk >= 0 ? (P.run ? 'r' : 'w') + P.walk : '') + (P.act ? P.act.k + P.act.f : '') + (P.idle ? P.idle.k + P.idle.f : '') + (P.sit ? 's' + P.sit : '') + (P.carry ? 'c' : '') + (P.down ? 'd' : '') + (P.cr ? 'K' : '') + (P.sl ? 'L' : '') + (P.hs ? 'h' + P.hs : '') + (P.br != null ? 'b' + P.br : '') + (P.limp ? 'm' + P.limp : '') + (P.armw ? 'W' : '') + (P.lost ? 'X' + P.lost + '_' + (P.pro || 0) : ''); }
 function heroSprite3D(cls, skin, color, P) {
   const lk = cls + ':' + skin + ':' + color;
   return cache3('h3|' + lk + '|' + pose3Key(P) , () => {
     const L = lookFor(lk, () => skin === 'weaver' ? WEAVER_LOOK() : heroLook(cls, skin, color));
     let R = _rigs.get(lk); if (!R) { R = buildHumanoid(L, skin === 'weaver' ? { scale: 1.12 } : undefined); if (skin === 'weaver') weaverExtras(R); else epicHero(R, L, 1, skin); _rigs.set(lk, R); }
     const Q = buildPose(cls, P);
+    applyLost(R, P.lost || 0, P.pro || 0);
     applyPose(R, Q, P, P.walk >= 0 ? P.walk / 12 * Math.PI * 2 : 0);
     return shoot3D(R, P.dir | 0, P.down ? -Math.PI / 2 : 0, P.sit === 'g');
   }, 'h|' + lk + (P.down ? 'd' : '') + (P.dir | 0));
@@ -556,12 +572,12 @@ function buildCreature(type) {
   }
   return R;
 }
-function monSprite3D(type, f, atk, dir, hurt = -1, ak = null) {
-  return cache3(`m3|${type}|${f}|${atk}|${dir}|${hurt}|${ak || ''}`, () => {
+function monSprite3D(type, f, atk, dir, hurt = -1, ak = null, lost = 0) {
+  return cache3(`m3|${type}|${f}|${atk}|${dir}|${hurt}|${ak || ''}|${lost}`, () => {
     if (MON_LOOK[type]) {
       let R = _rigs.get('mon:' + type); if (!R) { R = buildHumanoid(lookFor('mon:' + type, MON_LOOK[type]), { scale: MON_SCALE[type] }); scaryMonster((MON[type] && MON[type].base) || type, R, MON_SCALE[type]); _rigs.set('mon:' + type, R); }
       const P = { dir, walk: atk >= 0 || hurt >= 0 ? -1 : (f >= 0 ? Math.round(f * 1.5) : -1), act: hurt >= 0 ? { k: 'hurt', f: hurt } : atk >= 0 ? (ak ? { k: ak, f: atk } : { k: ['troll', 'orc'].includes((MON[type] && MON[type].base) || type) ? 'bash' : 'swing', f: Math.min(11, Math.round(atk * 1.5)) }) : null };
-      const Q = buildPose('knight', P);
+      const Q = buildPose('knight', P); applyLost(R, lost);
       if (type === 'troll') Q.tl += 0.25;
       if (type === 'goblin') Q.tl += 0.15;
       applyPose(R, Q, P, P.walk >= 0 ? P.walk / 12 * Math.PI * 2 : 0);

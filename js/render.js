@@ -279,6 +279,8 @@ function heroPoseFor(e, now) {
   P.dir = e.dir || 0;
   if (e.walking) { P.walk = Math.floor(e.walkDist * (e.cls === 'knight' ? 8.5 : 9.5) / (e.running ? 1.45 : 1)) % 12; if (e.running) P.run = 1; }
   if (e.anim) { const t = actProg(e.anim, now); if (t >= 0 && ACTS[e.anim.a]) P.act = { k: e.anim.a, f: Math.min(11, Math.floor(t * 12)) }; }
+  if (!e.isNpc) { P.lost = e.lost || 0; P.pro = e.pro || 0; }
+  if (e.knockUntil && now < e.knockUntil && now >= e.knockUntil - 650) P.act = { k: 'getup', f: Math.min(11, Math.floor((1 - (e.knockUntil - now) / 650) * 12)) };
   if (!P.act && (e === G.me ? G.parrying : e.parrying)) { P.act = { k: 'parry', f: 6 }; P.run = 0; }
   if (!P.act && (e === G.me ? performance.now() < (G.stunUntil || 0) : e.stunned)) P.act = { k: 'hurt', f: 5 };
   if (e.cast && e.cast.end > now) P.act = { k: 'cast', f: Math.floor(now / 70) % 12 };
@@ -304,6 +306,7 @@ function heroPoseFor(e, now) {
 }
 
 function drawHeroEntity(ctx, e, sx, sy, now) {
+  if (R3.ok && e.knockUntil && now < e.knockUntil && !e.downed) { const kf = FALLS['kp' + e.id]; if (now < e.knockUntil - 650 && kf) { drawFall(ctx, kf, sx, sy, now, 1, woundLevel(e)); e._spr = null; return; } }
   if (R3.ok && e.fling) {
     const f = e.fling, k = Math.min(1, (now - f.t0) / f.ms); ctx.imageSmoothingEnabled = true;
     if (k < 1) {
@@ -397,7 +400,8 @@ function drawMonsterEntity(ctx, e, sx, sy, now) {
     if (!ak && e.blockAt && now - e.blockAt < 350) { ak = 'parry'; atk = 6; }
     const f = e.walking ? Math.floor(e.walkDist * 4) % 8 : -1;
     const hurtF = e.hitAt && now - e.hitAt < 300 && atk < 0 && MON_LOOK[e.type] ? Math.min(11, Math.floor((now - e.hitAt) / 300 * 12)) : -1;
-    const s = monSprite3D(e.type, hurtF >= 0 ? -1 : f, atk, e.dir || 0, hurtF, ak);
+    if (e.knockUntil && now < e.knockUntil) { const kf = FALLS['km' + e.id]; if (now < e.knockUntil - 600 && kf) { drawFall(ctx, kf, sx, sy, now); return; } ak = 'getup'; atk = Math.min(11, Math.floor((1 - (e.knockUntil - now) / 600) * 12)); }
+    const s = monSprite3D(e.type, hurtF >= 0 ? -1 : f, atk, e.dir || 0, hurtF, ak, MON_LOOK[e.type] ? (e.lost || 0) : 0);
     let alpha = 1, sink = 0;
     const kb = knockOf(e, now); sx += kb.x; sy += kb.y;
     if (e.dieAt && now > e.dieAt) { const t = Math.min(1, (now - e.dieAt) / 600); alpha = 1 - t; sink = t * 8; }
@@ -753,6 +757,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
   }
   // 4) coleta dos itens
   const items = [], upper = [], visTrees = [], visFlowers = [], visGrass = [];
+  for (const g of (G.started && G.gibs) || []) { if (now > g.until) continue; const k = Math.min(1, (now - g.t0) / 480), wx = g.x + g.dx * g.d * k, wy = g.y + g.dy * g.d * k, p = iso(wx, wy); items.push({ d: wx + wy - 0.2, k: 0, gib: g, sx: p.sx + ox, sy: p.sy + oy - (g.z || 0) * FLOOR_PX - Math.sin(Math.PI * k) * 34, gk: k }); }
   for (const c of (G.started && G.corpses) || []) { const p = iso(c.x, c.y); const it = { d: c.x + c.y - 0.35, k: 0, corpse: c, sx: p.sx + ox, sy: p.sy + oy - (c.z || 0) * FLOOR_PX }; (c.z ? upper : items).push(it); }
   for (const c of (G.started && G.chests) || []) { const p = iso(c.x, c.y); items.push({ d: c.x + c.y, k: 0, chest: c, sx: p.sx + ox, sy: p.sy + oy }); }
   for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
@@ -857,10 +862,11 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     return d > meD && meX > l + 6 && meX < l + s.w - 6 && meY > t && meY < t + s.h - 10 && (yf ?? y) > meY + 18 ? (yf != null && inB >= 0 ? 0.22 : 0.42) : null;
   };
   const drawItem = it => {
+    if (it.gib) { const g = it.gib; ctx.imageSmoothingEnabled = true; if (it.gk >= 1 && !g.landed) { g.landed = 1; addBlood(g.x + g.dx * g.d, g.y + g.dy * g.d, g.z, 0.35, 300000); } ctx.save(); ctx.translate(it.sx, it.sy); ctx.rotate(g.rot + (it.gk < 1 ? g.spin * it.gk : g.spin)); pblit(ctx, g.s, 0, g.s.h * 0.12); ctx.restore(); return; }
     if (it.corpse) {
       const c = it.corpse; let f = FALLS['m' + c.id];
       const live = G.monsters[c.id]; if (!f && live && live.dieAt && now - live.dieAt < 1500) return;   // a queda ao vivo ainda vai começar
-      if (!f && R3.ok) { f = startFall({ key: 'm' + c.id, type: c.type, x: c.x, y: c.y, dir: c.id % 8, ix: c.ix, iy: c.iy, cls: 'knight', big: MON[c.type].big, force: 1 }); if (f) f.fromCorpse = true; }
+      if (!f && R3.ok) { f = startFall({ lost: c.lost || 0, key: 'm' + c.id, type: c.type, x: c.x, y: c.y, dir: c.id % 8, ix: c.ix, iy: c.iy, cls: 'knight', big: MON[c.type].big, force: 1 }); if (f) f.fromCorpse = true; }
       if (f) { if (f.fromCorpse && !f.done && !f.staged) { for (let k = 0; k < 400 && !(f.mode === 'rag' ? ragStep(f) : rigidStep(f)); k++); } drawFall(ctx, f, it.sx, it.sy, now, 1, c.type !== 'dragon' && MON_LOOK[c.type] ? 2 : 0); }
       if (!c.looted && dist(c.x, c.y, G.me.x, G.me.y) < 1.7) { const t = now / 300; for (let k = 0; k < 2; k++) dab(ctx, it.sx + Math.cos(t + k * 3) * 10, it.sy - 10 + Math.sin(t + k) * 4, 2, 2, '#ffe890'); }
       if (G.loot && G.loot.id === c.id) { const k = Math.min(1, (now - G.loot.t0) / 1300); ctx.strokeStyle = '#ffe890'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(it.sx, it.sy - 34, 9, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); ctx.stroke(); }

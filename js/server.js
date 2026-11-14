@@ -25,7 +25,7 @@ function fullStat(p) {
   const now = now_();
   return {
     t: 'pstat', id: p.id, hp: p.hp, maxHp: p.maxHp, mp: p.mp, maxMp: p.maxMp, lvl: p.lvl, xp: p.xp, gold: p.gold,
-    pots: { hp: p.pots.hp, mp: p.pots.mp, band: p.pots.band || 0 }, body: p.body, bleed: p.bleed, inv: { ...p.inv }, quests: { ...p.quests }, qdone: { ...p.qdone },
+    pots: { hp: p.pots.hp, mp: p.pots.mp, band: p.pots.band || 0 }, body: p.body, bleed: p.bleed, lost: p.lost || 0, pro: p.pro || 0, knock: Math.max(0, (p.knockUntil || 0) - now), inv: { ...p.inv }, quests: { ...p.quests }, qdone: { ...p.qdone },
     buffs: Object.entries(p.buffs).filter(([, u]) => u > now).map(([k, u]) => [k, u - now]),
     cds: [0, 1, 2, 3].map(i => Math.max(0, (p.cds[i] || 0) - now)),
     combat: now - p.lastCombat < OUT_OF_COMBAT_MS, cst: Math.round(p.cst ?? CST_MAX), stun: Math.max(0, (p.stunUntil || 0) - now), rip: Math.max(0, (p.ripUntil || 0) - now), slow: Math.max(0, (p.slowUntil || 0) - now), downed: p.downed ? p.downed.until - now : 0,
@@ -142,7 +142,7 @@ function hostOnClient(from, m) {
       color: /^#[0-9a-f]{6}$/i.test(m.color) ? m.color : '#8b2e2e',
       x: s.x, y: s.y, z: 0, lvl, xp: clamp(m.xp | 0, 0, need(lvl) - 1), gold: clamp(m.gold | 0, 0, 1e7),
       pots: { hp: clamp((m.pots && m.pots.hp) | 0, 0, 999), mp: clamp((m.pots && m.pots.mp) | 0, 0, 999), band: clamp((m.pots && m.pots.band) | 0, 0, 999) },
-      cst: CST_MAX, body: Object.fromEntries(BODY_PARTS.map(k => [k, clamp(m.body && isFinite(m.body[k]) ? +m.body[k] : 100, 0, 100)])),
+      lost: (m.lost | 0) & 30, pro: (m.pro | 0) & 30, cst: CST_MAX, body: Object.fromEntries(BODY_PARTS.map(k => [k, clamp(m.body && isFinite(m.body[k]) ? +m.body[k] : 100, 0, 100)])),
       bleed: Object.fromEntries(BODY_PARTS.map(k => [k, clamp(m.bleed && isFinite(m.bleed[k]) ? +m.bleed[k] : 0, 0, 2)])), aim: 'torso',
       maxHp: maxHpFor(cls, lvl), maxMp: maxMpFor(cls, lvl), hp: 0, mp: 0,
       target: null, nextAtk: 0, cds: {}, buffs: {}, casting: null, lastCombat: 0, potCd: 0, lastMv: now_(),
@@ -177,7 +177,7 @@ function hostOnClient(from, m) {
       const t = S.players[m.id];
       if (m.on && t && !t.downed && t !== p && !p.downed && t.hp < t.maxHp * KNEEL_HP && dist(p.x, p.y, t.x, t.y) <= 1.8) { t.aid = { by: p.id, start: now_() }; near(t.x, t.y, { t: 'rv', id: t.id, by: p.id }); }
       else if (!m.on && t && t.aid && t.aid.by === p.id) { t.aid = null; near(t.x, t.y, { t: 'rv', id: t.id, by: null }); }
-      else if (m.on && t && t.downed && !p.downed && dist(p.x, p.y, t.x, t.y) <= 1.8) { t.revive = { by: p.id, start: now_() }; near(t.x, t.y, { t: 'rv', id: t.id, by: p.id }); }
+      else if (m.on && t && t.downed && !t.decap && !p.downed && dist(p.x, p.y, t.x, t.y) <= 1.8) { t.revive = { by: p.id, start: now_() }; near(t.x, t.y, { t: 'rv', id: t.id, by: p.id }); }
       else if (!m.on && t && t.revive && t.revive.by === p.id) { t.revive = null; near(t.x, t.y, { t: 'rv', id: t.id, by: null }); }
       break;
     }
@@ -247,7 +247,7 @@ function hostOnClient(from, m) {
     case 'atk': playerStrike(p, m.k, +m.a, now_()); break;
     case 'parry': if (m.on) { if (p.atk && !p.atk.done && p.cst >= FEINT_COST) { p.cst -= FEINT_COST; p.atk = null; } if (!p.atk && !p.downed && now_() >= (p.stunUntil || 0)) p.parry = { t0: now_(), a: +m.a || 0 }; } else p.parry = null; break;
     case 'parrya': if (p.parry && isFinite(+m.a)) p.parry.a = +m.a; break;
-    case 'dodge': { const now = now_(); if (p.downed || now < (p.dodgeCd || 0) || p.cst < DODGE.cost || now < (p.stunUntil || 0)) break; p.cst -= DODGE.cost; p.dodgeCd = now + DODGE.cd; p.dodgeUntil = now + DODGE.iframe; p.dodgeAllow = now + DODGE.ms + 400; p.parry = null; if (p.atk && !p.atk.done) p.atk = null; near(p.x, p.y, { t: 'anim', w: 'p', id: p.id, a: 'dash', ms: DODGE.ms + 120 }); sendStat(p); break; }
+    case 'dodge': { const now = now_(); const lg = (p.lost || 0) & ~(p.pro || 0) & 24; if (lg || now < (p.knockUntil || 0) || p.downed || now < (p.dodgeCd || 0) || p.cst < DODGE.cost || now < (p.stunUntil || 0)) break; p.cst -= DODGE.cost; p.dodgeCd = now + DODGE.cd; p.dodgeUntil = now + DODGE.iframe; p.dodgeAllow = now + DODGE.ms + 400; p.parry = null; if (p.atk && !p.atk.done) p.atk = null; near(p.x, p.y, { t: 'anim', w: 'p', id: p.id, a: 'dash', ms: DODGE.ms + 120 }); sendStat(p); break; }
     case 'kick': playerKick(p, +m.a || 0, now_()); break;
     case 'duel': p.duel = !!m.on; break;
     case 'aim': if (['head', 'torso', 'legs'].includes(m.z)) p.aim = m.z; break;
@@ -285,7 +285,7 @@ function hostOnClient(from, m) {
 
 function handleMove(p, m) {
   if (p.carriedBy) return;
-  if (now_() < (p.flungUntil || 0)) return;   // voando/caído depois do golpe de cauda
+  if (now_() < (p.flungUntil || 0) || now_() < (p.knockUntil || 0)) return;   // voando / derrubado
   if (p.dev) { const x = +m.x, y = +m.y; if (isFinite(x) && isFinite(y)) { p.x = clamp(x, 1, MAP_W - 2); p.y = clamp(y, 1, MAP_H - 2); p.z = +m.z || 0; p.dir = m.d | 0; p.walking = !!m.w; p.lastMv = now_(); } return; }
   const now = now_();
   const x = +m.x, y = +m.y;
@@ -329,7 +329,7 @@ function roll(p, mult = 1) {
   let dmg = rint(Math.floor(c.dmg[0][0] + c.dmg[0][1] * l), Math.floor(c.dmg[1][0] + c.dmg[1][1] * l)) * mult;
   if (buffOn(p, 'mead')) dmg *= 1.1;
   if (p.hp < p.maxHp * KNEEL_HP) dmg *= 0.7;   // de joelhos: golpes fracos
-  if (p.body) dmg *= ARM_DMG[PART_STATE(p.body.armA)];   // braço da arma ferido
+  if (p.body) dmg *= ((p.lost || 0) & LOST.armA) ? (((p.pro || 0) & LOST.armA) ? 0.6 : 0.3) : ARM_DMG[PART_STATE(p.body.armA)];   // braço da arma ferido / perdido (gancho ajuda)
   dmg *= p._aimMul || 1;
   if (buffOn(p, 'whet')) dmg *= 1.15;
   const crit = Math.random() < c.crit + (buffOn(p, 'agile') ? 0.1 : 0);
@@ -341,7 +341,7 @@ function hitRolled(p, m, dmg, crit, delay, hv) {
   if (!S.monsters[m.id]) return;
   m.hp -= dmg; m.aggro = p.id; m.returning = false;
   p.lastCombat = now_();
-  near(m.x, m.y, { t: 'hit', k: 'm', id: m.id, x: m.x, y: m.y, dmg, crit, d: delay, by: p.id, ax: p.x, ay: p.y, hv });
+  near(m.x, m.y, { t: 'hit', k: 'm', id: m.id, x: m.x, y: m.y, dmg, crit, d: delay, by: p.id, ax: p.x, ay: p.y, hv, z: m._hz }); m._hz = null;
   if (m.hp <= 0) killMonster(m, p, delay);
 }
 function hitMonster(p, m, mult, delay = 0) {
@@ -362,7 +362,7 @@ function killMonster(m, p, delay) {
   const gold = rint(def.gold[0], def.gold[1]), drops = [];
   for (const [k, ch] of MON_LOOT[m.type] || []) if (Math.random() < ch) drops.push(k);
   if (Math.random() < 0.03) drops.push('gem');
-  if (m.type !== 'wisp') (S.corpses = S.corpses || {})[m.id] = { id: m.id, type: m.type, x: m.x, y: m.y, z: m.z || 0, gold, items: drops, looted: !gold && !drops.length, until: now_() + (m.bs && (BASTIONS.find(b => b.id === m.bs) || {}).fast ? 20000 : def.dragon ? (BASTIONS.find(b => b.id === 'dragon') || {}).respawn || BOSS_RESPAWN : def.boss ? BOSS_RESPAWN : BASTION_RESPAWN), ix: m.x - p.x, iy: m.y - p.y };
+  if (m.type !== 'wisp') (S.corpses = S.corpses || {})[m.id] = { lost: m.lost || 0, id: m.id, type: m.type, x: m.x, y: m.y, z: m.z || 0, gold, items: drops, looted: !gold && !drops.length, until: now_() + (m.bs && (BASTIONS.find(b => b.id === m.bs) || {}).fast ? 20000 : def.dragon ? (BASTIONS.find(b => b.id === 'dragon') || {}).respawn || BOSS_RESPAWN : def.boss ? BOSS_RESPAWN : BASTION_RESPAWN), ix: m.x - p.x, iy: m.y - p.y };
   if (def.boss) spawnChest(m);
   const group = Object.values(S.players).filter(q => !q.downed && dist(q.x, q.y, m.x, m.y) <= 10);
   if (!group.includes(p)) group.push(p);
@@ -424,7 +424,7 @@ function bodyTick(p, now, dt) {
     if (p.bleedAcc >= 1) { const h = Math.floor(p.bleedAcc); p.bleedAcc -= h; p.hp -= h; if (p.hp <= 0) { p.hp = 0; goDown(p, null); return; } }
     for (const k of BODY_PARTS) if (p.bleed[k] > 0 && p.bleed[k] <= 0.3) p.bleed[k] = Math.max(0, p.bleed[k] - 0.006 * dt);   // feridas leves estancam sozinhas
   } else if (now - p.lastCombat > 8000) {
-    for (const k of BODY_PARTS) { const h = p.body[k]; p.body[k] = h >= 40 ? Math.min(100, h + 0.4 * dt) : Math.min(40, h + 0.08 * dt); }   // grave só cicatriza até "ferido" (o resto, só com a sacerdotisa)
+    for (const k of BODY_PARTS) { if ((p.lost || 0) & (LOST[k] || 0)) continue; const h = p.body[k]; p.body[k] = h >= 40 ? Math.min(100, h + 0.4 * dt) : Math.min(40, h + 0.08 * dt); }   // grave só cicatriza até "ferido" (o resto, só com a sacerdotisa)
   }
   if (now - (p.bodySent || 0) > 2000) { p.bodySent = now; sendStat(p); }
 }
@@ -494,8 +494,8 @@ function respawnTemple(p) {
   if (p.carriedBy && S.players[p.carriedBy]) S.players[p.carriedBy].carrying = null;
   p.carriedBy = null; p.downed = null; p.revive = null;
   p.xp = Math.floor(p.xp / 2);
-  p.hp = p.maxHp; p.mp = p.maxMp; p.lastCombat = 0; p.atk = null; p.parry = null; p.cst = CST_MAX;
-  if (p.body) for (const k of BODY_PARTS) { p.body[k] = 100; p.bleed[k] = 0; }
+  p.hp = p.maxHp; p.mp = p.maxMp; p.lastCombat = 0; p.atk = null; p.parry = null; p.cst = CST_MAX; p.lost = (p.lost || 0) & ~LOST.head; p.decap = false; p.knockUntil = 0;
+  if (p.body) for (const k of BODY_PARTS) { if (p.lost & (LOST[k] || 0)) { p.body[k] = 0; p.bleed[k] = 0; continue; } p.body[k] = 100; p.bleed[k] = 0; }
   const s = townSpot(); p.x = s.x; p.y = s.y; p.z = 0; p.fl = 0; p.fb = -1;
   Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: 0 });
   Net.toOne(p.id, { t: 'respawned' });
@@ -650,6 +650,17 @@ function npcAction(p, m) {
     if (!n2) { say('Você não tem nada que me interesse agora.'); return; }
     p.gold += total;
     say(`Fechado: ${n2} ${n2 > 1 ? 'itens' : 'item'} por ${total} de ouro. Traga mais quando puder.`);
+  } else if (n.id === 'smith' && m.a === 'prosth') {
+    const part = ['legL', 'legR', 'armA', 'armB'].find(k => (p.lost || 0) & LOST[k] && !((p.pro || 0) & LOST[k]));
+    if (!part) { say('Você está inteiro. Volte se precisar de mim.'); return; }
+    if (!pay(PROSTH_PRICE)) return;
+    p.pro = (p.pro || 0) | LOST[part]; p.bleed[part] = 0;
+    say(part.startsWith('leg') ? 'Perna de pau de carvalho, presa com couro e ferro. Não vai correr, mas anda.' : 'Um gancho de ferro bem preso. Não segura espada, mas fere.');
+  } else if (n.id === 'priest' && m.a === 'ritual') {
+    if (!(p.lost & 30)) { say('A Aurora vê que você está inteiro.'); return; }
+    if (!pay(RITUAL_PRICE)) return;
+    p.lost = 0; p.pro = 0; for (const k of BODY_PARTS) { p.body[k] = 100; p.bleed[k] = 0; } aoe('heal', p.x, p.y, { id: p.id });
+    say('Pelo fogo da Aurora, o que foi tirado volta a ser seu. Não desperdice este milagre.');
   } else if (n.id === 'priest' && m.a === 'bless') {
     p.hp = p.maxHp; p.mp = p.maxMp; p.buffs.bless = now + 180000;
     if (p.body) for (const k of BODY_PARTS) { p.body[k] = 100; p.bleed[k] = 0; }   // a sacerdotisa trata todas as feridas
@@ -736,7 +747,7 @@ function monsterThink(m, players, now, dt) {
   if (m.atk) { const A = m.atk; if (!A.done && now >= A.t0 + A.W) { A.done = true; resolveMonStrike(m, A, now); } if (now >= A.t0 + A.W + A.R + A.C) m.atk = null; else return; }
   if (d.dragon) return dragonThink(m, players, now, dt);
   if (now < m.stunUntil) return;
-  const speed = d.speed * (now < m.slowUntil ? 0.5 : 1), step = speed * dt;
+  const speed = d.speed * (now < m.slowUntil ? 0.5 : 1) * ((m.lost || 0) & 24 ? 0.4 : 1), step = speed * dt;
   const homeDist = dist(m.x, m.y, m.homeX, m.homeY);
   const reach = d.big ? 1.7 : 1.3;
   if (m.returning) {
@@ -797,6 +808,26 @@ function monsterThink(m, players, now, dt) {
   }
 }
 
+// ---------------- DESMEMBRAMENTO E QUEDAS ----------------
+function severPart(k, lost) { const c = (SEVER_FROM[k] || []).filter(([pt]) => !(lost & LOST[pt])); if (!c.length) return null; let r = Math.random() * c.reduce((s, x) => s + x[1], 0); for (const [pt, w] of c) { if ((r -= w) <= 0) return pt; } return c[0][0]; }
+function severPlayer(q, part, by) {
+  if (!part || q.dev || q.downed) return;
+  q.lost = (q.lost || 0) | LOST[part]; q.pro = (q.pro || 0) & ~LOST[part];
+  if (part !== 'head') { q.body[part] = 0; q.bleed[part] = 2; }
+  near(q.x, q.y, { t: 'sever', k: 'p', id: q.id, part, x: q.x, y: q.y, ax: by.x, ay: by.y });
+  if (part === 'head') { q.decap = true; goDown(q, by); q.downed.until = now_() + 1500; tell(q, 'Você foi decapitado.'); }
+  else tell(q, 'Você perdeu ' + LOST_NAMES[part] + '! Estanque o sangue (B) ou morra.');
+  sendStat(q);
+}
+function knockPlayer(p, by, now) {
+  if (p.dev || p.downed || now < (p.knockUntil || 0)) return;
+  p.knockUntil = now + KNOCK_MS; p.parry = null; p.atk = null; p.stunUntil = now + KNOCK_MS;
+  near(p.x, p.y, { t: 'knock', k: 'p', id: p.id, ax: by.x, ay: by.y, ms: KNOCK_MS }); sendStat(p);
+}
+function knockMon(q, by, now) {
+  q.stunUntil = Math.max(q.stunUntil, now + 1500); q.atk = null; q.nextAtk = now + 1700;
+  near(q.x, q.y, { t: 'knock', k: 'm', id: q.id, ax: by.x, ay: by.y, ms: 1500 });
+}
 // ---------------- COMBATE DIRECIONAL ----------------
 const inArc = (ox, oy, a, x, y, reach, arc, rad = 0) => { const d = Math.hypot(x - ox, y - oy); return d <= reach + rad && Math.abs(angDiff(Math.atan2(y - oy, x - ox), a)) <= arc + (rad > 0 ? Math.atan2(rad, Math.max(0.3, d)) : 0); };
 function startMonStrike(m, tgt, now) {
@@ -815,10 +846,13 @@ function resolveMonStrike(m, A, now) {
     if (p.parry && Math.abs(angDiff(p.parry.a, toM)) <= PARRY_ARC) {
       const perfect = now - p.parry.t0 <= PARRY_PERFECT + A.W * 0.25;
       if (perfect) { m.stunUntil = now + 850; m.nextAtk = Math.max(m.nextAtk, now + 900); p.ripUntil = now + RIPOSTE_MS; p.cst = Math.min(CST_MAX, p.cst + 5); near(p.x, p.y, { t: 'clang', x: (p.x + m.x) / 2, y: (p.y + m.y) / 2, perfect: 1, id: m.id }); }
-      else { p.cst -= 10 + (d.big ? 18 : 6); near(p.x, p.y, { t: 'clang', x: (p.x + m.x) / 2, y: (p.y + m.y) / 2 }); if (p.cst <= 0) guardBreak(p, now); }
+      else { p.cst -= (10 + (d.big ? 18 : 6)) * ((p.lost || 0) & LOST.armB ? 1.6 : 1); near(p.x, p.y, { t: 'clang', x: (p.x + m.x) / 2, y: (p.y + m.y) / 2 }); if (p.cst <= 0) guardBreak(p, now); }
       sendStat(p); continue;
     }
-    damagePlayer(p, Math.round(rint(d.dmg[0], d.dmg[1]) * STRIKES[A.k].mult), m, 0, STRIKES[A.k].zone);
+    const crit = MON_MELEE[m.type] && A.k !== 'stab' && A.k !== 'bite' && Math.random() < (d.big ? 0.12 : 0.07);
+    damagePlayer(p, Math.round(rint(d.dmg[0], d.dmg[1]) * STRIKES[A.k].mult * ((m.lost || 0) & 6 ? 0.4 : 1) * (crit ? 1.6 : 1)), m, 0, STRIKES[A.k].zone);
+    if (crit && !p.downed) severPlayer(p, severPart(A.k, p.lost || 0), m);
+    else if (d.big && !p.downed && Math.random() < 0.35) knockPlayer(p, m, now);
     if (d.drain && !p.downed) { p.mp = Math.max(0, p.mp - d.drain); sendStat(p); }
     if (p.atk && !p.atk.done) { p.atk = null; near(p.x, p.y, { t: 'anim', w: 'p', id: p.id, a: 'hurt' }); }   // levar golpe interrompe a preparação
     if (A.k !== 'stab' && A.k !== 'bite') break;   // golpes de arma acertam um alvo
@@ -827,7 +861,7 @@ function resolveMonStrike(m, A, now) {
 function guardBreak(p, now) { p.parry = null; p.cst = 0; p.stunUntil = now + 950; near(p.x, p.y, { t: 'anim', w: 'p', id: p.id, a: 'hurt', ms: 950 }); tell(p, 'Sua guarda quebrou!'); sendStat(p); }
 // golpe do jogador: começa a preparação; o impacto é resolvido no laço principal
 function playerStrike(p, k, a, now) {
-  const B = STRIKES[k]; if (!B || k === 'bite' || p.downed || p.carrying || p.lifted || p.casting || now < (p.stunUntil || 0) || p.fl > 0) return;
+  const B = STRIKES[k]; if (!B || k === 'bite' || p.downed || p.carrying || p.lifted || p.casting || now < (p.stunUntil || 0) || now < (p.knockUntil || 0) || p.fl > 0) return;
   if (p.atk) {
     if (!p.atk.done && now < p.atk.t0 + p.atk.W && p.atk.k !== k && p.cst >= FEINT_COST) { p.cst -= FEINT_COST; }   // finta: troca de golpe no meio da preparação
     else return;
@@ -850,7 +884,9 @@ function pvpHit(p, q, A, now) {
     sendStat(q); return;
   }
   const B = STRIKES[A.k], M = MELEE[p.cls] || MELEE.knight, { dmg } = roll(p, B.mult * M.dmg * (A.rip ? 1.25 : 1));
-  damagePlayer(q, dmg, { x: p.x, y: p.y, name: p.name }, 0, B.zone);
+  const crit = roll(p, 1).crit;
+  damagePlayer(q, Math.round(dmg * (crit ? 1.6 : 1)), { x: p.x, y: p.y, name: p.name }, 0, B.zone);
+  if (crit && A.k !== 'stab' && !q.downed) severPlayer(q, severPart(A.k, q.lost || 0), { x: p.x, y: p.y, name: p.name });
   if (q.atk && !q.atk.done) { q.atk = null; near(q.x, q.y, { t: 'anim', w: 'p', id: q.id, a: 'hurt' }); }
 }
 function resolvePlayerStrike(p, A, now) {
@@ -862,8 +898,13 @@ function resolvePlayerStrike(p, A, now) {
     if (MM && MM.blk && !q.atk && facing && now > (q.guardBreak || 0) && now >= (q.stunUntil || 0) && Math.random() < MM.blk) {   // o inimigo bloqueou
       near(q.x, q.y, { t: 'clang', x: (p.x + q.x) / 2, y: (p.y + q.y) / 2, blockBy: q.id }); p.atk.C += 220; continue;
     }
-    hitMonster(p, q, B.mult * M.dmg * (A.rip ? 1.25 : 1), 0);
+    const { dmg, crit } = roll(p, B.mult * M.dmg * (A.rip ? 1.25 : 1));
+    const sev = crit && A.k !== 'stab' && MON_LOOK[q.type] ? severPart(A.k, q.lost || 0) : null;
+    if (sev) { q.lost = (q.lost || 0) | LOST[sev]; near(q.x, q.y, { t: 'sever', k: 'm', id: q.id, part: sev, x: q.x, y: q.y, ax: p.x, ay: p.y }); }
+    q._hz = B.zone; hitRolled(p, q, sev === 'head' ? q.hp + 9999 : dmg, crit, 0, crit ? 1 : 0);
     if (!S.monsters[q.id]) continue;
+    if (sev && sev.startsWith('arm')) q.flee = { from: p.id, until: now + 7000 };
+    if (crit && A.k === 'over' && !sev && !MON[q.type].big) knockMon(q, p, now);
     if (q.atk && !q.atk.done && A.k !== 'stab') { q.atk = null; q.nextAtk = now + 600; }   // golpe pesado interrompe o inimigo
     if (A.k === 'over' && Math.random() < 0.18) q.stunUntil = Math.max(q.stunUntil, now + 650);
     if (A.k === 'under') q.slowUntil = Math.max(q.slowUntil, now + 2500);
@@ -1052,14 +1093,14 @@ function hostTick() {
       if (p.devHidden && p.id !== r.id) continue;
       let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0) | (p.running && p.walking ? 256 : 0) | (p.sit ? 512 : 0) | (p.sit === 'c' ? 1024 : 0) | ((p.fl || 0) << 11) | (p.crouch ? 8192 : 0) | (p.slide ? 16384 : 0);
       for (const b in BUFF_BITS) if (buffOn(p, b)) fl |= BUFF_BITS[b];
-      pl.push([p.id, Math.round(p.x * 100), Math.round(p.y * 100), Math.round(p.z * 100), p.dir | 0, fl, Math.round(p.hp / p.maxHp * 100), p.carrying || 0, p.lifted || 0, bodyBits(p)]);
+      pl.push([p.id, Math.round(p.x * 100), Math.round(p.y * 100), Math.round(p.z * 100), p.dir | 0, fl, Math.round(p.hp / p.maxHp * 100), p.carrying || 0, p.lifted || 0, bodyBits(p), (p.lost || 0) | ((p.pro || 0) << 5)]);
     }
     for (const m of mons) {
       if (Math.abs(m.x - r.x) > VIEW_RADIUS || Math.abs(m.y - r.y) > VIEW_RADIUS) continue;
-      ml.push([m.id, MON_TYPES.indexOf(m.type), Math.round(m.x * 100), Math.round(m.y * 100), m.hp, (m.slowUntil > now ? 1 : 0) | (m.stunUntil > now ? 2 : 0) | (m.sleep ? 4 : 0) | (m.fury ? 8 : 0), m.face, MON[m.type].dragon ? dragonDir(m) : -1]);
+      ml.push([m.id, MON_TYPES.indexOf(m.type), Math.round(m.x * 100), Math.round(m.y * 100), m.hp, (m.slowUntil > now ? 1 : 0) | (m.stunUntil > now ? 2 : 0) | (m.sleep ? 4 : 0) | (m.fury ? 8 : 0) | ((m.lost || 0) << 5), m.face, MON[m.type].dragon ? dragonDir(m) : -1]);
     }
     const ch = []; for (const id in S.chests) { const c = S.chests[id]; if (Math.abs(c.x - r.x) <= VIEW_RADIUS && Math.abs(c.y - r.y) <= VIEW_RADIUS) ch.push([c.id, Math.round(c.x * 100), Math.round(c.y * 100), c.opened.has(r.id) ? 1 : 0, c.who.has(r.id) ? 1 : 0]); }
-    const co = []; for (const id in S.corpses || {}) { const c = S.corpses[id]; if (Math.abs(c.x - r.x) <= VIEW_RADIUS && Math.abs(c.y - r.y) <= VIEW_RADIUS) co.push([c.id, MON_TYPES.indexOf(c.type), Math.round(c.x * 100), Math.round(c.y * 100), c.z, c.looted ? 1 : 0, Math.round(c.ix * 10), Math.round(c.iy * 10)]); }
+    const co = []; for (const id in S.corpses || {}) { const c = S.corpses[id]; if (Math.abs(c.x - r.x) <= VIEW_RADIUS && Math.abs(c.y - r.y) <= VIEW_RADIUS) co.push([c.id, MON_TYPES.indexOf(c.type), Math.round(c.x * 100), Math.round(c.y * 100), c.z, c.looted ? 1 : 0, Math.round(c.ix * 10), Math.round(c.iy * 10), c.lost || 0]); }
     Net.toOne(r.id, { t: 's', p: pl, m: ml, ch, co }, true);
   }
 }

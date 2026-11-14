@@ -110,6 +110,10 @@ const ACTS = {
   // ---- emojis ----
   salute: [[0, {}], [0.25, { aB: [2.55, 0.15, 2.5], ht: -0.08 }], [0.75, { aB: [2.55, 0.15, 2.5], ht: -0.08 }], [1, {}]],
   point: [[0, {}], [0.2, { aB: [1.6, 0.05, 0.05], tw: 0.25, ht: 0.05 }], [0.8, { aB: [1.6, 0.05, 0.05], tw: 0.25, ht: 0.05 }], [1, {}]],
+  // ---- reações e levantar ----
+  hurt_head: [[0, {}], [0.22, { ht: -0.75, tl: -0.32, aA: [0.6, 0.35, 0.7], aB: [0.7, 0.35, 0.8] }], [1, {}]],
+  hurt_leg: [[0, {}], [0.22, { lA: [0.35, -1.0], lB: [-0.1, -0.2], tl: 0.35, drop: 4 }], [1, {}]],
+  getup: [[0, { lA: [1.75, -2.35], lB: [0.25, -2.0], tl: 0.95, aA: [0.6, 0.55, 0.8], aB: [0.7, 0.55, 0.9], drop: 10 }], [0.5, { lA: [1.3, -1.7], lB: [0.15, -1.3], tl: 0.55 }], [1, {}]],
   // ---- combate direcional ----
   atk_over:   [[0, {}], [0.36, { aA: [2.9, 0.25, 1.5], wp: 3.7, tl: -0.12, ht: -0.15 }], [0.5, { aA: [0.85, 0.1, 0.1], wp: 0.6, tl: 0.35, ht: 0.15 }], [0.62, { aA: [0.6, 0.12, 0.15], wp: 0.3, tl: 0.3 }], [1, {}]],
   atk_under:  [[0, {}], [0.36, { aA: [-0.7, 0.35, 0.3], wp: -1.0, tl: 0.3 }], [0.5, { aA: [1.9, 0.12, 0.2], wp: 2.4, tl: -0.15 }], [0.62, { aA: [2.1, 0.12, 0.25], wp: 2.6, tl: -0.12 }], [1, {}]],
@@ -124,7 +128,7 @@ const ACTS = {
   // ---- reação ao golpe ----
   hurt: [[0, {}], [0.25, { tl: -0.38, aA: [0.7, 0.55, 0.6], aB: [0.7, 0.55, 0.6], ht: -0.45, kn: -0.35 }], [1, {}]],
 };
-const ACT_MS = { kick: 520, execute: 720, quiver: 760, turnshot: 950, dualcast: 560, turncast: 950, salute: 1200, point: 1300, dance: 900, hurt: 300, swing: 440, bash: 560, spin: 560, block: 650, warcry: 700, shoot: 440, double: 620, pierce: 640, rain: 560, dash: 560, bolt: 400, fireball: 520, nova: 620, heal: 680, meteor: 720, cast: 600, bite: 320 };
+const ACT_MS = { hurt_head: 420, hurt_leg: 420, getup: 650, kick: 520, execute: 720, quiver: 760, turnshot: 950, dualcast: 560, turncast: 950, salute: 1200, point: 1300, dance: 900, hurt: 300, swing: 440, bash: 560, spin: 560, block: 650, warcry: 700, shoot: 440, double: 620, pierce: 640, rain: 560, dash: 560, bolt: 400, fireball: 520, nova: 620, heal: 680, meteor: 720, cast: 600, bite: 320 };
 const IDLES = {
   look: [[0, {}], [0.25, { hw: 0.6 }], [0.6, { hw: -0.6 }], [1, {}]],
   stretch: [[0, {}], [0.4, { aA: [3.0, 0.3, 0.2], aB: [3.0, 0.3, 0.2], tl: -0.12, mouth: 1, wp: 3.1 }], [0.7, { aA: [3.0, 0.3, 0.2], aB: [3.0, 0.3, 0.2], tl: -0.12, wp: 3.1 }], [1, {}]],
