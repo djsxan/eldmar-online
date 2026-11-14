@@ -1030,11 +1030,13 @@ function mBuilding(b, night) {
     o.add(gD);
   }
   // telhado: duas águas (oitões) ou quatro águas, com beiral
-  const ov = 0.42, roofM = smat(st.roofTex, st.roof, { bump: st.roofTex === 'thatch' ? 2 : 1.6 }), ridgeX = W2 >= H2;
+  const ov = 0.42, roofM = smat(st.roofTex, st.roof, { bump: st.roofTex === 'thatch' ? 2 : 1.6, side: THREE.DoubleSide }), ridgeX = W2 >= H2;
   const gable = b.kind === 'house' ? (b.v || 0) % 2 === 0 : b.kind === 'shop' || b.kind === 'barracks';
-  const A = V3(-ov, H, -ov), B = V3(W2 + ov, H, -ov), C = V3(W2 + ov, H, H2 + ov), D = V3(-ov, H, H2 + ov);
+  // no oitão o telhado avança pouco (beiral curto) e ganha uma tábua de acabamento na borda inclinada
+  const ox = gable && ridgeX ? 0.16 : ov, oz = gable && !ridgeX ? 0.16 : ov;
+  const A = V3(-ox, H, -oz), B = V3(W2 + ox, H, -oz), C = V3(W2 + ox, H, H2 + oz), D = V3(-ox, H, H2 + oz);
   let r1, r2;
-  if (gable) { r1 = ridgeX ? V3(-ov, H + RH, H2 / 2) : V3(W2 / 2, H + RH, -ov); r2 = ridgeX ? V3(W2 + ov, H + RH, H2 / 2) : V3(W2 / 2, H + RH, H2 + ov); }
+  if (gable) { r1 = ridgeX ? V3(-ox, H + RH, H2 / 2) : V3(W2 / 2, H + RH, -oz); r2 = ridgeX ? V3(W2 + ox, H + RH, H2 / 2) : V3(W2 / 2, H + RH, H2 + oz); }
   else { r1 = ridgeX ? V3(H2 / 2, H + RH, H2 / 2) : V3(W2 / 2, H + RH, W2 / 2); r2 = ridgeX ? V3(W2 - H2 / 2, H + RH, H2 / 2) : V3(W2 / 2, H + RH, H2 - W2 / 2); }
   const faces = gable ? (ridgeX ? [[D, C, r2, r1], [B, A, r1, r2]] : [[A, D, r2, r1], [C, B, r1, r2]]) : (ridgeX ? [[D, C, r2, r1], [B, A, r1, r2], [A, D, r1], [C, B, r2]] : [[A, D, r2, r1], [C, B, r1, r2], [B, A, r1], [D, C, r2]]);
   for (const f of faces) { const pts = f.filter((p, i) => i === 0 || !p.equals(f[i - 1])); if (pts.length >= 3) o.add(roofFace(pts, roofM)); }
@@ -1049,10 +1051,11 @@ function mBuilding(b, night) {
     o.add(gw);
   }
   const edge = smat('wood', shadeH(st.roof, -0.5));
-  for (const [p, q] of [[D, C], [C, B]]) { const d = new THREE.Vector3().subVectors(q, p), L = d.length(); const m = mk(new THREE.BoxGeometry(L, 0.1, 0.06), edge); m.position.copy(p).addScaledVector(d, 0.5); m.position.y -= 0.05; m.rotation.y = -Math.atan2(d.z, d.x); o.add(m); }
+  for (const [p, q] of (gable ? (ridgeX ? [[D, C]] : [[C, B]]) : [[D, C], [C, B]])) { const d = new THREE.Vector3().subVectors(q, p), L = d.length(); const m = mk(new THREE.BoxGeometry(L, 0.1, 0.06), edge); m.position.copy(p).addScaledVector(d, 0.5); m.position.y -= 0.05; m.rotation.y = -Math.atan2(d.z, d.x); o.add(m); }
+  if (gable) for (const [p, q] of (ridgeX ? [[C, r2], [r2, B], [D, r1], [r1, A]] : [[A, r1], [r1, B], [D, r2], [r2, C]])) o.add(limb(p.clone().add(V3(0, 0.02, 0)), q.clone().add(V3(0, 0.02, 0)), 0.06, 0.06, edge, 4));
   if (!r1.equals(r2)) { const d = new THREE.Vector3().subVectors(r2, r1); o.add(limb(r1.clone().addScaledVector(d, -0.02), r2.clone().addScaledVector(d, 0.02), 0.07, 0.07, smat(st.roofTex === 'thatch' ? 'thatch' : 'stoneblock', shadeH(st.roof, st.roofTex === 'thatch' ? -0.1 : 0.15)), 8)); }
   // água-furtada (janela no telhado) nas casas grandes
-  if (!gable && RH > 2.4 && W2 >= 5) { const dx = W2 * 0.35, gD = grp(); gD.add(wbox(0.8, 0.8, 0.9, 0, 0.4, 0, smat('plaster', st.wall), 1)); gD.add(mk(new THREE.ConeGeometry(0.66, 0.55, 4).rotateY(Math.PI / 4).translate(0, 1.07, 0), roofM)); const gw = mk(new THREE.BoxGeometry(0.38, 0.46, 0.02).translate(0, 0.42, 0.46), glassM); gD.add(gw); gD.position.set(dx, H + RH * 0.3, H2 - (H2 / 2) * 0.62); o.add(gD); }
+  if (false) { const dx = W2 * 0.35, gD = grp(); gD.add(wbox(0.8, 0.8, 0.9, 0, 0.4, 0, smat('plaster', st.wall), 1)); gD.add(mk(new THREE.ConeGeometry(0.66, 0.55, 4).rotateY(Math.PI / 4).translate(0, 1.07, 0), roofM)); const gw = mk(new THREE.BoxGeometry(0.38, 0.46, 0.02).translate(0, 0.42, 0.46), glassM); gD.add(gw); gD.position.set(dx, H + RH * 0.3, H2 - (H2 / 2) * 0.62); o.add(gD); }
   // chaminé
   if (b.kind === 'tavern' || b.kind === 'house' || b.kind === 'smith') {
     const cx = W2 * 0.3, cz = H2 * 0.35, top = H + RH * 0.85 + 0.6;
@@ -1168,8 +1171,35 @@ function mInterior(b, fl = 0) {
       case 'cauldron': g.add(mk(new THREE.SphereGeometry(0.32, 14, 10, 0, 6.28, Math.PI * 0.3, Math.PI * 0.7).translate(0, 0.42, 0), smat(null, '#1e1e22', { metal: 0.6, rough: 0.5, side: THREE.DoubleSide }))); g.add(mk(new THREE.CylinderGeometry(0.26, 0.26, 0.02, 14).translate(0, 0.6, 0), smat(null, '#3ad878', { emissive: '#1a9a4a', ei: 1.3 }))); break;
       case 'forge': g.add(wbox(1.8, 0.8, 0.85, 0, 0.4, -0.05, smat('brick', '#6a665e', { bump: 1.4 }), 1.5)); g.add(mk(new THREE.BoxGeometry(1.2, 0.05, 0.55).translate(0, 0.82, 0), smat(null, '#3a1208', { emissive: '#ff5a10', ei: 2 }))); g.add(mk(new THREE.ConeGeometry(0.8, 0.9, 4).rotateY(Math.PI / 4).translate(0, 1.9, -0.15), smat('brick', '#5a564e'))); g.add(wbox(0.4, 1.0, 0.4, 0, 2.6, -0.25, smat('brick', '#5a564e'), 1.5)); { const pl = new THREE.PointLight(0xff7a30, 1.8, 5); pl.position.set(0, 1.1, 0.4); g.add(pl); } break;
       case 'anvil': g.add(mAnvil()); break;
-      case 'stairup': { const sm = smat('wood', '#6a4a2c', { bump: 1.2 }), n = 7; for (let s2 = 0; s2 < n; s2++) g.add(wbox(0.8, (s2 + 1) * 0.3, 0.86 / n, 0, (s2 + 1) * 0.15, 0.43 - (s2 + 0.5) * 0.86 / n, sm, 2)); for (const x of [-0.42, 0.42]) { g.add(limb(V3(x, 0.55, 0.45), V3(x, 2.4, -0.4), 0.025, 0.025, DW(), 5)); g.add(wbox(0.05, 0.6, 0.05, x, 0.3, 0.45, DW(), 2)); } g.add(mk(new THREE.BoxGeometry(0.9, 0.04, 0.9).translate(0, 0.075, 0), smat(null, '#c8a050', { emissive: '#6a4a10', ei: 0.25, transparent: true, opacity: 0.35 }), false)); break; }
-      case 'stairdown': { g.add(mk(new THREE.BoxGeometry(0.8, 0.02, 0.86).translate(0, 0.07, 0), smat(null, '#120c06'))); const sm = smat('wood', '#6a4a2c', { bump: 1.2 }); for (let s2 = 0; s2 < 3; s2++) g.add(wbox(0.78, 0.06, 0.2, 0, 0.04 - s2 * 0.0, 0.32 - s2 * 0.22, sm, 2)); for (const x of [-0.44, 0.44]) { g.add(wbox(0.05, 0.75, 0.9, x, 0.38, 0, DW(), 2)); } g.add(wbox(0.9, 0.75, 0.05, 0, 0.38, -0.45, DW(), 2)); g.add(mk(new THREE.BoxGeometry(0.9, 0.04, 0.9).translate(0, 0.08, 0), smat(null, '#c8a050', { emissive: '#6a4a10', ei: 0.25, transparent: true, opacity: 0.3 }), false)); break; }
+      case 'stairup': {
+        // escada de 2 tiles encostada na parede, subindo ao longo dela (dv = de baixo para o topo)
+        const sm = smat('wood', '#6a4a2c', { bump: 1.2 }), tm = smat('wood', '#8a6038', { bump: 1 }), n = 10, fh = H / nF, [ux, uz] = f.dv;
+        const wx = ux ? 0 : -1, wz = ux ? -1 : 0;                  // lado da parede
+        for (let s2 = 0; s2 < n; s2++) {
+          const s = -1 + (s2 + 0.5) * 2 / n, hh = (s2 + 1) * fh / n, px = ux * s + wx * 0.04, pz = uz * s + wz * 0.04;
+          g.add(wbox(ux ? 2 / n : 0.84, hh, ux ? 0.84 : 2 / n, px, hh / 2, pz, sm, 2));
+          g.add(wbox(ux ? 2 / n + 0.02 : 0.88, 0.035, ux ? 0.88 : 2 / n + 0.02, px - wx * 0.01, hh + 0.017, pz - wz * 0.01, tm, 2));
+        }
+        const ox = -wx * 0.44, oz = -wz * 0.44;
+        g.add(limb(V3(-ux + ox, 0.95, -uz + oz), V3(ux + ox, fh + 0.95, uz + oz), 0.03, 0.03, DW(), 5));
+        for (let k = 0; k <= 4; k++) { const s = -1 + k * 0.5, y0 = Math.max(0, (s + 1) / 2 * fh); g.add(wbox(0.05, 0.95, 0.05, ux * s + ox, y0 + 0.47, uz * s + oz, DW(), 2)); }
+        g.add(mk(new THREE.BoxGeometry(ux ? 0.9 : 0.9, 0.04, 0.9).translate(-ux * 0.5, 0.075, -uz * 0.5), smat(null, '#c8a050', { emissive: '#6a4a10', ei: 0.25, transparent: true, opacity: 0.3 }), false));
+        break;
+      }
+      case 'stairdown': {
+        // vão da escada no andar de cima: degraus descendo do topo (U) para baixo (L), corrimão em volta
+        const n = 6, [ux, uz] = f.dv, wx = ux ? 0 : -1, wz = ux ? -1 : 0;
+        g.add(mk(new THREE.BoxGeometry(ux ? 1.96 : 0.9, 0.02, ux ? 0.9 : 1.96).translate(wx * 0.03, 0.065, wz * 0.03), smat(null, '#050302', { rough: 1, metal: 0 })));
+        for (let k = 0; k < n; k++) { const s = 1 - (k + 0.5) * 2 / n, c = Math.round(0x6a * (1 - k / n * 0.85)), col = '#' + [c, Math.round(c * 0.7), Math.round(c * 0.42)].map(v => v.toString(16).padStart(2, '0')).join(''); g.add(wbox(ux ? 2 / n - 0.03 : 0.8, 0.04, ux ? 0.8 : 2 / n - 0.03, ux * s + wx * 0.03, 0.09, uz * s + wz * 0.03, smat('wood', col), 2)); }
+        const ox = -wx * 0.46, oz = -wz * 0.46;
+        // corrimão do lado aberto só na metade de baixo (o topo fica livre para descer) + na ponta de baixo
+        g.add(wbox(ux ? 1.0 : 0.05, 0.08, ux ? 0.05 : 1.0, -ux * 0.5 + ox, 0.82, -uz * 0.5 + oz, DW(), 2));
+        for (const s of [-1, -0.5, 0]) g.add(wbox(0.05, 0.8, 0.05, ux * s + ox, 0.42, uz * s + oz, DW(), 2));
+        g.add(wbox(ux ? 0.05 : 0.92, 0.08, ux ? 0.92 : 0.05, -ux * 1 + wx * 0.0, 0.82, -uz * 1, DW(), 2));
+        for (const q of [-0.44, 0, 0.44]) g.add(wbox(0.05, 0.8, 0.05, -ux + (ux ? 0 : q), 0.42, -uz + (ux ? q : 0), DW(), 2));
+        g.add(mk(new THREE.BoxGeometry(0.9, 0.04, 0.9).translate(ux * 0.5, 0.08, uz * 0.5), smat(null, '#c8a050', { emissive: '#6a4a10', ei: 0.25, transparent: true, opacity: 0.3 }), false));
+        break;
+      }
       case 'rack': g.add(mWeaponRack().rotateY(backZ ? 0 : Math.PI / 2)); break;
       case 'trough': g.add(wbox(f.w - 0.2, 0.4, 0.5, 0, 0.2, 0, W_(), 2)); g.add(mk(new THREE.BoxGeometry(f.w - 0.35, 0.02, 0.36).translate(0, 0.36, 0), smat(null, '#3a5a6a', { rough: 0.1 }))); break;
       case 'hay': g.add(mHay()); break;
@@ -1180,7 +1210,7 @@ function mInterior(b, fl = 0) {
       case 'rug': g.add(mk(new THREE.BoxGeometry(Math.min(3, w - 1.4), 0.015, Math.min(h - 1.4, b.kind === 'castle' ? h - 3 : 2)).translate(0, 0.07, b.kind === 'castle' ? (h - 3) / 2 - 0.5 : 0.5), cloth(b.kind === 'castle' ? '#8a1a1c' : ['#7a3a2a', '#3a4a6a', '#5a6a3a'][f.i % 3]))); break;
     }
     g.position.set(cx, 0, cz); g.userData.furn = 1;
-    { const sx = f.w > 1 || f.h > 1 || f.t === 'rug' || f.t === 'stairup' || f.t === 'stairdown' ? 1 : 0.62; if (f.t === 'stairup' || f.t === 'stairdown') { o.add(g); continue; } g.scale.set(sx, 0.55, sx); if (sx < 1) g.position.set(cx + (backX ? -0.15 : 0), 0, cz + (backZ ? -0.15 : 0)); }
+    { const sx = f.w > 1 || f.h > 1 || f.t === 'rug' || f.t === 'stairup' || f.t === 'stairdown' ? 1 : 0.62; if (f.t === 'stairup' || f.t === 'stairdown') { o.add(g); continue; } if (f.t === 'blk') continue; g.scale.set(sx, 0.55, sx); if (sx < 1) g.position.set(cx + (backX ? -0.15 : 0), 0, cz + (backZ ? -0.15 : 0)); }
     o.add(g);
   }
   return o;

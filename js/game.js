@@ -53,7 +53,7 @@ function clientOnServer(m) {
       G.myId = m.you;
       for (const p of m.players) G.players[p.id] = mkEnt({ ...p });
       G.me = G.players[G.myId];
-      Object.assign(G.me, { x: m.x, y: m.y, rx: m.x, ry: m.y, z: 0, visible: true, mp: 0, maxMp: 1, hp: 1, maxHp: 1, quests: {}, qdone: {}, pots: { hp: 0, mp: 0 }, gold: 0, buffs: {}, lastTile: tileAt(m.x, m.y), sendT: 0 });
+      Object.assign(G.me, { x: m.x, y: m.y, rx: m.x, ry: m.y, z: 0, visible: true, mp: 0, maxMp: 1, hp: 1, maxHp: 1, quests: {}, qdone: {}, pots: { hp: 0, mp: 0 }, inv: {}, gold: 0, buffs: {}, lastTile: tileAt(m.x, m.y), sendT: 0 });
       startGame();
       if (!G.prebaked) { G.prebaked = true; prebakeCity(); }
       break;
@@ -63,15 +63,15 @@ function clientOnServer(m) {
     case 'pstat': {
       const e = G.me; if (!e || m.id !== G.myId) break;
       const oldLvl = e.lvl;
-      Object.assign(e, { hp: m.hp, maxHp: m.maxHp, mp: m.mp, maxMp: m.maxMp, lvl: m.lvl, xp: m.xp, gold: m.gold, pots: m.pots, combat: m.combat, quests: m.quests, qdone: m.qdone });
+      Object.assign(e, { hp: m.hp, maxHp: m.maxHp, mp: m.mp, maxMp: m.maxMp, lvl: m.lvl, xp: m.xp, gold: m.gold, pots: m.pots, inv: m.inv || {}, combat: m.combat, quests: m.quests, qdone: m.qdone });
       setBuffs(e, m.buffs);
       G.cdEnd = m.cds.map(r => now + r);
       e.downed = m.downed > 0; e.downUntil = now + m.downed;
-      saveChar(); updateHud(); updateQuests();
+      saveChar(); updateHud(); updateQuests(); if (!$('inv').classList.contains('hidden')) updateInv();
       if (oldLvl && m.lvl > oldLvl) showBanner(`Nível ${m.lvl}`, 'Sua força cresce.');
       break;
     }
-    case 'tp': if (G.me) { Object.assign(G.me, { x: m.x, y: m.y, rx: m.x, ry: m.y, z: +m.z || 0, fl: m.fl | 0, fb: m.fb ?? -1 }); G.path = null; G.pathGoal = null; if (m.climb) G.climbArm = m.climb - 1; } break;
+    case 'tp': if (G.me) { G.floorWait = 0; G.climbing = null; G.me.lift = 0; Object.assign(G.me, { x: m.x, y: m.y, rx: m.x, ry: m.y, z: +m.z || 0, fl: m.fl | 0, fb: m.fb ?? -1 }); G.path = null; G.pathGoal = null; if (m.climb) G.climbArm = m.climb - 1; } break;
     case 'hit':
       later(m.d, () => {
         const t = performance.now();
@@ -130,6 +130,7 @@ function clientOnServer(m) {
     case 'rv': { const e = G.players[m.id]; if (e) e.revive = m.by ? { by: m.by, t0: now } : null; break; }
     case 'carry': { const c = G.players[m.by]; if (c) c.carrying = m.id || null; break; }
     case 'respawned': showBanner('Capela da Aurora', 'Você despertou nas ruínas e perdeu metade da experiência do nível.', true); break;
+    case 'loot': { const it = LOOT[m.k]; if (it) { showToast('+ ' + it.name); G.newLoot = m.k; } break; }
     case 'qprog': { const q = QUESTS.find(x => x.id === m.id); if (q) showToast(`${q.name}: ${m.n}/${q.count}`); break; }
     case 'qdone': { const q = QUESTS.find(x => x.id === m.id); if (q) showBanner('Contrato cumprido', `${q.name} — +${q.xp} xp, +${q.gold} ouro`); break; }
   }
@@ -150,7 +151,7 @@ function applySnapshot(m, now) {
       continue;
     }
     e.hp = hpPct; e.maxHp = 100; e.z = z;
-    e.srvDir = dir; e.srvWalk = !!(fl & 1); if (e !== G.me) { e.running = !!(fl & 256); e.fl = (fl >> 11) & 3; e.sit = fl & 512 ? { chair: fl & 1024 ? 1 : 0 } : null; }
+    e.srvDir = dir; e.srvWalk = !!(fl & 1); if (e !== G.me) { e.running = !!(fl & 256); e.fl = (fl >> 11) & 3; e.crouch = !!(fl & 8192); e.slide = !!(fl & 16384); e.sit = fl & 512 ? { chair: fl & 1024 ? 1 : 0 } : null; }
     e.buf.push({ t: now, x, y });
     if (e.buf.length > 6) e.buf.shift();
   }
@@ -192,7 +193,7 @@ function monsterNear(x, y, r = 0.5) {
   for (const id in G.monsters) { const m = G.monsters[id]; if (!m.dieAt && dist(m.rx, m.ry, x, y) < r) return true; }
   return false;
 }
-function freeAt(x, y, z) { const me = G.me; if (me && me.fl > 0) return canStandFloor(x, y, me.fb, me.fl, 0.22); return canStandZ(x, y, z, 0.22) && (z >= 0.5 || !monsterNear(x, y)); }
+function freeAt(x, y, z) { const me = G.me; if (me && me.fl > 0) return canStandFloor(x, y, me.fb, me.fl, 0.22); return canStandZ(x, y, z, 0.22) && (z >= 0.5 || G.slide || !monsterNear(x, y)); }
 
 function myInput() {
   const k = G.keys;
@@ -211,6 +212,8 @@ function myInput() {
 function updateLocal(now, dt) {
   const me = G.me;
   if (!me || me.carriedBy) { if (me) { me.walking = false; } return; }
+  if (G.climbing) { stepClimb(now); return; }
+  if (now < (G.floorWait || 0)) { me.walking = false; return; }
   if (document.activeElement && document.activeElement.tagName === 'INPUT') G.keys.clear();
   let v = myInput();
   if (me.sit) { if (v || G.path) standUp(); else { v = null; } }
@@ -227,7 +230,15 @@ function updateLocal(now, dt) {
   if (G.pendingNpc && !G.path) { const n = G.npcs[G.pendingNpc]; if (dist(me.x, me.y, n.x, n.y) <= 3) openDialog(n.id); G.pendingNpc = null; }
   // correr com SHIFT gasta estamina; ao esgotar, precisa recuperar um pouco antes de correr de novo
   if (G.stam == null) { G.stam = STAM_MAX; G.stamT = 0; G.tired = false; }
-  const running = !!v && G.keys.has('shift') && !G.tired && !me.downed && !me.carrying && G.stam > 0;
+  const crouchKey = (G.keys.has('c') || G.crouchToggle) && !me.downed && !me.carrying && !me.sit && (me.z || 0) < 0.5;
+  if (!(G.keys.has('c') && G.keys.has('shift'))) G.slideLatch = false;
+  if (!G.slide && v && G.keys.has('c') && G.keys.has('shift') && !G.slideLatch && !G.tired && G.stam >= SLIDE_COST && !me.downed && !me.carrying && (me.z || 0) < 0.5 && !(me.fl > 0)) {
+    G.slide = { t0: now, v: v.slice() }; G.slideLatch = true; G.stam -= SLIDE_COST; G.stamT = now;
+  }
+  if (G.slide && now - G.slide.t0 > SLIDE_MS) G.slide = null;
+  if (G.slide) v = G.slide.v;
+  me.slide = !!G.slide; me.crouch = crouchKey && !G.slide;
+  const running = !!v && G.keys.has('shift') && !crouchKey && !G.tired && !me.downed && !me.carrying && G.stam > 0;
   if (running) { G.stam = Math.max(0, G.stam - STAM_DRAIN * dt); G.stamT = now; if (G.stam <= 0) G.tired = true; }
   else if (now - G.stamT > STAM_DELAY) G.stam = Math.min(STAM_MAX, G.stam + STAM_REGEN * dt * (v ? 0.6 : me.sit ? 2.5 : 1));
   revealFog(me.x, me.y);
@@ -238,6 +249,8 @@ function updateLocal(now, dt) {
     let sp = PLAYER_SPEED;
     if (me.buffs && me.buffs.agile > now) sp *= 1.6;
     if (running) sp *= RUN_MUL;
+    if (me.crouch) sp *= CROUCH_MUL;
+    if (G.slide) { const k = (now - G.slide.t0) / SLIDE_MS; sp = PLAYER_SPEED * RUN_MUL * 1.5 * (1 - k * 0.65); if (Math.random() < 0.5) { const w = tileW(me.x, me.y, 0); spawnPart('dust', w.x, w.y); } }
     if (me.carrying) sp *= 0.75;
     if (me.downed) sp *= 0.22;
     if (WORLD.ground[tileAt(me.x, me.y)] === T.SHALLOW) sp *= 0.65;
@@ -254,16 +267,13 @@ function updateLocal(now, dt) {
   me.walking = moved > 0.0005;
   me.walkDist += moved;
   if (me.walking && Math.random() < 0.08) { const w = tileW(me.x, me.y, me.z * FLOOR_PX); spawnPart('dust', w.x, w.y); }
-  // escadas dentro dos prédios: pisar na escada leva ao andar de cima / de baixo
-  if ((me.z || 0) < 0.5 && now >= (G.climbT || 0)) {
+  // escadas dentro dos prédios: pisar no degrau de baixo sobe andando; pisar no topo (andar de cima) desce
+  if ((me.z || 0) < 0.5 && now >= (G.climbT || 0) && !me.downed && !me.carrying) {
     const fl = me.fl || 0, bi = fl > 0 ? me.fb : bldAt(me.x, me.y), b = BUILDINGS[bi];
     if (b && b.kind !== 'stairtower') {
-      const nF = floorsOf(b), opts = [];
-      if (fl < nF - 1) opts.push([fl + 1, stairTile(b, fl)]);
-      if (fl > 0) opts.push([fl - 1, stairTile(b, fl - 1)]);
-      let near = false;
-      for (const [to, [sx, sy]] of opts) { const d = Math.hypot(me.x - sx, me.y - sy); if (d < 0.9) near = true; if (d < 0.4 && G.stairArm !== sx + ',' + sy + fl) { G.climbT = now + 900; G.stairArm = sx + ',' + sy + to; G.path = null; G.pathGoal = null; fadeFlash(); Net.send({ t: 'floor', b: bi, to }); break; } }
-      if (!near) G.stairArm = null;
+      const nF = floorsOf(b);
+      if (fl < nF - 1) { const s = stairWorld(b, fl); if (Math.hypot(me.x - s.L[0], me.y - s.L[1]) < 0.42) startClimb(now, bi, fl, fl + 1, [[me.x, me.y, 0], [s.L[0], s.L[1], 0.08], [s.U[0], s.U[1], 1], [s.arrive[0], s.arrive[1], 1]]); }
+      if (!G.climbing && fl > 0) { const s = stairWorld(b, fl - 1); if (Math.hypot(me.x - s.U[0], me.y - s.U[1]) < 0.42) startClimb(now, bi, fl, fl - 1, [[me.x, me.y, 0], [s.U[0], s.U[1], -0.08], [s.L[0], s.L[1], -1], [s.entry[0], s.entry[1], -1]]); }
     }
   }
   // torres-escada: pisar na escada sobe para a muralha; pisar no alçapão lá em cima desce
@@ -290,9 +300,10 @@ function updateLocal(now, dt) {
     const keep = cur && !cur.dieAt && dist(me.x, me.y, cur.rx, cur.ry) <= rng2 * 1.5;
     if (!keep) { let best = null, bd = rng2; for (const id in G.monsters) { const q = G.monsters[id]; if (q.dieAt || !q.visible) continue; const d = dist(me.x, me.y, q.rx, q.ry); if (d <= bd) { bd = d; best = q; } } if (best) setTarget(best.id); else if (cur && cur.dieAt) setTarget(null); }
   }
-  if (now - me.sendT > 100 && (moved || me.walking !== me.sentWalk)) {
-    me.sendT = now; me.sentWalk = me.walking;
-    Net.send({ t: 'mv', x: Math.round(me.x * 100) / 100, y: Math.round(me.y * 100) / 100, z: Math.round(me.z * 100) / 100, d: me.dir, w: me.walking ? 1 : 0, r: running ? 1 : 0 }, true);
+  const stF = (me.crouch ? 1 : 0) | (me.slide ? 2 : 0);
+  if (now - me.sendT > 100 && (moved || me.walking !== me.sentWalk || stF !== me.sentSt)) {
+    me.sendT = now; me.sentWalk = me.walking; me.sentSt = stF;
+    Net.send({ t: 'mv', x: Math.round(me.x * 100) / 100, y: Math.round(me.y * 100) / 100, z: Math.round(me.z * 100) / 100, d: me.dir, w: me.walking ? 1 : 0, r: running ? 1 : 0, c: me.crouch ? 1 : 0, sl: me.slide ? 1 : 0 }, true);
   }
 }
 function lineFree(ax, ay, bx, by, z) {
@@ -364,7 +375,7 @@ function saveChar() {
   const me = G.me;
   try {
     const all = loadChars();
-    all[charKey(me.name, me.cls)] = { name: me.name, cls: me.cls, skin: me.skin, color: me.color, lvl: me.lvl, xp: me.xp, gold: me.gold, pots: me.pots, quests: me.quests, qdone: me.qdone, t: Date.now() };
+    all[charKey(me.name, me.cls)] = { name: me.name, cls: me.cls, skin: me.skin, color: me.color, lvl: me.lvl, xp: me.xp, gold: me.gold, pots: me.pots, inv: me.inv, quests: me.quests, qdone: me.qdone, t: Date.now() };
     localStorage.setItem(SAVE_KEY, JSON.stringify(all));
   } catch (e) { }
 }
@@ -374,7 +385,6 @@ function saveChar() {
 // ============================================================
 const $ = id => document.getElementById(id);
 const canvas = $('game'), ctx = canvas.getContext('2d');
-const mini = $('minimap'), mctx = mini.getContext('2d');
 let W = 0, H = 0, DPR = 1;
 function resize() {
   DPR = Math.min(SET.quality === 'low' ? 1 : SET.quality === 'med' ? 1.5 : 2, window.devicePixelRatio || 1);
@@ -413,17 +423,56 @@ function updateHud() {
   if (G.dialog) refreshDialogGold();
 }
 function updateQuests() {
-  const box = $('quest-list'), me = G.me;
-  box.innerHTML = '';
+  const box = $('quest-list'), done = $('quest-done'), me = G.me;
+  box.innerHTML = ''; done.innerHTML = '';
   const act = Object.entries(me.quests || {});
-  $('quests').classList.toggle('hidden', !act.length);
+  const row = (q, html) => { const d = document.createElement('div'); d.className = 'jq'; d.innerHTML = html; return d; };
   for (const [id, n] of act) {
     const q = QUESTS.find(x => x.id === id); if (!q) continue;
-    const d = document.createElement('div');
-    const name = document.createElement('b'); name.textContent = q.name;
-    const pr = document.createElement('span'); pr.textContent = ` ${n}/${q.count} ${MON[q.mon].name}`;
-    d.append(name, pr); box.appendChild(d);
+    box.appendChild(row(q, `<b>${q.name}</b> <small>· ${n}/${q.count} ${MON[q.mon].name}</small><div class="jq-bar"><div style="width:${100 * n / q.count}%"></div></div><small>${q.desc} Recompensa: ${q.xp} xp e ${q.gold} de ouro.</small>`));
   }
+  if (!act.length) box.innerHTML = '<div class="gp-note">Nenhum contrato ativo.</div>';
+  const dn = QUESTS.filter(q => me.qdone && me.qdone[q.id]);
+  for (const q of dn) done.appendChild(row(q, `<b>${q.name}</b> <small>· cumprido ${me.qdone[q.id]}x</small>`));
+  if (!dn.length) done.innerHTML = '<div class="gp-note">Nada ainda.</div>';
+}
+// ---------- painéis: inventário (I) e jornada (J) ----------
+function togglePanel(id, force) {
+  const el = $(id), open = force != null ? force : el.classList.contains('hidden');
+  for (const o of ['inv', 'journal']) $(o).classList.add('hidden');
+  if (!open) return;
+  el.classList.remove('hidden');
+  if (id === 'inv') updateInv(); else updateQuests();
+}
+function updateInv() {
+  const me = G.me, grid = $('inv-grid'); if (!me) return;
+  $('inv-gold').textContent = me.gold;
+  const list = [];
+  if (me.pots && me.pots.hp) list.push({ k: 'hp', n: me.pots.hp, name: ITEMS.hp.name, icon: '🧪', color: '#e85a5a', desc: ITEMS.hp.desc + ' Clique para beber (Q).', use: () => drinkPot('hp') });
+  if (me.pots && me.pots.mp) list.push({ k: 'mp', n: me.pots.mp, name: ITEMS.mp.name, icon: '🧪', color: '#5a8ae8', desc: ITEMS.mp.desc + ' Clique para beber (E).', use: () => drinkPot('mp') });
+  for (const k in (me.inv || {})) { const it = LOOT[k]; if (it && me.inv[k] > 0) list.push({ k, n: me.inv[k], name: it.name, icon: it.icon, color: it.color, desc: it.desc + ' Vale ' + it.price + ' de ouro cada no Empório.' }); }
+  grid.innerHTML = '';
+  for (let i = 0; i < INV_SLOTS; i++) {
+    const s = document.createElement('div'), it = list[i]; s.className = 'inv-slot';
+    if (it) {
+      s.classList.add('full'); if (G.newLoot === it.k) s.classList.add('new');
+      s.innerHTML = `<span style="color:${it.color};filter:${it.k === 'mp' ? 'hue-rotate(55deg) saturate(1.4)' : it.k === 'hp' ? 'hue-rotate(195deg) saturate(1.6)' : 'none'}">${it.icon}</span><span class="n">${it.n}</span>`;
+      s.onmouseenter = () => { $('inv-info').innerHTML = `<b>${it.name}</b> ×${it.n}<br>${it.desc}`; };
+      if (it.use) s.onclick = () => { it.use(); setTimeout(updateInv, 300); };
+    }
+    grid.appendChild(s);
+  }
+  G.newLoot = null;
+}
+for (const b of document.querySelectorAll('.gp-x')) b.addEventListener('click', () => togglePanel(b.dataset.close, false));
+$('btn-inv').addEventListener('click', () => togglePanel('inv'));
+$('btn-journal').addEventListener('click', () => togglePanel('journal'));
+// estado de saúde na tela: cansado = bordas escuras; à beira da morte = pulso vermelho e cores apagadas
+function updateHealthFx() {
+  const hs = G.me ? healthState(G.me) : 0;
+  if (hs === G.hsShown) return; G.hsShown = hs;
+  $('hstate').className = hs === 2 ? 'dying' : hs === 1 ? 'tired' : '';
+  document.body.classList.toggle('dying', hs === 2); document.body.classList.toggle('tired', hs === 1);
 }
 function updateTargetFrame() {
   const f = $('target-frame'), t = G.target && G.monsters[G.target];
@@ -481,7 +530,8 @@ const GUARD_TEXT = 'Além do fosso: os Campos (★) logo além da paliçada; o B
 const NPC_DIALOG = {
   merchant: { greet: 'Bem-vindo ao Empório. Não é muito, mas o que vendo funciona.', opts: [
     ['Poção de Vida — 20 ouro', { a: 'buy', item: 'hp', qty: 1 }], ['5 Poções de Vida — 100 ouro', { a: 'buy', item: 'hp', qty: 5 }],
-    ['Poção de Mana — 25 ouro', { a: 'buy', item: 'mp', qty: 1 }], ['5 Poções de Mana — 125 ouro', { a: 'buy', item: 'mp', qty: 5 }]] },
+    ['Poção de Mana — 25 ouro', { a: 'buy', item: 'mp', qty: 1 }], ['5 Poções de Mana — 125 ouro', { a: 'buy', item: 'mp', qty: 5 }],
+    ['Vender todo o saque', { a: 'sell' }]] },
   priest: { greet: 'Paz, viajante. A capela é pequena, mas a Aurora ainda escuta quem pede. Traga aqui os que caírem; eu cuido deles.', opts: [['Receber a bênção (grátis)', { a: 'bless' }]] },
   innkeeper: { greet: 'Sente-se. Tem fogo, comida quente e gente falando demais. Do que precisa?', opts: [
     ['Hidromel — 15 ouro (+10% de dano por 3 min)', { a: 'mead' }], ['Ensopado de javali — 10 ouro (recupera tudo)', { a: 'stew' }], ['Ouvir as conversas da taverna', { a: 'rumor' }]] },
@@ -635,7 +685,7 @@ window.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (G.paused && k !== 'escape') return;
   if (k === 'enter') { input.focus(); e.preventDefault(); return; }
-  if (k === 'escape') { if (G.mapOpen) { toggleWorldMap(); return; } if (G.dialog) { closeDialog(); return; } togglePause(); return; }
+  if (k === 'escape') { if (G.mapOpen) { toggleWorldMap(); return; } if (!$('inv').classList.contains('hidden') || !$('journal').classList.contains('hidden')) { togglePanel('inv', false); return; } if (G.dialog) { closeDialog(); return; } togglePause(); return; }
   if (k >= '1' && k <= '4') { castSkill(+k - 1); return; }
   if (k === 'q') { drinkPot('hp'); return; }
   if (k === 'e') { drinkPot('mp'); return; }
@@ -643,7 +693,9 @@ window.addEventListener('keydown', e => {
   if (k === 'f' && !e.repeat) { const d = nearestDowned(); if (d) { G.reviving = d.id; Net.send({ t: 'revive', id: d.id, on: true }); } return; }
   if (k === 'g' && !e.repeat) { if (G.me.carrying) Net.send({ t: 'carry' }); else { const d = nearestDowned(); if (d) Net.send({ t: 'carry', id: d.id }); } return; }
   if (k === 'x') { attackNearest(); return; }
-  if (k === 'c' && !e.repeat) { if (G.me.sit) standUp(); else if (!G.me.walking) sitDown(null); return; }
+  if (k === 'v' && !e.repeat) { if (G.me.sit) standUp(); else if (!G.me.walking) sitDown(null); return; }
+  if (k === 'i' && !e.repeat) { togglePanel('inv'); return; }
+  if (k === 'j' && !e.repeat) { togglePanel('journal'); return; }
   if (k === 'm' && !e.repeat) { toggleWorldMap(); return; }
   if (k === 't') { if (!e.repeat) openEmoteWheel(); return; }
   if (k === ' ' || k === 'tab') {
@@ -695,12 +747,11 @@ function frame() {
     updateSlots(now);
     if (now - lastMini > 200) {
       lastMini = now;
-      renderMinimap(mctx, mini.width);
-      const z = ZONES[zoneAt(G.me.x, G.me.y)];
-      $('zone-name').textContent = z.name + (G.me.z >= 0.5 ? ' · Muralhas' : '');
-      $('zone-stars').textContent = z.stars ? '★'.repeat(z.stars) + '☆'.repeat(4 - z.stars) : 'Zona protegida';
-      const d = dayInfo();
-      $('daytime').textContent = d.night ? '☾ Noite' : d.dusk > 0.3 ? '◐ Crepúsculo' : '☀ Dia';
+      // sem minimapa: ao entrar numa região nova, aparece o nome dela
+      const zi = zoneAt(G.me.x, G.me.y);
+      if (G.zoneShown == null) G.zoneShown = zi;
+      else if (zi !== G.zoneShown) { G.zoneShown = zi; const z = ZONES[zi]; showBanner(z.name, z.stars ? '★'.repeat(z.stars) + '☆'.repeat(4 - z.stars) : 'Zona protegida', z.stars >= 3); }
+      updateHealthFx();
       updateTargetFrame();
     }
     if (now - lastHud > 1000) { lastHud = now; updateHud(); }
@@ -759,6 +810,7 @@ function startGame() {
   buildHotbar(); updateHud(); updateQuests(); setupJoystick();
   $('btn-attack').onclick = attackNearest;
   if (matchMedia('(pointer: coarse)').matches) document.body.classList.add('touch');
+  if (!$('btn-crouch')) { const b = document.createElement('button'); b.id = 'btn-crouch'; b.textContent = '⤓'; b.title = 'Agachar'; document.body.appendChild(b); b.addEventListener('click', () => { G.crouchToggle = !G.crouchToggle; b.classList.toggle('on', G.crouchToggle); }); }
   addChat('', `Bem-vindo a World of Sxan, ${G.me.name}. Fale com os moradores clicando neles. Enter abre o chat.`);
   showBanner('Cidadela de Sxan', 'Zona protegida — os monstros não atravessam o fosso.');
 }
@@ -790,7 +842,7 @@ function lockLobby(b) { for (const el of document.querySelectorAll('#lobby butto
 function helloMsg() {
   const name = $('name').value.trim() || 'Aventureiro';
   const saved = loadChars()[charKey(name, chosenClass)] || {};
-  return { t: 'hello', name, color: chosenColor, cls: chosenClass, skin: chosenSkin[chosenClass], lvl: saved.lvl, xp: saved.xp, gold: saved.gold, pots: saved.pots, quests: saved.quests, qdone: saved.qdone };
+  return { t: 'hello', name, color: chosenColor, cls: chosenClass, skin: chosenSkin[chosenClass], lvl: saved.lvl, xp: saved.xp, gold: saved.gold, pots: saved.pots, inv: saved.inv, quests: saved.quests, qdone: saved.qdone };
 }
 function showRoom(code) { $('room-code').textContent = Net.offline ? 'offline' : code; }
 function createRoom(code = randomCode(), tries = 0) {
@@ -1043,11 +1095,13 @@ function applySettings() {
   for (const b of document.querySelectorAll('#pz-quality button')) b.classList.toggle('on', b.dataset.q === SET.quality);
   $('pz-bright').value = SET.bright; $('pz-bright-v').textContent = Math.round(SET.bright * 100) + '%';
   $('pz-zoom').value = SET.zoom; $('pz-zoom-v').textContent = Math.round(SET.zoom * 100) + '%';
+  document.documentElement.style.setProperty('--pad', SET.pad); $('pz-pad').value = SET.pad; $('pz-pad-v').textContent = Math.round(SET.pad * 100) + '%';
 }
+$('pz-pad').addEventListener('input', e => { SET.pad = +e.target.value; saveSettings(); applySettings(); });
 function togglePause(force) {
   G.paused = force != null ? force : !G.paused;
   $('pause').classList.toggle('hidden', !G.paused);
-  if (G.paused) { applySettings(); G.keys.clear(); }
+  if (G.paused) { applySettings(); G.keys.clear(); updateHud(); const z = ZONES[zoneAt(G.me.x, G.me.y)]; $('zone-name').textContent = z.name + (G.me.fl > 0 ? ' · andar ' + (G.me.fl + 1) : G.me.z >= 0.5 ? ' · Muralhas' : ''); $('zone-stars').textContent = z.stars ? '★'.repeat(z.stars) + '☆'.repeat(4 - z.stars) : 'Zona protegida'; }
 }
 $('btn-menu').addEventListener('click', () => togglePause());
 $('pz-resume').addEventListener('click', () => togglePause(false));
@@ -1063,6 +1117,23 @@ $('pz-full').addEventListener('click', () => { if (document.fullscreenElement) d
 $('pz-quit').addEventListener('click', () => { try { saveChar(); saveFog && G.fog && saveFog(); } catch (e) { } location.reload(); });
 applySettings();
 
+// subir/descer andando pelos degraus: segue os pontos (x, y, altura em andares) e no fim troca de andar com um esmaecimento cruzado
+function startClimb(now, bi, from, to, pts) {
+  let len = 0; for (let k = 1; k < pts.length; k++) len += Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
+  G.climbing = { t0: now, dur: Math.max(500, len / (PLAYER_SPEED * 0.75) * 1000), bi, from, to, pts, len };
+  G.path = null; G.pathGoal = null; if (G.me.sit) standUp(); G.me.emote = null;
+}
+function stepClimb(now) {
+  const c = G.climbing, me = G.me, k = Math.min(1, (now - c.t0) / c.dur);
+  let d = k * c.len, p = c.pts[c.pts.length - 1];
+  for (let i = 1; i < c.pts.length; i++) { const a = c.pts[i - 1], b = c.pts[i], sl = Math.hypot(b[0] - a[0], b[1] - a[1]); if (d <= sl || i === c.pts.length - 1) { const t = sl ? Math.min(1, d / sl) : 1; p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; if (sl > 0.01) me.dir = dirFromVec(b[0] - a[0], b[1] - a[1], me.dir); break; } d -= sl; }
+  const ox = me.x, oy = me.y; me.x = me.rx = p[0]; me.y = me.ry = p[1]; me.lift = p[2]; me.walking = true; me.walkDist += Math.hypot(me.x - ox, me.y - oy);
+  if (k < 1) return;
+  G.climbing = null; me.lift = 0; me.fl = c.to; me.fb = c.to > 0 ? c.bi : -1;
+  G.flFade = { t0: now, from: c.from, to: c.to, b: c.bi };
+  G.climbT = now + 500; G.floorWait = now + 1200;
+  Net.send({ t: 'floor', b: c.bi, to: c.to });
+}
 // escurece a tela rapidinho (subir/descer a torre)
 function fadeFlash() {
   let f = document.getElementById('fade'); if (!f) { f = document.createElement('div'); f.id = 'fade'; f.style.cssText = 'position:fixed;inset:0;z-index:20;background:#000;opacity:0;pointer-events:none;transition:opacity .25s'; document.body.appendChild(f); }

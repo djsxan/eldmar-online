@@ -25,7 +25,7 @@ function fullStat(p) {
   const now = now_();
   return {
     t: 'pstat', id: p.id, hp: p.hp, maxHp: p.maxHp, mp: p.mp, maxMp: p.maxMp, lvl: p.lvl, xp: p.xp, gold: p.gold,
-    pots: { hp: p.pots.hp, mp: p.pots.mp }, quests: { ...p.quests }, qdone: { ...p.qdone },
+    pots: { hp: p.pots.hp, mp: p.pots.mp }, inv: { ...p.inv }, quests: { ...p.quests }, qdone: { ...p.qdone },
     buffs: Object.entries(p.buffs).filter(([, u]) => u > now).map(([k, u]) => [k, u - now]),
     cds: [0, 1, 2, 3].map(i => Math.max(0, (p.cds[i] || 0) - now)),
     combat: now - p.lastCombat < OUT_OF_COMBAT_MS, downed: p.downed ? p.downed.until - now : 0,
@@ -86,8 +86,9 @@ function hostOnClient(from, m) {
       pots: { hp: clamp((m.pots && m.pots.hp) | 0, 0, 999), mp: clamp((m.pots && m.pots.mp) | 0, 0, 999) },
       maxHp: maxHpFor(cls, lvl), maxMp: maxMpFor(cls, lvl), hp: 0, mp: 0,
       target: null, nextAtk: 0, cds: {}, buffs: {}, casting: null, lastCombat: 0, potCd: 0, lastMv: now_(),
-      downed: null, carriedBy: null, carrying: null, revive: null, quests: {}, qdone: {},
+      downed: null, carriedBy: null, carrying: null, revive: null, quests: {}, qdone: {}, inv: {},
     };
+    if (m.inv) for (const k in LOOT) if (m.inv[k] > 0) np.inv[k] = clamp(m.inv[k] | 0, 0, 999);
     if (m.quests) for (const q of QUESTS) if (m.quests[q.id] != null) np.quests[q.id] = clamp(m.quests[q.id] | 0, 0, q.count);
     if (m.qdone) for (const q of QUESTS) if (m.qdone[q.id]) np.qdone[q.id] = m.qdone[q.id] | 0;
     np.hp = np.maxHp; np.mp = np.maxMp;
@@ -135,8 +136,8 @@ function hostOnClient(from, m) {
     }
     case 'floor': {
       const b = BUILDINGS[m.b | 0], to = m.to | 0, fl = p.fl || 0; if (!b || p.downed || p.carriedBy || Math.abs(to - fl) !== 1 || to < 0 || to >= floorsOf(b)) break;
-      const st = stairTile(b, Math.min(fl, to)); if (dist(p.x, p.y, st[0], st[1]) > 1.2) break;
-      const [ax, ay] = stairArrive(b, Math.min(fl, to)); p.x = ax; p.y = ay; p.fl = to; p.fb = to > 0 ? (m.b | 0) : -1; p.lastMv = now_(); p.sit = null;
+      const sw = stairWorld(b, Math.min(fl, to)); if (dist(p.x, p.y, (sw.L[0] + sw.U[0]) / 2, (sw.L[1] + sw.U[1]) / 2) > 2.2) break;
+      const [ax, ay] = to > fl ? sw.arrive : sw.entry; p.x = ax; p.y = ay; p.fl = to; p.fb = to > 0 ? (m.b | 0) : -1; p.lastMv = now_(); p.sit = null;
       if (p.carrying) { const t = S.players[p.carrying]; if (t) { t.x = p.x; t.y = p.y; t.fl = p.fl; t.fb = p.fb; } }
       Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: 0, fl: p.fl, fb: p.fb });
       break;
@@ -160,11 +161,11 @@ function handleMove(p, m) {
   if (!isFinite(x) || !isFinite(y)) return;
   const z = heightAt(x, y, p.z);
   const dt = Math.min(1, (now - p.lastMv) / 1000);
-  const maxStep = PLAYER_SPEED * (m.r ? RUN_MUL * 1.5 : 1.7) * (dt + 0.25) + 0.4;
+  const maxStep = PLAYER_SPEED * (m.sl ? RUN_MUL * 2.2 : m.r ? RUN_MUL * 1.5 : 1.7) * (dt + 0.25) + 0.4;
   const ok = dist(p.x, p.y, x, y) <= maxStep && canStandZ(x, y, z, 0.18, p.fl || 0, p.fb ?? -1) && Math.abs(z - (+m.z || 0)) < 0.45;
   if (!ok) { Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: p.z, fl: p.fl || 0, fb: p.fb ?? -1 }); return; }
   if (p.sit && dist(p.x, p.y, x, y) > 0.05) p.sit = null;
-  p.x = x; p.y = y; p.z = z; p.dir = m.d | 0; p.walking = !!m.w; p.running = !!m.r; p.lastMv = now;
+  p.x = x; p.y = y; p.z = z; p.dir = m.d | 0; p.walking = !!m.w; p.running = !!m.r; p.crouch = !!m.c; p.slide = !!m.sl; p.lastMv = now;
   if (p.casting && dist(p.x, p.y, p.castX, p.castY) > 0.3) { p.casting = null; near(p.x, p.y, { t: 'castend', id: p.id }); }
   if (p.carrying) { const t = S.players[p.carrying]; if (t) { t.x = p.x; t.y = p.y; t.z = p.z; } }
 }
@@ -226,6 +227,17 @@ function killMonster(m, p, delay) {
   const gold = rint(def.gold[0], def.gold[1]);
   p.gold += gold;
   sfx(m.x, m.y, `+${gold} ouro`, '#e8c860', delay + 250);
+  // saque: material do monstro (55%, troll sempre) e gema rara (3%)
+  const drops = [];
+  if (MON_LOOT[m.type] && (def.big || Math.random() < 0.55)) drops.push(MON_LOOT[m.type]);
+  if (Math.random() < 0.03) drops.push('gem');
+  for (const k of drops) {
+    if (!p.inv[k] && Object.keys(p.inv).length >= INV_SLOTS) { tell(p, 'Inventário cheio.'); break; }
+    p.inv[k] = Math.min(999, (p.inv[k] || 0) + 1);
+    sfx(m.x, m.y, '+ ' + LOOT[k].name, LOOT[k].color, delay + 600);
+    Net.toOne(p.id, { t: 'loot', k });
+  }
+  if (drops.length) sendStat(p);
   const group = Object.values(S.players).filter(q => !q.downed && dist(q.x, q.y, m.x, m.y) <= 10);
   if (!group.includes(p)) group.push(p);
   const share = Math.ceil(def.xp * (group.length > 1 ? 0.7 : 1));
@@ -441,6 +453,12 @@ function npcAction(p, m) {
     if (!pay(ITEMS[m.item].price * qty)) return;
     p.pots[m.item] += qty;
     say(`${qty}x ${ITEMS[m.item].name}. Boa caçada, e volte inteiro.`);
+  } else if (n.id === 'merchant' && m.a === 'sell') {
+    let total = 0, n2 = 0;
+    for (const k in p.inv) { if (!LOOT[k] || (m.item && m.item !== k)) continue; total += LOOT[k].price * p.inv[k]; n2 += p.inv[k]; delete p.inv[k]; }
+    if (!n2) { say('Você não tem nada que me interesse agora.'); return; }
+    p.gold += total;
+    say(`Fechado: ${n2} ${n2 > 1 ? 'itens' : 'item'} por ${total} de ouro. Traga mais quando puder.`);
   } else if (n.id === 'priest' && m.a === 'bless') {
     p.hp = p.maxHp; p.mp = p.maxMp; p.buffs.bless = now + 180000;
     aoe('heal', p.x, p.y, { id: p.id });
@@ -538,7 +556,7 @@ function monsterThink(m, players, now, dt) {
   if (!tgt && m.aggro && valid(S.players[m.aggro]) && dist(m.x, m.y, S.players[m.aggro].x, S.players[m.aggro].y) <= 11) tgt = S.players[m.aggro];
   if (!tgt) {
     let best = 99;
-    for (const p of players) { if (!valid(p)) continue; const dd = dist(m.x, m.y, p.x, p.y); if (dd <= d.aggro && dd < best) { best = dd; tgt = p; } }
+    for (const p of players) { if (!valid(p)) continue; const dd = dist(m.x, m.y, p.x, p.y); if (dd <= d.aggro * (p.crouch ? 0.5 : 1) && dd < best) { best = dd; tgt = p; } }
   }
   if (tgt) {
     if (homeDist > 13) { m.returning = true; m.aggro = null; m.taunt = null; return; }
@@ -622,7 +640,7 @@ function hostTick() {
     const pl = [], ml = [];
     for (const p of players) {
       if (dist(p.x, p.y, r.x, r.y) > VIEW_RADIUS) continue;
-      let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0) | (p.running && p.walking ? 256 : 0) | (p.sit ? 512 : 0) | (p.sit === 'c' ? 1024 : 0) | ((p.fl || 0) << 11);
+      let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0) | (p.running && p.walking ? 256 : 0) | (p.sit ? 512 : 0) | (p.sit === 'c' ? 1024 : 0) | ((p.fl || 0) << 11) | (p.crouch ? 8192 : 0) | (p.slide ? 16384 : 0);
       for (const b in BUFF_BITS) if (buffOn(p, b)) fl |= BUFF_BITS[b];
       pl.push([p.id, Math.round(p.x * 100), Math.round(p.y * 100), Math.round(p.z * 100), p.dir | 0, fl, Math.round(p.hp / p.maxHp * 100), p.carrying || 0]);
     }

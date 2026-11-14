@@ -127,17 +127,28 @@ const doorOf = b => { const [x, y] = doorTile(b), v = DOOR_V[b.door || 'S']; ret
 // mobília dos interiores (coordenadas locais em tiles: i = coluna, j = linha; a porta fica na linha h-1)
 // direções de quem senta: 1 = olha +x, 3 = olha -y, 5 = olha -x, 7 = olha +y
 // escadas: o andar f sobe pela escada STAIR_AT(b, f) e o andar f+1 desce pela mesma (canto do fundo, alternando)
-function stairAt(b, f) { const [A] = bDims(b); return f % 2 === 0 ? [A - 1, 0] : [0, 0]; }
+// escada de 2 tiles encostada na parede: andar par = parede do fundo subindo para a direita; ímpar = parede esquerda subindo para o fundo
+// L = degrau de baixo, U = topo, entry = de onde se entra embaixo, arrive = onde se chega em cima
+function stairSpec(b, f) {
+  const [A] = bDims(b);
+  if (f % 2 === 0) return { L: [A - 2, 0], U: [A - 1, 0], dv: [1, 0], entry: [A - 3, 0], arrive: [A - 1, 1] };
+  return { L: [0, 2], U: [0, 1], dv: [0, -1], entry: [0, 3], arrive: [1, 1] };
+}
 function floorsOf(b) { return b.kind === 'stairtower' ? 1 : (b.floors || 1); }
-function interiorLayout(b, fl = 0) {
+function interiorLayout0(b, fl = 0) {
   const [w, h] = bDims(b), F = [], taken = new Set(), key = (i, j) => i + ',' + j, dc = doorCol(b);
   const corridor = (i, j) => (fl === 0 && i === dc && j >= h - 2);
   const nF = floorsOf(b);
   // escadas deste andar (subir/descer) + o tile de chegada na frente delas ficam livres
   const stairs = [];
-  if (fl < nF - 1) stairs.push(['stairup', ...stairAt(b, fl)]);
-  if (fl > 0) stairs.push(['stairdown', ...stairAt(b, fl - 1)]);
-  for (const [t, i, j] of stairs) { taken.add(key(i, j)); taken.add(key(i, j + 1)); F.push({ t, i, j, w: 1, h: 1, block: false }); }
+  if (fl < nF - 1) stairs.push(['stairup', stairSpec(b, fl)]);
+  if (fl > 0) stairs.push(['stairdown', stairSpec(b, fl - 1)]);
+  for (const [t, s] of stairs) {
+    for (const p of [s.L, s.U, t === 'stairup' ? s.entry : s.arrive]) taken.add(key(p[0], p[1]));
+    F.push({ t, i: Math.min(s.L[0], s.U[0]), j: Math.min(s.L[1], s.U[1]), w: s.dv[0] ? 2 : 1, h: s.dv[1] ? 2 : 1, block: false, dv: s.dv });
+    const bp = t === 'stairup' ? s.U : s.L;   // embaixo não se pisa sob o topo; em cima o vão da escada
+    F.push({ t: 'blk', i: bp[0], j: bp[1], w: 1, h: 1, block: true });
+  }
   const can = (i, j) => i >= 0 && j >= 0 && i < w && j < h && !taken.has(key(i, j)) && !corridor(i, j);
   const put = (t, i, j, o = {}) => {
     const tw = o.w || 1, th = o.h || 1;
@@ -147,7 +158,7 @@ function interiorLayout(b, fl = 0) {
     return true;
   };
   let npc = null;
-  const npcAt = (i, j) => { taken.add(key(i, j)); npc = { i, j }; };
+  const npcAt = (i, j) => { for (const d of [0, -1, 1, -2, 2]) if (can(i + d, j)) { taken.add(key(i + d, j)); npc = { i: i + d, j }; return; } };
   const k = b.kind;
   if (fl > 0) {
     // andares de cima: quartos, depósitos e aposentos
@@ -195,6 +206,29 @@ function interiorLayout(b, fl = 0) {
     put('rug', dc, 2, { block: false });
   }
   return { F, npc };
+}
+// layout final: descarta móveis que fechariam algum canto do cômodo (todo tile livre precisa ser alcançável)
+const LAYOUT_MEMO = new Map();
+function interiorLayout(b, fl = 0) {
+  const [w, h] = bDims(b), mk = [b.kind, w, h, b.v || 0, floorsOf(b), fl].join('|');
+  let L = LAYOUT_MEMO.get(mk); if (L) return L;
+  L = interiorLayout0(b, fl);
+  const blk = new Uint8Array(w * h), id = (i, j) => j * w + i;
+  if (L.npc) blk[id(L.npc.i, L.npc.j)] = 1;
+  const s0 = fl === 0 ? [doorCol(b), h - 1] : stairSpec(b, fl - 1).arrive;
+  const okAll = () => {
+    const seen = new Uint8Array(w * h), q = [id(s0[0], s0[1])]; seen[q[0]] = 1;
+    for (let k = 0; k < q.length; k++) { const i = q[k] % w, j = (q[k] / w) | 0; for (const [a, c] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const ni = i + a, nj = j + c; if (ni < 0 || nj < 0 || ni >= w || nj >= h) continue; const n = id(ni, nj); if (!blk[n] && !seen[n]) { seen[n] = 1; q.push(n); } } }
+    for (let n = 0; n < w * h; n++) if (!blk[n] && !seen[n]) return false; return true;
+  };
+  const F = [];
+  for (const f of L.F) {
+    if (!f.block || f.t === 'blk') { F.push(f); if (f.block) blk[id(f.i, f.j)] = 1; continue; }
+    const cells = []; for (let a = 0; a < f.w; a++) for (let c = 0; c < f.h; c++) cells.push(id(f.i + a, f.j + c));
+    for (const n of cells) blk[n] = 1;
+    if (okAll()) F.push(f); else for (const n of cells) blk[n] = 0;
+  }
+  L = { F, npc: L.npc }; LAYOUT_MEMO.set(mk, L); return L;
 }
 const npcIn = (b, fb) => { const L = interiorLayout(b); if (!L.npc) return fb; const [x, y] = bLocal(b, L.npc.i, L.npc.j); return { x, y }; };
 const BLD_BY = k => BUILDINGS.find(b => b.kind === k);
@@ -477,7 +511,7 @@ function generateWorld() {
 
   // ---- escadas de 2 degraus (rampas) até a muralha ----
   // torres-escada 3x3 encostadas na muralha, porta virada para a cidade; por cima viram parte do caminho da muralha
-  const stairTowers = [[C - 9, y1 - 3, 'N'], [C + 8, y1 - 3, 'N'], [C + 5, y0 + 1, 'S'], [x0 + 1, C + 9, 'E'], [x1 - 3, C - 7, 'W']];
+  const stairTowers = [[C - 9, y1 - 3, 'N'], [C + 5, y0 + 1, 'S'], [x0 + 1, C + 9, 'E'], [x1 - 3, C - 7, 'W']];
   for (const [tx, ty, door] of stairTowers) {
     BUILDINGS.push({ x: tx, y: ty, ...BH('stairtower', 3, 3, WALL_UNITS, 0, '', { door }) });
     for (let y = ty; y <= ty + 2; y++) for (let x = tx; x <= tx + 2; x++) { set(x, y, T.FLOORSTONE, O.NONE); fl1[idx(x, y)] = 1; }
@@ -501,15 +535,16 @@ function generateWorld() {
 
   // ---- construções fixas + casas geradas (cidade densa, com vielas entre elas) ----
   // a casa não pode ficar sobre ruas nem outros prédios; a margem de 1 tile em volta pode ser rua (vira a calçada), mas não outro prédio
-  const free = (ax, ay, w, h) => { for (let y = ay - 1; y <= ay + h; y++) for (let x = ax - 1; x <= ax + w; x++) { const inner = x >= ax && x < ax + w && y >= ay && y < ay + h; if (!inb(x, y) || bld[idx(x, y)] !== -1 || (inner && used[idx(x, y)])) return false; if (x <= x0 + 1 || x >= x1 - 1 || y <= y0 + 1 || y >= y1 - 1) return false; } return true; };
+  const free = (ax, ay, w, h) => { for (let y = ay - 2; y <= ay + h + 1; y++) for (let x = ax - 2; x <= ax + w + 1; x++) { const inner = x >= ax && x < ax + w && y >= ay && y < ay + h; if (!inb(x, y) || bld[idx(x, y)] !== -1 || (inner && used[idx(x, y)])) return false; if (x <= x0 + 1 || x >= x1 - 1 || y <= y0 + 1 || y >= y1 - 1) return false; } return true; };
   // os prédios fixos ocupam a área deles (+1 de margem) antes de sortear as casas
   for (const b of BUILDINGS) reserve(b.x - 1, b.y - 1, b.x + b.w, b.y + b.h);
   const houses = [];
   const roadDist = (px, py) => { let best = 99; for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) { const xx = Math.round(px) + dx, yy = Math.round(py) + dy; if (inb(xx, yy) && rdir[idx(xx, yy)] && bld[idx(xx, yy)] < 0) best = Math.min(best, Math.abs(dx) + Math.abs(dy)); } return best; };
-  for (let k = 0; k < 12000 && houses.length < 28; k++) {
+  for (let k = 0; k < 12000 && houses.length < 18; k++) {
     const x = x0 + 3 + Math.floor(R(k, 3, 700) * (x1 - x0 - 10)), y = y0 + 3 + Math.floor(R(k, 4, 700) * (y1 - y0 - 10));
-    const nearKeep = x > KEEP.x0 - 12 && x < KEEP.x1 + 10 && y > KEEP.y0 - 12 && y < KEEP.y1 + 12, rr = R(k, 1, 700);
-    const ai = nearKeep || rr < 0.5 ? Math.floor(R(k, 8, 700) * 4) : rr < 0.85 ? 4 + Math.floor(R(k, 8, 700) * 4) : 8 + Math.floor(R(k, 8, 700) * 2), T0 = HOUSE_TYPES[ai];
+    if (x > KEEP.x0 - 9 && x < KEEP.x1 + 8 && y > KEEP.y0 - 9 && y < KEEP.y1 + 8) continue;   // praça aberta em volta do castelo
+    const nearKeep = x > KEEP.x0 - 16 && x < KEEP.x1 + 14 && y > KEEP.y0 - 16 && y < KEEP.y1 + 16, rr = R(k, 1, 700);
+    const ai = nearKeep || rr < 0.55 ? Math.floor(R(k, 8, 700) * 4) : rr < 0.93 ? 4 + Math.floor(R(k, 8, 700) * 4) : 8 + Math.floor(R(k, 8, 700) * 2), T0 = HOUSE_TYPES[ai];
     let bestHb = null, bestD = 99;
     for (const door of ['S', 'N', 'E', 'W']) {
       const w = door === 'S' || door === 'N' ? T0.A : T0.D, h = door === 'S' || door === 'N' ? T0.D : T0.A;
@@ -691,6 +726,25 @@ function walkableTile(x, y, z = 0) {
   const g = WORLD.ground[i];
   return g !== T.WATER && g !== T.CLIFF && !BLOCKING.has(WORLD.obj[i]) && !NPC_AT.has(i);
 }
+// objetos redondos: colidem só no tamanho real (círculo), não no tile inteiro
+const OBJ_R = { [O.TREE]: 0.3, [O.PINE]: 0.28, [O.ROCK]: 0.34, [O.STUMP]: 0.24, [O.DEADTREE]: 0.24, [O.GRAVE]: 0.28, [O.CAMPFIRE]: 0.3,
+  [O.BARREL]: 0.28, [O.CRATE]: 0.32, [O.HAY]: 0.38, [O.BRAZIER]: 0.24, [O.DUMMY]: 0.22, [O.STATUE]: 0.4, [O.ANVIL]: 0.3, [O.WEAPONRACK]: 0.32, [O.WELL]: 0.46 };
+function solidTile(x, y, L) {
+  if (!inBounds(x, y)) return true;
+  const i = y * MAP_W + x;
+  if (L === 1) return !(WORLD.fl1[i] > 0);
+  const g = WORLD.ground[i], o = WORLD.obj[i];
+  return g === T.WATER || g === T.CLIFF || (BLOCKING.has(o) && !OBJ_R[o]);
+}
+function roundHit(x, y, r) {
+  const tx = Math.round(x), ty = Math.round(y);
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const xx = tx + dx, yy = ty + dy; if (!inBounds(xx, yy)) continue;
+    const i = yy * MAP_W + xx, rr = OBJ_R[WORLD.obj[i]] || (NPC_AT.has(i) ? 0.3 : 0);
+    if (rr && (x - xx) * (x - xx) + (y - yy) * (y - yy) < (rr + r) * (rr + r)) return true;
+  }
+  return false;
+}
 // posição livre (contínua) — testa um círculo de raio r
 // paredes das construções (finas), com abertura na porta
 function wallHit(x, y, r) {
@@ -737,12 +791,14 @@ function canStandFloor(x, y, bi, fl, r = 0.24) {
   return true;
 }
 // tile da escada (mundo) e chegada (na frente dela)
-function stairTile(b, f) { const [i, j] = stairAt(b, f); return bLocal(b, i, j); }
-function stairArrive(b, f) { const [i, j] = stairAt(b, f); return bLocal(b, i, j + 1); }
+// escada entre o andar f e f+1 em coordenadas do mundo
+function stairWorld(b, f) { const s = stairSpec(b, f), w = p => bLocal(b, p[0], p[1]); return { L: w(s.L), U: w(s.U), entry: w(s.entry), arrive: w(s.arrive) }; }
+function stairTile(b, f) { return stairWorld(b, f).L; }
+function stairArrive(b, f, up = true) { const s = stairWorld(b, f); return up ? s.arrive : s.entry; }
 function canStand(x, y, z = 0, r = 0.28) {
-  if (z === 0 && wallHit(x, y, r)) return false;
-  return walkableTile(Math.round(x - r), Math.round(y - r), z) && walkableTile(Math.round(x + r), Math.round(y - r), z) &&
-    walkableTile(Math.round(x - r), Math.round(y + r), z) && walkableTile(Math.round(x + r), Math.round(y + r), z);
+  if (z === 0 && (wallHit(x, y, r) || roundHit(x, y, r))) return false;
+  for (const [ox, oy] of [[-r, -r], [r, -r], [-r, r], [r, r]]) if (solidTile(Math.round(x + ox), Math.round(y + oy), z)) return false;
+  return true;
 }
 function zoneAt(x, y) { x = Math.round(x); y = Math.round(y); return inBounds(x, y) ? WORLD.zone[y * MAP_W + x] : Z.WILD; }
 function inSafe(x, y) { return zoneAt(x, y) === Z.VILLAGE; }
@@ -786,9 +842,9 @@ function canStandZ(x, y, z, r = 0.24, fl = 0, fb = -1) {
     if (!inBounds(tx, ty)) return false;
     const i = ty * MAP_W + tx;
     if (WORLD.stair[i]) continue;
-    if (!walkableTile(tx, ty, L)) return false;
+    if (solidTile(tx, ty, L)) return false;
   }
-  if (L === 0 && wallHit(x, y, r)) return false;
+  if (L === 0 && (wallHit(x, y, r) || roundHit(x, y, r))) return false;
   const h = stairH(x, y);
   if (h >= 0 && Math.abs(h - z) > 0.4) return false; // não entra na rampa pela lateral
   return true;

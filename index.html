@@ -51,23 +51,26 @@
 
 <!-- ================= INTERFACE DO JOGO ================= -->
 <div id="hud" class="hidden">
-  <div id="char" class="panel">
-    <div class="portrait-ring"><canvas id="portrait" width="80" height="84"></canvas><div id="hud-lvl"></div></div>
-    <div class="char-info">
-      <div id="hud-name"></div>
-      <div id="hud-class"></div>
-      <div class="bar hp"><div id="hp-fill"></div><span id="hp-text"></span></div>
-      <div class="bar mp"><div id="mp-fill"></div><span id="mp-text"></span></div>
-      <div class="bar st"><div id="st-fill"></div><span id="st-text"></span></div>
-      <div class="bar xp"><div id="xp-fill"></div><span id="xp-text"></span></div>
-      <div class="char-foot"><span class="coin"></span><span id="gold">0</span><span id="combat-state"></span></div>
-      <div id="buffs"></div>
-    </div>
-  </div>
 
-  <div id="quests" class="panel parch hidden">
-    <h4>Contratos</h4>
+
+  <div id="buffs"></div>
+  <div id="hstate"></div>
+  <div id="topbtns"><button id="btn-inv" title="Inventário (I)">🎒</button><button id="btn-journal" title="Jornada (J)">📜</button><button id="btn-help" title="Ajuda">?</button><button id="btn-menu" title="Menu (Esc)">☰</button></div>
+
+  <!-- inventário (I) -->
+  <div id="inv" class="gpanel hidden">
+    <div class="gp-head"><span>Inventário</span><span class="gp-gold"><span class="coin"></span><b id="inv-gold">0</b></span><button class="gp-x" data-close="inv">✕</button></div>
+    <div id="inv-grid"></div>
+    <div id="inv-info">Passe o mouse sobre um item. O saque pode ser vendido ao Borin, no Empório.</div>
+  </div>
+  <!-- jornada (J): contratos -->
+  <div id="journal" class="gpanel hidden">
+    <div class="gp-head"><span>Jornada</span><button class="gp-x" data-close="journal">✕</button></div>
+    <div class="gp-sub">Contratos ativos</div>
     <div id="quest-list"></div>
+    <div class="gp-sub">Concluídos</div>
+    <div id="quest-done"></div>
+    <div class="gp-note">Novos contratos com a Capitã Varn, no pátio do castelo.</div>
   </div>
 
   <div id="target-frame" class="panel hidden">
@@ -76,13 +79,6 @@
     <div id="tg-range"></div>
   </div>
 
-  <div id="map-panel">
-    <div class="map-ring"><canvas id="minimap" width="170" height="170"></canvas><div class="map-n">N</div></div>
-    <div id="zone-name"></div>
-    <div id="zone-stars"></div>
-    <div class="map-foot"><span id="daytime"></span><span>Sala <b id="room-code"></b></span></div>
-    <button class="btn small" id="btn-copy">Copiar convite</button>
-  </div>
 
   <div id="chat" class="panel parch">
     <div id="chat-log"></div>
@@ -109,11 +105,29 @@
     <div class="d-help">Um aliado pode te reanimar (F) ou te carregar até a capela (G).<br><kbd>R</kbd> desistir e renascer na capela</div>
   </div>
 
-  <button id="btn-help">?</button>
-  <button id="btn-menu" title="Menu">☰</button>
   <div id="pause" class="hidden">
     <div class="pz-box">
       <div class="pz-title">Pausa</div>
+      <div class="pz-cols"><div class="pz-col">
+      <div class="pz-sec">Personagem</div>
+      <div id="char">
+        <div class="portrait-ring"><canvas id="portrait" width="80" height="84"></canvas><div id="hud-lvl"></div></div>
+        <div class="char-info">
+          <div id="hud-name"></div>
+          <div id="hud-class"></div>
+          <div class="bar hp"><div id="hp-fill"></div><span id="hp-text"></span></div>
+          <div class="bar mp"><div id="mp-fill"></div><span id="mp-text"></span></div>
+          <div class="bar st"><div id="st-fill"></div><span id="st-text"></span></div>
+          <div class="bar xp"><div id="xp-fill"></div><span id="xp-text"></span></div>
+          <div class="char-foot"><span class="coin"></span><span id="gold">0</span><span id="combat-state"></span></div>
+        </div>
+      </div>
+      <div class="pz-sec">Onde você está</div>
+      <div class="pz-zone"><span id="zone-name"></span> <span id="zone-stars"></span></div>
+      <div class="pz-sec">Sala</div>
+      <div class="pz-room">Código <b id="room-code"></b></div>
+      <button class="pz-btn" id="btn-copy">Copiar convite</button>
+      </div><div class="pz-col">
       <button class="pz-btn" id="pz-resume">Voltar ao jogo</button>
       <div class="pz-sec">Qualidade gráfica</div>
       <div class="pz-row" id="pz-quality"><button data-q="low">Baixa</button><button data-q="med">Média</button><button data-q="high">Alta</button></div>
@@ -121,15 +135,20 @@
       <input type="range" id="pz-bright" min="0.7" max="1.4" step="0.05">
       <div class="pz-sec">Zoom da câmera <span id="pz-zoom-v"></span></div>
       <input type="range" id="pz-zoom" min="0.6" max="1.6" step="0.05">
+      <div class="pz-sec">Tamanho dos botões de combate <span id="pz-pad-v"></span></div>
+      <input type="range" id="pz-pad" min="0.4" max="1.3" step="0.05">
       <button class="pz-btn" id="pz-full">Tela cheia</button>
       <details class="pz-keys"><summary>Controles</summary>
         <div><b>Mover</b> WASD / setas / clique no chão · <b>Correr</b> Shift</div>
         <div><b>Atacar</b> X · <b>Habilidades</b> 1 2 3 4 · <b>Alvo</b> Espaço / Tab</div>
-        <div><b>Poções</b> Q (vida) · E (mana) · <b>Sentar</b> C · <b>Mapa</b> M</div>
+        <div><b>Poções</b> Q (vida) · E (mana) · <b>Sentar</b> V · <b>Mapa</b> M</div>
+        <div><b>Agachar</b> segurar C · <b>Deslizar</b> C + Shift correndo</div>
+        <div><b>Inventário</b> I · <b>Jornada</b> J · <b>Emojis</b> segurar T</div>
         <div><b>Reanimar</b> segurar F · <b>Carregar</b> G · <b>Desistir</b> R (caído)</div>
         <div><b>Chat</b> Enter · <b>Zoom</b> roda do mouse · <b>Menu</b> Esc</div>
       </details>
       <button class="pz-btn pz-quit" id="pz-quit">Sair para o menu</button>
+      </div></div>
     </div>
   </div>
   <div id="help" class="panel parch hidden">
@@ -139,6 +158,8 @@
     <div><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd> habilidades · <kbd>Q</kbd><kbd>E</kbd> poções</div>
     <div><kbd>F</kbd> (segurar) reanimar aliado · <kbd>G</kbd> carregar/soltar</div>
     <div><kbd>R</kbd> desistir quando caído · <kbd>Roda</kbd> zoom</div>
+    <div><kbd>C</kbd> agachar · <kbd>C</kbd>+<kbd>Shift</kbd> deslizar · <kbd>V</kbd> sentar</div>
+    <div><kbd>I</kbd> inventário · <kbd>J</kbd> jornada · <kbd>M</kbd> mapa · <kbd>T</kbd> emojis</div>
     <div><kbd>Enter</kbd> chat · <kbd>Esc</kbd> cancelar</div>
     <div>As rampas de pedra levam às muralhas e ao salão da torre de menagem.</div>
   </div>

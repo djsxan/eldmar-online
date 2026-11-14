@@ -242,6 +242,14 @@ const SHADOW_BIG = sprite('shadowb', 28, 9, 14, 4, pc => pc.e(14, 4.5, 13, 4, px
 
 // ---------- desenho de entidades ----------
 const DIR_VIEW = ['S', 'E', 'N', 'W']; // 0..3
+// estado de saúde visível: 0 saudável, 1 cansado (vida < 60% ou sem fôlego), 2 à beira da morte (vida < 25%)
+function healthState(e) {
+  if (!e.maxHp || e.downed) return 0;
+  const r = e.hp / e.maxHp;
+  if (r < 0.25) return 2;
+  if (r < 0.6 || (e === G.me && (G.tired || (G.stam ?? STAM_MAX) < STAM_MAX * 0.3))) return 1;
+  return 0;
+}
 function heroPoseFor(e, now) {
   const view0 = DIR_VIEW[e.dir || 0];
   const P = { view: view0 === 'W' ? 'E' : view0, walk: -1, act: null, idle: null, sit: false, carry: !!e.carrying };
@@ -255,6 +263,12 @@ function heroPoseFor(e, now) {
   if (!P.act && e.emote && !e.walking) { const ms = ACT_MS[e.emote.k], t = (now - e.emote.t0) / ms; if (e.emote.k === 'dance') P.act = { k: 'dance', f: Math.floor(t * 12) % 12 }; else if (t < 1) P.act = { k: e.emote.k, f: Math.min(11, Math.floor(t * 12)) }; else e.emote = null; }
   else if (e.walking && e.emote) e.emote = null;
   if (e.sit && !P.act) { P.sit = e.sit.chair ? 'c' : 'g'; P.walk = -1; return P; }
+  if (!e.isNpc) {
+    if (e.slide) { P.sl = 1; P.walk = -1; P.run = 0; P.act = null; return P; }
+    if (e.crouch) { P.cr = 1; P.run = 0; }
+    P.hs = healthState(e);
+    if (P.hs && !e.walking && !P.act) P.br = Math.floor(now / (P.hs === 2 ? 180 : 260)) % 4;   // respiração ofegante
+  }
   if (!P.act && !e.walking && e.idleAnim) {
     const t = (now - e.idleAnim.t0) / e.idleAnim.dur;
     if (t < 1) {
@@ -661,7 +675,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     if (sx < -100 || sx > vw + 100 || sy < -40 || sy > vh + 200) return;
     const efl = e.fl || 0, ebi = (e.z || 0) < 0.5 ? (efl > 0 ? (e.fb ?? bldAt(e.rx, e.ry)) : bldAt(e.rx, e.ry)) : -1;
     if (efl > 0 && !(ebi === inB0 && efl === myFl)) return;       // quem está em outro andar não aparece
-    const it = { d: e.rx + e.ry, k: kind, e, sx, sy: sy - (efl > 0 && ebi >= 0 ? flRaise(BUILDINGS[ebi], efl) : 0), tx: e.rx, ty: e.ry };
+    const it = { d: e.rx + e.ry, k: kind, e, sx, sy: sy - (ebi >= 0 ? flRaise(BUILDINGS[ebi], efl) + (e.lift ? e.lift * flRaise(BUILDINGS[ebi], 1) : 0) : 0), tx: e.rx, ty: e.ry };
     if ((e.z || 0) < 0.5 && inB0 >= 0 && ebi === inB0 && efl === myFl) it.inside = true;
     if ((e.z || 0) >= 0.5) { if (!hideUpper) upper.push(it); } else items.push(it);
   };
@@ -696,6 +710,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
   });
   // perto de uma porta: já prepara o interior (sem engasgo ao entrar)
   if (me && (me.z || 0) < 0.5 && inB < 0) for (const b of BUILDINGS) { const d0 = doorOf(b); if (Math.abs(d0.x - me.rx) + Math.abs(d0.y - me.ry) < 3) { const t = S3.budget; S3.budget = Math.max(1, S3.budget); interiorSprite(b); S3.budget = t; break; } }
+  if (inB >= 0 && BUILDINGS[inB].kind !== 'stairtower') { const b = BUILDINGS[inB]; for (const f of [myFl + 1, myFl - 1]) if (f >= 0 && f < floorsOf(b)) { const t = S3.budget; S3.budget = Math.max(1, S3.budget); interiorSprite(b, f); S3.budget = t; } }
   items.sort((a, b) => a.d - b.d || a.k - b.k);
   upper.sort((a, b) => a.d - b.d || a.k - b.k);
 
@@ -789,9 +804,15 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
   // dentro de uma construção: a cidade escurece e o cômodo aparece cortado, com quem está dentro
   if (inside) {
     ctx.fillStyle = 'rgba(8,5,2,0.6)'; ctx.fillRect(-20, -20, vw + 40, vh + 40);
-    if (myFl > 0) { const s0 = interiorSprite(inside.b, myFl - 1); if (s0) pblit(ctx, s0, inside.sx, inside.sy - flRaise(inside.b, myFl - 1), 0.55); }
-    const s = interiorSprite(inside.b, myFl) || buildingSprite(inside.b, false);
-    if (s) pblit(ctx, s, inside.sx, inside.sy - flRaise(inside.b, myFl));
+    // cada andar tem uma opacidade (o seu = 1, o de baixo = 0.55); ao trocar de andar, mistura as duas situações
+    const A = (st, f) => f === st ? 1 : f === st - 1 ? 0.55 : 0;
+    const ff = G.flFade && BUILDINGS[G.flFade.b] === inside.b ? G.flFade : null, fk = ff ? Math.min(1, (now - ff.t0) / 450) : 1;
+    if (ff && fk >= 1) G.flFade = null;
+    for (let f = 0; f < floorsOf(inside.b); f++) {
+      const a = ff ? A(ff.from, f) * (1 - fk) + A(ff.to, f) * fk : A(myFl, f); if (a < 0.02) continue;
+      const s = interiorSprite(inside.b, f) || (f === 0 ? buildingSprite(inside.b, false) : null);
+      if (s) pblit(ctx, s, inside.sx, inside.sy - flRaise(inside.b, f), a);
+    }
     for (const it of items) if (it.inside) drawItem(it);
   }
   // silhuetas: você (dourado) e amigos (azul) quando algo os esconde

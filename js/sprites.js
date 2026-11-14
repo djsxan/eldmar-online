@@ -176,6 +176,17 @@ function buildPose(cls, P) {
   };
   if (P.act && ACTS[P.act.k]) apply(ACTS[P.act.k], (P.act.f + 0.5) / 12);
   else if (P.idle && IDLES[P.idle.k]) apply(IDLES[P.idle.k], (P.idle.f + 0.5) / 12);
+  if (P.sl) { Q.lA = [1.4, -0.12]; Q.lB = [0.35, -2.15]; Q.tl = -0.6; Q.tw = 0; Q.aA = [0.5, 1.0, 0.25]; Q.aB = [0.3, 1.1, 0.35]; Q.drop = 10; }
+  else if (P.cr) {
+    const ph = P.walk >= 0 ? P.walk / 12 * Math.PI * 2 : 0, s = P.walk >= 0 ? 0.3 : 0;
+    Q.lA = [1.05 + Math.sin(ph) * s, -1.95 - Math.max(0, Math.sin(ph + 1.2)) * 0.35]; Q.lB = [0.7 + Math.sin(ph + Math.PI) * s, -1.55 - Math.max(0, Math.sin(ph + Math.PI + 1.2)) * 0.35];
+    Q.tl += 0.42; Q.drop = 6; if (!P.act) { Q.aA[0] += 0.25; Q.aB[0] += 0.25; }
+  }
+  if (P.hs && !P.sl) {
+    const br = P.br != null ? [0, 0.6, 1, 0.6][P.br] : 0;
+    if (P.hs === 1) { Q.tl += 0.2 + br * 0.05; if (!P.act) { Q.aA[0] -= 0.08; Q.aB[0] -= 0.08; } Q.ht = (Q.ht || 0) + br * 0.03; }
+    else { Q.tl += 0.36 + br * 0.07; if (!P.act) Q.aB = [0.85, 0.3, 2.05]; if (P.walk >= 0 && !P.cr) Q.lB = [Q.lB[0] * 0.45, -0.1]; Q.ht = (Q.ht || 0) + br * 0.04; }
+  }
   if (P.sit === 'g') { Q.lA = [2.45, -2.35]; Q.lB = [2.2, -2.0]; Q.drop = 12; Q.aA = [1.15, 0.35, 1.35]; Q.aB = [1.05, 0.4, 1.25]; Q.tl = -0.22; Q.ht = 0.12; }
   else if (P.sit) { Q.lA = [1.5, -1.55]; Q.lB = [1.45, -1.5]; Q.drop = 12; Q.aA = [0.45, 0.25, 0.7]; Q.aB = [0.45, 0.25, 0.7]; Q.tl = -0.02; }
   if (P.carry) { Q.aA = [2.75, 0.25, 0.4]; Q.aB = [2.75, 0.25, 0.4]; Q.wp = 0.4; }
