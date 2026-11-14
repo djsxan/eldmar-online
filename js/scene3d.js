@@ -564,6 +564,37 @@ function mCave() {
   o.add(mk(new THREE.SphereGeometry(0.11, 10, 8).translate(0.5, 0.1, 1.05), bone));
   return o;
 }
+function mHoard() {
+  // ninho do dragão: monte de moedas, taças, coroa, espada e escudo
+  const o = grp(), gold = smat(null, '#e2b74e', { metal: 1, rough: 0.28 }), dg = smat(null, '#b8892a', { metal: 1, rough: 0.4 });
+  o.add(mk(new THREE.SphereGeometry(0.62, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2).scale(1.25, 0.42, 1.05), dg));
+  for (let k = 0; k < 40; k++) { const a = k * 2.4, r = 0.15 + (k % 7) * 0.09, y = 0.26 - r * 0.3 + (k % 3) * 0.01; o.add(mk(new THREE.CylinderGeometry(0.06, 0.06, 0.015, 10).rotateX(0.3 * Math.sin(k)).translate(Math.cos(a) * r * 1.2, y, Math.sin(a) * r), gold)); }
+  o.add(mk(new THREE.LatheGeometry([new THREE.Vector2(0.06, 0), new THREE.Vector2(0.03, 0.04), new THREE.Vector2(0.02, 0.14), new THREE.Vector2(0.08, 0.2), new THREE.Vector2(0.07, 0.26)], 12).translate(0.3, 0.2, 0.1), gold));
+  o.add(mk(new THREE.TorusGeometry(0.1, 0.025, 6, 16).rotateX(Math.PI / 2 - 0.3).translate(-0.25, 0.27, -0.05), gold));
+  for (let k = 0; k < 5; k++) o.add(mk(new THREE.ConeGeometry(0.02, 0.07, 4).translate(-0.25 + Math.cos(k * 1.26) * 0.1, 0.32, -0.05 + Math.sin(k * 1.26) * 0.1), gold));
+  const sw = grp(mk(new THREE.BoxGeometry(0.05, 0.75, 0.015), smat(null, '#c8ccd2', { metal: 0.9, rough: 0.3 })), mk(new THREE.BoxGeometry(0.22, 0.04, 0.04).translate(0, -0.28, 0), gold)); sw.position.set(0.1, 0.32, -0.25); sw.rotation.set(0.4, 0.3, 1.1); o.add(sw);
+  for (const [x, z, c] of [[-0.4, 0.2, '#c83a3a'], [0.45, -0.1, '#3a8ad8'], [0.05, 0.35, '#3ad878']]) o.add(mk(new THREE.OctahedronGeometry(0.05).translate(x, 0.2, z), smat(null, c, { rough: 0.1, emissive: c, ei: 0.3 })));
+  return o;
+}
+function mArmorPile(v) {
+  // restos de um cavaleiro: elmo, escudo, espada, ossos
+  const o = grp(), steel = smat(null, '#7a7e86', { metal: 0.8, rough: 0.5 }), rust = smat(null, '#6a4a32', { metal: 0.5, rough: 0.7 }), bone = smat(null, '#d8d0bc', { rough: 0.8 });
+  o.add(mk(new THREE.SphereGeometry(0.13, 12, 8, 0, Math.PI * 2, 0, Math.PI / 1.6).rotateZ(1.3).translate(-0.18, 0.1, 0.05), v ? rust : steel));
+  const sh = mk(new THREE.CylinderGeometry(0.26, 0.26, 0.04, 14).rotateX(0.2).translate(0.15, 0.04, -0.05), smat(null, v ? '#2a3a6a' : '#7a1a1c', { rough: 0.6 })); o.add(sh);
+  o.add(mk(new THREE.BoxGeometry(0.04, 0.02, 0.7).rotateY(0.6).translate(0.05, 0.02, 0.15), steel));
+  for (let k = 0; k < 4; k++) { const b = mk(new THREE.CylinderGeometry(0.02, 0.02, 0.26, 5).rotateZ(Math.PI / 2).rotateY(k * 1.1).translate(-0.1 + k * 0.08, 0.02, 0.25 - k * 0.06), bone); o.add(b); }
+  o.add(mk(new THREE.SphereGeometry(0.07, 10, 8).translate(0.32, 0.06, 0.2), bone));
+  return o;
+}
+function mRuinTower() {
+  // torre de vigia derrubada pelo dragão: toco de pedra com topo quebrado, chamuscado
+  const o = grp(), st = smat('stoneblock', '#8a847a', { bump: 1.3 }), burnt = smat('stoneblock', '#3a3632', { bump: 1.3 });
+  const R = rng(4242);
+  for (let k = 0; k < 18; k++) { const a = k / 18 * Math.PI * 2, hh = 1.2 + R() * 2.6 * (0.5 + 0.5 * Math.cos(a - 0.6)); o.add(mk(new THREE.BoxGeometry(0.42, hh, 0.36).translate(0, hh / 2, 0).rotateY(-a).translate(Math.cos(a) * 1.05, 0, Math.sin(a) * 1.05), k % 3 === 0 ? burnt : st)); }
+  for (let k = 0; k < 7; k++) o.add(mk(new THREE.BoxGeometry(0.35, 0.25, 0.3).rotateY(R() * 3).translate((R() - 0.5) * 2.6, 0.12, 0.9 + R() * 0.8), st));
+  o.add(mk(new THREE.CylinderGeometry(0.9, 0.9, 0.05, 16).translate(0, 0.03, 0), burnt));
+  return o;
+}
 function mChest(v) {
   const o = grp(), wood = smat('wood', '#6a4220', { bump: 1.2 }), iron = smat('iron', '#3a3a40', { metal: 0.9, rough: 0.4 }), gold = smat(null, '#e2b74e', { metal: 1, rough: 0.3 });
   o.add(wbox(0.9, 0.5, 0.6, 0, 0.25, 0, wood, 2));
@@ -1186,10 +1217,13 @@ function mInterior(b, fl = 0) {
   if (fl > 0 && !knee.includes('front')) o.add(mk(wuv(new THREE.BoxGeometry(1.2, 1.3, t).translate(dx, 0.65, h - t / 2), 0.7), wallM));
   if (fl > 0) o.add(mk(wuv(new THREE.BoxGeometry(w, 0.18, h).translate(w / 2, -0.09, h / 2), 1), smat('wood', '#4e3420', { bump: 1 })));
   // janelas com luz entrando, só nas paredes inteiras
-  if (!knee.includes('back')) for (let k = 0; k < Math.floor(w / 2); k++) o.add(mk(new THREE.BoxGeometry(0.42, 0.6, 0.03).translate(1 + k * 2, hw * 0.6, t + 0.02), lightWin));
-  if (!knee.includes('left')) for (let k = 0; k < Math.floor(h / 2); k++) o.add(mk(new THREE.BoxGeometry(0.03, 0.6, 0.42).translate(t + 0.02, hw * 0.6, 1 + k * 2), lightWin));
-  if (!knee.includes('right')) for (let k = 0; k < Math.floor(h / 2); k++) o.add(mk(new THREE.BoxGeometry(0.03, 0.6, 0.42).translate(w - t - 0.02, hw * 0.6, 1 + k * 2), lightWin));
-  if (!knee.includes('front')) for (let k = 0; k < Math.floor(w / 2); k++) if (Math.abs(1 + k * 2 - dx) > 0.9) o.add(mk(new THREE.BoxGeometry(0.42, 0.6, 0.03).translate(1 + k * 2, hw * 0.6, h - t - 0.02), lightWin));
+  // janelas de verdade (moldura, 4 vidros, travessas e parapeito) nas paredes inteiras
+  const frameM = smat('wood', '#4a2f17'), glassW = smat(null, '#9fb4c0', { emissive: '#6a7a84', ei: 0.35, rough: 0.15, metal: 0.2 });
+  const win = (x, z, ry) => { const g = grp(), y = Math.min(hw * 0.58, 1.5); g.add(mk(new THREE.BoxGeometry(0.5, 0.66, 0.02).translate(0, y, 0.012), glassW, false)); for (const [ww, hh, xx, yy] of [[0.58, 0.05, 0, y + 0.33], [0.58, 0.05, 0, y - 0.33], [0.05, 0.7, -0.27, y], [0.05, 0.7, 0.27, y], [0.03, 0.66, 0, y], [0.5, 0.03, 0, y]]) g.add(mk(new THREE.BoxGeometry(ww, hh, 0.05).translate(xx, yy, 0.02), frameM)); g.add(mk(new THREE.BoxGeometry(0.66, 0.05, 0.12).translate(0, y - 0.37, 0.05), frameM)); g.rotation.y = ry; g.position.set(x, 0, z); o.add(g); };
+  if (!knee.includes('back')) for (let k = 0; k < Math.floor(w / 2); k++) win(1 + k * 2, t + 0.005, 0);
+  if (!knee.includes('left')) for (let k = 0; k < Math.floor(h / 2); k++) win(t + 0.005, 1 + k * 2, Math.PI / 2);
+  if (!knee.includes('right')) for (let k = 0; k < Math.floor(h / 2); k++) win(w - t - 0.005, 1 + k * 2, -Math.PI / 2);
+  if (!knee.includes('front')) for (let k = 0; k < Math.floor(w / 2); k++) if (Math.abs(1 + k * 2 - dx) > 0.9) win(1 + k * 2, h - t - 0.005, Math.PI);
   // luz quente no meio do cômodo
   { const pl = new THREE.PointLight(0xffd09a, 0.55, Math.max(w, h) * 1.2); pl.position.set(w / 2, 1.6, h / 2); o.add(pl); }
   // ---- luzes e detalhes ----
@@ -1319,8 +1353,8 @@ function interiorSprite(b, fl = 0) {
   wrap('bushSprite', v => `bu|${v}`, v => sc(mBush(v), 0.8));
   wrap('rockSprite', (v, m) => `ro|${v}|${m}`, (v, m) => mRock(v, m));
   wrap('grassSprite', (v, w, d) => `gr|${v}|${d}`, (v, w, d) => sc(mGrass(v, d), 0.7));
-  const SMALL = { mushroom: mMushroom, reeds: mReeds, stump: mStump, log: mLog, deadtree: mDeadTree, grave: mGrave, tent: mTent, barrel: mBarrel, crate: mCrate, hay: mHay, bench: mBench, well: mWell, stall: mStall, spikes: mSpikes, rubblebig: mRubble, dummy: mDummy, statue: mStatue, anvil: mAnvil, cave: mCave, chest: mChest, weaponrack: mWeaponRack, cart: mCart, table: mTable };
-  const PS = { barrel: 0.5, crate: 0.5, hay: 0.55, bench: 0.5, well: 0.72, stall: 0.6, tent: 0.75, spikes: 0.7, rubblebig: 0.8, dummy: 0.55, statue: 1.0, anvil: 0.5, cave: 0.8, chest: 0.55, weaponrack: 0.55, cart: 0.6, table: 0.5, grave: 0.6, stump: 0.75, log: 0.8, mushroom: 0.8, reeds: 0.8, deadtree: 1.25 };
+  const SMALL = { mushroom: mMushroom, reeds: mReeds, stump: mStump, log: mLog, deadtree: mDeadTree, grave: mGrave, tent: mTent, barrel: mBarrel, crate: mCrate, hay: mHay, bench: mBench, well: mWell, stall: mStall, spikes: mSpikes, rubblebig: mRubble, dummy: mDummy, statue: mStatue, anvil: mAnvil, cave: mCave, chest: mChest, hoard: mHoard, armorpile: mArmorPile, ruintower: mRuinTower, weaponrack: mWeaponRack, cart: mCart, table: mTable };
+  const PS = { barrel: 0.5, crate: 0.5, hay: 0.55, bench: 0.5, well: 0.72, stall: 0.6, tent: 0.75, spikes: 0.7, rubblebig: 0.8, dummy: 0.55, statue: 1.0, anvil: 0.5, cave: 0.8, chest: 0.55, hoard: 0.9, armorpile: 0.8, ruintower: 0.9, weaponrack: 0.55, cart: 0.6, table: 0.5, grave: 0.6, stump: 0.75, log: 0.8, mushroom: 0.8, reeds: 0.8, deadtree: 1.25 };
   const sc = (g, k) => { g.scale.setScalar(k); return g; };
   const origSmall = window.smallSprite;
   window.smallSprite = function (kind, v = 0, w) { const f = SMALL[kind]; return (f && scen3(`sm|${kind}|${v}`, () => sc(f(v), PS[kind] || 1))) || origSmall(kind, v, w); };

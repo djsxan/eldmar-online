@@ -6,10 +6,18 @@ const DRAGON_FRAMES = { idle: 4, walk: 8, bite: 6, breath: 6, tail: 8, roar: 6, 
 const DRAGON_MS = { bite: 700, breath: 1700, tail: 900, roar: 1300 };
 const DRAGON_K = 5.6, DRAGON_Q = 0.42, DRAGON_S = 1.6;   // DRAGON_S: tamanho do dragão (o Chefe Orc é 1.45)   // tamanho do quadro (x o normal) e resolução da foto
 let _dragon = null;
+function dragonTex(kind) {
+  const S = 256, c = document.createElement('canvas'); c.width = c.height = S; const x = c.getContext('2d');
+  x.fillStyle = '#808080'; x.fillRect(0, 0, S, S);
+  if (kind === 'belly') { for (let y = 0; y < S; y += 21) { const gr = x.createLinearGradient(0, y, 0, y + 21); gr.addColorStop(0, '#d0d0d0'); gr.addColorStop(0.8, '#9a9a9a'); gr.addColorStop(1, '#3a3a3a'); x.fillStyle = gr; x.fillRect(0, y, S, 21); } }
+  else { const s = 18; for (let row = 0; row < S / (s * 0.55) + 2; row++) for (let col = -1; col < S / s + 1; col++) { const cx = col * s + (row % 2) * s / 2, cy = row * s * 0.55; const gr = x.createRadialGradient(cx, cy - s * 0.2, 1, cx, cy, s * 0.62); gr.addColorStop(0, '#e8e8e8'); gr.addColorStop(0.7, '#9a9a9a'); gr.addColorStop(1, '#303030'); x.fillStyle = gr; x.beginPath(); x.arc(cx, cy, s * 0.6, 0, Math.PI); x.fill(); } }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(kind === 'belly' ? 1 : 3, kind === 'belly' ? 4 : 3); return t;
+}
+function dmat(hex, kind, extra = {}) { const tex = dragonTex(kind); return new THREE.MeshStandardMaterial({ color: new THREE.Color(hex).convertSRGBToLinear(), roughness: kind === 'belly' ? 0.7 : 0.48, metalness: 0.12, map: tex, bumpMap: tex, bumpScale: 0.025, ...extra }); }
 
 function buildDragon() {
   const root = new THREE.Group(), R = { root }; root.scale.setScalar(DRAGON_S);
-  const sc = mat('#3a1414', 'leather'), sc2 = mat('#4e1a16', 'leather'), belly = mat('#8a5a38', 'leather'), horn = mat('#ddd0b0', 'bone');
+  const sc = dmat('#5a1a16', 'scale'), sc2 = dmat('#6a2219', 'scale'), belly = dmat('#a07048', 'belly'), horn = mat('#ddd0b0', 'bone');
   const memb = mat('#3a1210', 'leather', { side: THREE.DoubleSide }), claw = mat('#1a1410', 'bone');
   const eyeM = mat('#ffb030', 'gem', { emissive: '#ff7a10', emissiveIntensity: 3 }), shut = mat('#200a08', 'leather');
   const body = new THREE.Group(); root.add(body); R.body = body;
@@ -17,6 +25,7 @@ function buildDragon() {
   const tor = mesh(capG(0.55, 1.5), sc, 0, 0, 0); tor.rotation.x = Math.PI / 2; body.add(tor);
   const chest = mesh(sphG(0.64), sc, 0, 0.06, 0.62); chest.scale.set(1, 0.95, 1.05); body.add(chest); R.chest = chest;
   const bel = mesh(capG(0.42, 1.35), belly, 0, -0.24, 0.1); bel.rotation.x = Math.PI / 2; body.add(bel);
+  for (const s of [-1, 1]) { const shd = mesh(sphG(0.36), sc, s * 0.36, 0.08, 0.66); shd.scale.set(0.9, 1, 1.1); body.add(shd); const hp = mesh(sphG(0.4), sc, s * 0.34, 0.02, -0.62); hp.scale.set(0.9, 1, 1.15); body.add(hp); }
   for (let k = 0; k < 9; k++) { const sp = mesh(coneG(0.09 - k * 0.004, 0.32 - k * 0.012, 6), horn, 0, 0.56 - Math.abs(k - 3) * 0.02, 0.95 - k * 0.27); sp.rotation.x = -0.35; body.add(sp); }
   // pescoço: 4 articulações (o eixo +y de cada uma segue o pescoço)
   let p = joint(body, 0, 0.28, 1.0); R.neck = [];
@@ -29,6 +38,8 @@ function buildDragon() {
   const head = p; R.head = head;
   head.add(mesh(boxG(0.44, 0.34, 0.6), sc, 0, 0.06, 0.22));
   const snout = mesh(boxG(0.32, 0.22, 0.5), sc2, 0, 0.02, 0.72); head.add(snout);
+  const tipS = mesh(boxG(0.26, 0.18, 0.18), sc2, 0, 0.0, 1.0); head.add(tipS);
+  for (const s of [-1, 1]) { const br = mesh(boxG(0.14, 0.07, 0.3), sc, s * 0.17, 0.24, 0.36); br.rotation.set(0.25, s * 0.25, 0); head.add(br); head.add(mesh(sphG(0.035), mat('#140806', 'leather'), s * 0.08, 0.1, 1.08)); const ck = mesh(coneG(0.05, 0.22, 5), horn, s * 0.24, -0.02, 0.2); ck.rotation.set(-1.4, 0, s * 1.1); head.add(ck); }
   for (const s of [-1, 1]) {
     const h1 = mesh(coneG(0.065, 0.62, 8), horn, s * 0.16, 0.28, -0.12); h1.rotation.set(-1.05, 0, s * 0.25); head.add(h1);
     const h2 = mesh(coneG(0.04, 0.3, 6), horn, s * 0.24, 0.12, 0.05); h2.rotation.set(-1.3, 0, s * 0.7); head.add(h2);
@@ -52,7 +63,7 @@ function buildDragon() {
   // pernas (quadril -> joelho -> pé com garras)
   R.legs = [];
   for (const [x, z, fr] of [[-0.48, 0.62, 1], [0.48, 0.62, 1], [-0.5, -0.62, 0], [0.5, -0.62, 0]]) {
-    const hip = joint(body, x, -0.18, z), th = mesh(capG(fr ? 0.2 : 0.25, 0.5), sc, 0, -0.33, 0); hip.add(th);
+    const hip = joint(body, x, -0.18, z), th = mesh(capG(fr ? 0.24 : 0.31, 0.5), sc, 0, -0.33, 0); hip.add(th);
     const knee = joint(hip, 0, -0.68, 0); knee.add(mesh(capG(0.15, 0.46), sc2, 0, -0.3, 0));
     const ft = joint(knee, 0, -0.62, 0); ft.add(mesh(boxG(0.3, 0.12, 0.42), sc2, 0, -0.02, 0.1));
     for (const q of [-0.1, 0, 0.1]) { const c = mesh(coneG(0.03, 0.14, 5), claw, q, -0.04, 0.34); c.rotation.x = Math.PI / 2; ft.add(c); }
@@ -70,7 +81,12 @@ function buildDragon() {
     for (const [fx, fz] of [[1.6, 0.05], [1.4, -0.75], [0.95, -1.35]]) { const fb = mesh(cylG(0.025, 0.012, Math.hypot(fx, fz), 5), sc, s * fx / 2, 0, fz / 2); fb.rotation.z = Math.PI / 2; fb.rotation.y = -s * Math.atan2(fz, fx); el.add(fb); }
     const m2 = fan([[0, 0, 0], [s * 1.6, 0, 0.05], [s * 1.4, -0.04, -0.75], [s * 0.95, -0.06, -1.35], [s * -0.4, -0.1, -1.2]], memb); el.add(m2);
     el.add(mesh(coneG(0.04, 0.2, 5), horn, s * 0.05, 0.1, 0));
-    R.wings.push({ sh, el, s, m1, m2 });
+    // asa fechada: dobra de couro caída sobre o flanco, com o osso da asa por cima
+    const folded = grp(); const fm = mesh(sphG(0.5), memb); fm.scale.set(0.3, 0.9, 2.1); folded.add(fm);
+    const ridge = mesh(cylG(0.055, 0.035, 1.9, 8), sc, 0, 0.42, 0.05); ridge.rotation.x = Math.PI / 2; folded.add(ridge);
+    const kn = mesh(coneG(0.05, 0.2, 5), horn, 0, 0.46, 1.0); kn.rotation.x = Math.PI / 2; folded.add(kn);
+    folded.position.set(s * 0.52, 0.42, -0.2); folded.rotation.set(0, 0, -s * 0.5); body.add(folded);
+    R.wings.push({ sh, el, s, m1, m2, folded });
   }
   return R;
 }
@@ -111,11 +127,12 @@ function poseDragon(R, st, t) {
   else if (st === 'sleep') {
     R.body.position.y = 0.55; R.chest.scale.set(1 + Math.sin(ph) * 0.04, 0.95 + Math.sin(ph) * 0.04, 1.05);
     R.legs.forEach(L => { L.hip.rotation.set(L.fr ? -1.25 : -1.0, 0, 0); L.knee.rotation.set(2.2, 0, 0); L.ft.rotation.set(-0.9, 0, 0); });
-    R.neck[0].rotation.set(1.45, 0.3, 0); R.neck.slice(1).forEach(j => j.rotation.set(0, 0.45, 0)); R.head.rotation.set(0.25, 0.3, 0);
-    R.tail.forEach((j, k) => j.rotation.set(k === 0 ? 0.1 : 0.02, 0.32, 0));
+    R.neck[0].rotation.set(1.62, 0.3, 0); R.neck.slice(1).forEach(j => j.rotation.set(0.1, 0.38, 0)); R.head.rotation.set(-0.35, 0.25, 0); R.jaw.rotation.x = 0.02;
+    R.tail.forEach((j, k) => j.rotation.set(k === 0 ? 0.12 : 0.03, 0.4, 0));
     R.eyes.forEach(e => e.visible = false); R.shut.forEach(e => e.visible = true);
   }
   // asas: dobradas para trás (spread 0) ou abertas (1)
+  for (const W of R.wings) { const open = spread > 0.3; W.folded.visible = !open; W.sh.visible = open; }
   for (const W of R.wings) { const s = W.s, f = 1 - spread; W.sh.rotation.set(0, s * (0.1 + f * 1.35), -s * (0.6 - f * 0.05)); W.el.rotation.set(0, -s * (0.3 + f * 2.55), 0); const k = 0.3 + spread * 0.7; W.m1.scale.set(1, 1, k); W.m2.scale.set(1, 1, k); }
 }
 

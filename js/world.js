@@ -12,11 +12,11 @@ const O = {
   REEDS: 10, LILY: 11, STUMP: 12, DEADTREE: 13, GRAVE: 14, BONES: 15, TENT: 16, CAMPFIRE: 17, FENCE: 18,
   TORCH: 19, BARREL: 20, CRATE: 21, HAY: 22, WELL: 23, STALL: 24, BENCH: 25, BANNER: 26, LOG: 27,
   FLOWERBED: 28, SPIKES: 29, WALL: 30, TOWER: 31, PART: 32, GATE: 33, STAIRS: 34, RUBBLE: 35, RUBBLEBIG: 36,
-  STATUE: 37, BRAZIER: 38, DUMMY: 39, WATERFALL: 40, LOWWALL: 41, IVY: 42, ANVIL: 43, WEAPONRACK: 44, CART: 45, TABLE: 46, CAVE: 47,
+  STATUE: 37, BRAZIER: 38, DUMMY: 39, WATERFALL: 40, LOWWALL: 41, IVY: 42, ANVIL: 43, WEAPONRACK: 44, CART: 45, TABLE: 46, CAVE: 47, HOARD: 48, ARMORPILE: 49, RUINTOWER: 50,
 };
 const BLOCKING = new Set([O.TREE, O.PINE, O.ROCK, O.FOUNTAIN, O.STUMP, O.DEADTREE, O.GRAVE, O.TENT,
   O.CAMPFIRE, O.FENCE, O.BARREL, O.CRATE, O.HAY, O.WELL, O.STALL, O.LOG, O.SPIKES,
-  O.WALL, O.TOWER, O.PART, O.RUBBLEBIG, O.CAVE, O.STATUE, O.BRAZIER, O.DUMMY, O.WATERFALL, O.LOWWALL, O.ANVIL, O.WEAPONRACK, O.CART, O.TABLE]);
+  O.WALL, O.TOWER, O.PART, O.RUBBLEBIG, O.CAVE, O.HOARD, O.RUINTOWER, O.STATUE, O.BRAZIER, O.DUMMY, O.WATERFALL, O.LOWWALL, O.ANVIL, O.WEAPONRACK, O.CART, O.TABLE]);
 // objetos soltos que dá para pegar e arremessar (dano base)
 const THROWABLE = { [O.BARREL]: 18, [O.CRATE]: 20, [O.ROCK]: 26 };
 // objetos rasteiros (vão direto para o chão pré-desenhado)
@@ -480,21 +480,40 @@ function generateWorld() {
       }
       for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2 + 0.3; put(Math.round(Math.cos(a) * 7.5), Math.round(Math.sin(a) * 7.5), H(k, 5, 911) < 0.6 ? O.DEADTREE : O.MUSHROOM); }
     } else if (B.kind === 'dragon') {
-      // mesa de rocha (anda-se por cima, no nível 1) + rampa de 5 degraus virada para a cidade + ossos em volta
-      const PR = 5.5;
-      for (let y = -Rr; y <= Rr; y++) for (let x = -Rr; x <= Rr; x++) {
-        const X = B.x + x, Y = B.y + y, i = idx(X, Y), d = Math.hypot(x, y) + (hash2(X, Y, 913) - 0.5) * 0.8;
-        if (d <= PR) { ground[i] = T.CLIFF; height[i] = 5; fl1[i] = 1; obj[i] = O.NONE; }
-        else if (d < Rr && obj[i] === O.NONE) { const h = hash2(X, Y, 914); obj[i] = h < 0.1 ? O.BONES : h < 0.16 ? O.ROCK : h < 0.2 ? O.RUBBLE : O.NONE; }
+      // ruínas de fortaleza queimada: mesa de rocha (nível 1) com escadaria larga, chão chamuscado, árvores carbonizadas,
+      // restos de cavaleiros, estrada com estandartes e tochas; no topo, torre de vigia em ruínas, muros caídos e o ninho com o tesouro
+      const PR = 5.5, BIG = Rr + 8;
+      for (let y = -BIG; y <= BIG; y++) for (let x = -BIG; x <= BIG; x++) {
+        const X = B.x + x, Y = B.y + y; if (X < 1 || Y < 1 || X >= MAP_W - 1 || Y >= MAP_H - 1) continue;
+        const i = idx(X, Y), d = Math.hypot(x, y) + (hash2(X, Y, 913) - 0.5) * 0.8;
+        if (d <= PR) { ground[i] = T.CLIFF; height[i] = 5; fl1[i] = 1; obj[i] = O.NONE; continue; }
+        if (d > BIG || ground[i] === T.WATER) continue;
+        height[i] = 0; river[i] = 0;
+        const h = hash2(X, Y, 914), n = hash2(X, Y, 915);
+        ground[i] = d < Rr + 2 ? (n < 0.55 ? T.DEAD : T.DIRT) : (n < 0.35 ? T.DEAD : n < 0.6 ? T.DIRT : ground[i]);   // chão chamuscado
+        obj[i] = d < Rr ? (h < 0.08 ? O.BONES : h < 0.11 ? O.ARMORPILE : h < 0.15 ? O.RUBBLE : h < 0.18 ? O.ROCK : O.NONE)
+          : (h < 0.09 ? O.DEADTREE : h < 0.12 ? O.BONES : h < 0.135 ? O.ARMORPILE : h < 0.16 ? O.ROCK : O.NONE);   // árvores carbonizadas
       }
+      // topo: torre de vigia em ruínas no fundo, muros caídos, entulho e o ninho com o tesouro
+      const back = toC + Math.PI, put1 = (dx, dy, o) => { const i = idx(B.x + dx, B.y + dy); if (ground[i] === T.CLIFF && fl1[i]) obj[i] = o; };
+      put1(Math.round(Math.cos(back) * 3.5), Math.round(Math.sin(back) * 3.5), O.RUINTOWER);
+      for (let k = -4; k <= 4; k++) { const a = back + k * 0.22; if (Math.abs(k) === 1) continue; const dx = Math.round(Math.cos(a) * 4.6), dy = Math.round(Math.sin(a) * 4.6); put1(dx, dy, hash2(dx, dy, 916) < 0.6 ? O.LOWWALL : O.RUBBLEBIG); }
+      for (const [dx, dy] of [[1, 2], [-2, 1], [2, -2], [-1, -2]]) put1(dx, dy, hash2(dx, dy, 917) < 0.5 ? O.RUBBLE : O.BONES);
+      put1(Math.round(Math.cos(back) * 1.5), Math.round(Math.sin(back) * 1.5), O.HOARD);
+      put1(Math.round(Math.cos(back + 0.9) * 2), Math.round(Math.sin(back + 0.9) * 2), O.ARMORPILE);
       const sx = Math.abs(Math.cos(toC)) >= Math.abs(Math.sin(toC)) ? Math.sign(Math.cos(toC)) : 0, sy = sx ? 0 : Math.sign(Math.sin(toC));
       const sdir = sx > 0 ? 2 : sx < 0 ? 1 : sy > 0 ? 4 : 3;   // a rampa sobe em direção à mesa
-      for (let j = 0; j < STAIR_N; j++) {
-        const X = B.x + sx * (6 + j), Y = B.y + sy * (6 + j), i = idx(X, Y);
+      for (let j = 0; j < STAIR_N; j++) for (let q = -1; q <= 1; q++) {
+        const X = B.x + sx * (6 + j) + sy * q, Y = B.y + sy * (6 + j) + sx * q, i = idx(X, Y);
         ground[i] = T.FLOORSTONE; height[i] = 0; obj[i] = O.STAIRS; stair[i] = sdir; stairK[i] = STAIR_N - 1 - j; fl1[i] = 3;
-        for (const q of [-1, 1]) { const k2 = idx(X + sy * q, Y + sx * q); if (obj[k2] !== O.STAIRS) obj[k2] = O.NONE; }
       }
-      for (let q = -1; q <= 1; q++) { const X = B.x + sx * (6 + STAIR_N) + sy * q, Y = B.y + sy * (6 + STAIR_N) + sx * q, i = idx(X, Y); if (ground[i] !== T.WATER) { ground[i] = T.STONE; obj[i] = O.NONE; } }
+      for (let q = -2; q <= 2; q++) { const X = B.x + sx * 5 + sy * q, Y = B.y + sy * 5 + sx * q, i = idx(X, Y); if (Math.abs(q) <= 1 && !(ground[i] === T.CLIFF)) { ground[i] = T.CLIFF; height[i] = 5; fl1[i] = 1; } if (ground[i] === T.CLIFF) obj[i] = O.NONE; }   // o topo encosta na escada
+      // estrada de pedra até a escada, com estandartes rasgados e tochas dos dois lados
+      for (let j = 6 + STAIR_N; j < 6 + STAIR_N + 18; j++) for (let q = -1; q <= 1; q++) {
+        const X = B.x + sx * j + sy * q, Y = B.y + sy * j + sx * q; if (X < 1 || Y < 1 || X >= MAP_W - 1 || Y >= MAP_H - 1) continue; const i = idx(X, Y);
+        if (ground[i] === T.WATER) continue; ground[i] = hash2(X, Y, 918) < 0.8 ? T.COBBLE : T.DIRT; obj[i] = O.NONE; height[i] = 0;
+        for (const side of [-2, 2]) { if (q !== 0) continue; const k2 = idx(X + sy * side, Y + sx * side); if (ground[k2] === T.WATER) continue; obj[k2] = (j - 6 - STAIR_N) % 4 === 1 ? ((j >> 2) % 2 ? O.TORCH : O.BANNER) : obj[k2] === O.DEADTREE ? O.NONE : obj[k2]; }
+      }
     } else if (B.kind === 'cave') {
       { const i = idx(CAVE_POS.x, CAVE_POS.y); ground[i] = T.STONE; height[i] = 0; obj[i] = O.CAVE; }
       for (let y = -Rr; y <= Rr; y++) for (let x = -Rr; x <= Rr; x++) { const d = Math.hypot(x, y), i = idx(B.x + x, B.y + y); if (d < 2 || d > Rr || obj[i] !== O.NONE || ground[i] === T.CLIFF) continue; const h = H(x, y, 912); obj[i] = h < 0.12 ? O.BONES : h < 0.17 ? O.ROCK : h < 0.2 ? O.RUBBLE : O.NONE; }
@@ -812,19 +831,20 @@ function walkableTile(x, y, z = 0) {
 }
 // objetos redondos: colidem só no tamanho real (círculo), não no tile inteiro
 const OBJ_R = { [O.TREE]: 0.3, [O.PINE]: 0.28, [O.ROCK]: 0.34, [O.STUMP]: 0.24, [O.DEADTREE]: 0.24, [O.GRAVE]: 0.28, [O.CAMPFIRE]: 0.3,
-  [O.BARREL]: 0.28, [O.CRATE]: 0.32, [O.HAY]: 0.38, [O.BRAZIER]: 0.24, [O.DUMMY]: 0.22, [O.STATUE]: 0.4, [O.ANVIL]: 0.3, [O.WEAPONRACK]: 0.32, [O.WELL]: 0.46 };
+  [O.BARREL]: 0.28, [O.CRATE]: 0.32, [O.HOARD]: 0.5, [O.HAY]: 0.38, [O.BRAZIER]: 0.24, [O.DUMMY]: 0.22, [O.STATUE]: 0.4, [O.ANVIL]: 0.3, [O.WEAPONRACK]: 0.32, [O.WELL]: 0.46 };
 function solidTile(x, y, L) {
   if (!inBounds(x, y)) return true;
   const i = y * MAP_W + x;
-  if (L === 1) return !(WORLD.fl1[i] > 0);
   const g = WORLD.ground[i], o = WORLD.obj[i];
+  if (L === 1) return !(WORLD.fl1[i] > 0) || (g === T.CLIFF && BLOCKING.has(o) && !OBJ_R[o]);
   return g === T.WATER || g === T.CLIFF || (BLOCKING.has(o) && !OBJ_R[o]);
 }
-function roundHit(x, y, r) {
+function roundHit(x, y, r, top = false) {
   const tx = Math.round(x), ty = Math.round(y);
   for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
     const xx = tx + dx, yy = ty + dy; if (!inBounds(xx, yy)) continue;
-    const i = yy * MAP_W + xx, rr = OBJ_R[WORLD.obj[i]] || (NPC_AT.has(i) ? 0.3 : 0);
+    const i = yy * MAP_W + xx; if ((WORLD.ground[i] === T.CLIFF && WORLD.fl1[i] > 0) !== top) continue;
+    const rr = OBJ_R[WORLD.obj[i]] || (NPC_AT.has(i) ? 0.3 : 0);
     if (rr && (x - xx) * (x - xx) + (y - yy) * (y - yy) < (rr + r) * (rr + r)) return true;
   }
   return false;
@@ -929,6 +949,7 @@ function canStandZ(x, y, z, r = 0.24, fl = 0, fb = -1) {
     if (solidTile(tx, ty, L)) return false;
   }
   if (L === 0 && (wallHit(x, y, r) || roundHit(x, y, r))) return false;
+  if (L === 1 && roundHit(x, y, r, true)) return false;
   const h = stairH(x, y);
   if (h >= 0 && Math.abs(h - z) > 0.4) return false; // não entra na rampa pela lateral
   return true;

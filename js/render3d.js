@@ -407,8 +407,8 @@ function pose3Key(P) { return (P.dir | 0) + '|' + (P.walk >= 0 ? (P.run ? 'r' : 
 function heroSprite3D(cls, skin, color, P) {
   const lk = cls + ':' + skin + ':' + color;
   return cache3('h3|' + lk + '|' + pose3Key(P) , () => {
-    const L = lookFor(lk, () => heroLook(cls, skin, color));
-    let R = _rigs.get(lk); if (!R) { R = buildHumanoid(L); epicHero(R, L, 1, skin); _rigs.set(lk, R); }
+    const L = lookFor(lk, () => skin === 'weaver' ? WEAVER_LOOK() : heroLook(cls, skin, color));
+    let R = _rigs.get(lk); if (!R) { R = buildHumanoid(L, skin === 'weaver' ? { scale: 1.12 } : undefined); if (skin === 'weaver') weaverExtras(R); else epicHero(R, L, 1, skin); _rigs.set(lk, R); }
     const Q = buildPose(cls, P);
     applyPose(R, Q, P, P.walk >= 0 ? P.walk / 12 * Math.PI * 2 : 0);
     return shoot3D(R, P.dir | 0, P.down ? -Math.PI / 2 : 0, P.sit === 'g');
@@ -436,6 +436,14 @@ MON_LOOK.deserter = () => ({ skin: tone('#c09878'), hair: tone('#4a3a2a'), armor
 MON_LOOK.deserterchief = () => ({ skin: tone('#b89070'), hair: tone('#2a1a10'), armor: 'plate', body: tone('#4a4c50'), body2: tone('#2a1a10'), accent: tone('#7a1a14'), legs: tone('#2d1b0a'), boots: tone('#1a1008'), trim: tone('#a8843a'), head: 'greathelm', headTone: tone('#3a3c40'), weapon: 'sword', shield: 'kite', capeTone: tone('#6a1410') });
 MON_LOOK.orcchief = () => ({ ...MON_LOOK.orc(), accent: tone('#9a1a14'), trim: tone('#c8a040'), head: 'horned', weapon: 'axe', capeTone: tone('#5a0e0a') });
 MON_LOOK.cryptlord = () => ({ ...MON_LOOK.skeleton(), head: 'circlet', weapon: 'darkblade', accent: tone('#3a1a4a'), trim: tone('#c8a850'), capeTone: tone('#2a1a3a') });
+// O Tecelão de Sxan: manto cinza esfarrapado com fios de ouro, capuz sem rosto, olhos de luz
+const WEAVER_LOOK = () => ({ skin: tone('#1a1714'), hair: null, armor: 'cloth', body: tone('#55514a'), body2: tone('#34312c'), accent: tone('#c9a24a'), legs: tone('#34312c'), boots: tone('#221f1b'), trim: tone('#e2c46a'), head: 'hood', headTone: tone('#47433d'), weapon: 'starstaff', capeTone: tone('#47433d') });
+function weaverExtras(R) {
+  const S = 1.12, h = R.head;
+  h.add(mesh(sphG(0.095 * S), mat('#050404', 'cloth'), 0, -0.01 * S, 0.035 * S));
+  for (const s of [-1, 1]) h.add(mesh(sphG(0.016 * S), mat('#fff0b0', 'gem', { emissive: '#ffd060', emissiveIntensity: 3.5 }), s * 0.036 * S, 0.012 * S, 0.11 * S));
+  for (let k = 0; k < 7; k++) { const t = mesh(cylG(0.004 * S, 0.002 * S, (0.25 + (k % 3) * 0.1) * S, 4), mat('#e8c860', 'gold', { emissive: '#8a6a10', emissiveIntensity: 1.2 }), (k - 3) * 0.04 * S, -0.25 * S, -0.06 * S); t.rotation.z = (k - 3) * 0.08; R.chest.add(t); }
+}
 const MON_SCALE = { goblin: 0.72, skeleton: 0.98, orc: 1.18, troll: 1.7, bandit: 0.98, deserter: 1.0, deserterchief: 1.12, orcchief: 1.45, cryptlord: 1.25 };
 function buildCreature(type) {
   const root = new THREE.Group(), R = { root, legs: [], type };

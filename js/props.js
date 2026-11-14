@@ -186,6 +186,9 @@ function smallSprite(kind, v = 0, w) {
       c.fillStyle = '#6e6a62'; c.beginPath(); c.ellipse(70, 70, 66, 40, 0, Math.PI, 0); c.lineTo(136, 100); c.lineTo(4, 100); c.closePath(); c.fill();
       c.fillStyle = '#0a0806'; c.beginPath(); c.ellipse(70, 100, 24, 34, 0, Math.PI, 0); c.fill();
     });
+    case 'hoard': return paint('hoard', 60, 30, 30, 26, (c) => { c.fillStyle = '#b8892a'; c.beginPath(); c.ellipse(30, 22, 26, 9, 0, 0, 7); c.fill(); c.fillStyle = '#f0d070'; for (let k = 0; k < 20; k++) c.fillRect(8 + (k * 13) % 44, 14 + (k * 7) % 10, 3, 2); });
+    case 'armorpile': return paint('armor' + v, 40, 20, 20, 16, (c) => { c.fillStyle = '#7a7e86'; c.beginPath(); c.arc(12, 12, 5, 0, 7); c.fill(); c.fillStyle = v ? '#2a3a6a' : '#7a1a1c'; c.beginPath(); c.ellipse(26, 13, 8, 4, 0, 0, 7); c.fill(); });
+    case 'ruintower': return paint('ruint', 80, 110, 40, 100, (c) => { c.fillStyle = '#8a847a'; c.fillRect(12, 40, 56, 60); c.fillStyle = '#3a3632'; c.fillRect(30, 30, 20, 20); });
     case 'chest': return paint('chest' + v, 40, 34, 20, 30, (c, R) => {
       c.fillStyle = '#6a4220'; c.fillRect(6, 12, 28, 18); c.fillStyle = '#3a3a40'; c.fillRect(10, 12, 3, 18); c.fillRect(27, 12, 3, 18);
       c.fillStyle = v ? '#4a2c14' : '#7a5028'; c.fillRect(6, v ? 2 : 6, 28, 7); c.fillStyle = '#e2b74e'; c.fillRect(18, 14, 4, 5);

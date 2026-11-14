@@ -14,7 +14,7 @@ function wind(x, y, now) { return Math.sin(now / 1400 + x * 0.37 + y * 0.21) + M
 // ---------- dia e noite (igual para todos: usa o relógio) ----------
 const DAY_CYCLE_MS = 12 * 60 * 1000;
 function dayInfo() {
-  const ph = (Date.now() % DAY_CYCLE_MS) / DAY_CYCLE_MS;
+  const ph = typeof G !== 'undefined' && G.devTime ? (G.devTime === 'day' ? 0.06 : 0.5) : (Date.now() % DAY_CYCLE_MS) / DAY_CYCLE_MS;
   const sun = Math.cos(ph * Math.PI * 2);
   const k = clamp((0.15 - sun) / 0.65, 0, 1);
   const dark = smooth(k) * 0.62;
@@ -311,13 +311,18 @@ function drawHeroEntity(ctx, e, sx, sy, now) {
     const s = heroSprite3D(e.cls, e.skin, e.color, { dir: e.dir || 0, walk: -1, down: true }); pblit(ctx, woundOf(s, Math.max(1, woundLevel(e))), sx, sy); e._spr = null; return;
   }
   if (R3.ok) {
-    if (e.downed && !e.carriedBy) { const s = heroSprite3D(e.cls, e.skin, e.color, { dir: e.dir || 0, walk: -1, down: true }); ctx.imageSmoothingEnabled = true; pblit(ctx, woundOf(s, 3), sx, sy); return; }
+    if (e.downed && !e.carriedBy) { const f = FALLS['p' + e.id]; if (f) { drawFall(ctx, f, sx, sy, now, 1, 3); return; } const s = heroSprite3D(e.cls, e.skin, e.color, { dir: e.dir || 0, walk: -1, down: true }); ctx.imageSmoothingEnabled = true; pblit(ctx, woundOf(s, 3), sx, sy); return; }
     const P = heroPoseFor(e, now);
     if (!P.act && e.hitAt && now - e.hitAt < 300) P.act = { k: 'hurt', f: Math.min(11, Math.floor((now - e.hitAt) / 300 * 12)) };
     const s = e.isNpc ? npcSprite3D(e.kind, P) : woundOf(heroSprite3D(e.cls, e.skin, e.color, P), woundLevel(e));
     ctx.imageSmoothingEnabled = true;
     softDab(ctx, sx, sy, 10, '#000000', 0.35);
     const kb = knockOf(e, now); sx += kb.x * 0.6; sy += kb.y * 0.6;
+    if (e.skin === 'weaver') {   // o Tecelão flutua, com runas girando aos pés
+      const fy = 12 + Math.sin(now / 600) * 3; ctx.save(); ctx.strokeStyle = 'rgba(232,200,96,0.45)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(sx, sy + 2, 18, 8, 0, 0, 7); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,230,150,0.85)'; ctx.font = '8px serif'; ctx.textAlign = 'center'; for (let k = 0; k < 8; k++) { const a = now / 1500 + k * Math.PI / 4; ctx.fillText('✦◇✧◆✦◇✧◆'[k], sx + Math.cos(a) * 18, sy + 5 + Math.sin(a) * 8); } ctx.restore();
+      G.lights.push({ x: sx, y: sy - 30, r: 60, c: '255,220,140', a: 0.8 }); sy -= fy;
+    }
     pblit(ctx, s, sx, sy); e._spr = s; e._sx = sx; e._sy = sy;
     if (e.hitAt && now - e.hitAt < 110) pblit(ctx, whiteOf(s, 'w3|' + e.id + (e.cls || e.kind)), sx, sy, 0.65);
     return;
@@ -365,6 +370,7 @@ function fallAngle(ms) {
 const PAINT_AS = { dragon: 'troll', deer: 'wolf', boar: 'wolf', bandit: 'goblin', deserter: 'goblin', deserterchief: 'goblin', orcchief: 'orc', cryptlord: 'skeleton', elderslime: 'slime', wisp: 'slime' };
 const MON_H = { dragon: 260, bandit: 84, deserter: 90, wisp: 70, orcchief: 140, cryptlord: 120, deserterchief: 104, elderslime: 70, deer: 70, boar: 46, rat: 30, slime: 40, wolf: 58, spider: 52, toad: 44, goblin: 68, skeleton: 92, orc: 104, troll: 150 };
 function drawMonsterEntity(ctx, e, sx, sy, now) {
+  if (FALLS['m' + e.id]) return;
   if (R3.ok && e.type === 'dragon') { drawDragon(ctx, e, sx, sy, now); return; }
   if (R3.ok) {
     let atk = -1;
@@ -469,6 +475,9 @@ function objSprite(o, x, y) {
     case O.STATUE: return smallSprite('statue');
     case O.ANVIL: return smallSprite('anvil');
     case O.CAVE: return smallSprite('cave');
+    case O.HOARD: return smallSprite('hoard');
+    case O.ARMORPILE: return smallSprite('armorpile', v & 1);
+    case O.RUINTOWER: return smallSprite('ruintower');
     case O.WEAPONRACK: return smallSprite('weaponrack');
     case O.CART: return smallSprite('cart');
     case O.TABLE: return smallSprite('table');
@@ -722,12 +731,14 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
   }
   // 4) coleta dos itens
   const items = [], upper = [], visTrees = [], visFlowers = [], visGrass = [];
+  for (const c of (G.started && G.corpses) || []) { const p = iso(c.x, c.y); const it = { d: c.x + c.y - 0.35, k: 0, corpse: c, sx: p.sx + ox, sy: p.sy + oy - (c.z || 0) * FLOOR_PX }; (c.z ? upper : items).push(it); }
   for (const c of (G.started && G.chests) || []) { const p = iso(c.x, c.y); items.push({ d: c.x + c.y, k: 0, chest: c, sx: p.sx + ox, sy: p.sy + oy }); }
   for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
     const i = y * MAP_W + x, o = WORLD.obj[i], g = WORLD.ground[i];
     const wx = (x - y) * HTW, wy = (x + y) * HTH, sx = wx + ox, sy = wy + oy;
     if (sx < -140 || sx > vw + 140 || sy < -60 || sy > vh + 300) continue;
     if (g === T.CLIFF) items.push({ d: x + y, k: 0, cliff: true, x, y, sx, sy, o });
+    else if (o !== O.NONE && !FLAT.has(o) && o !== O.PART && g === T.CLIFF) { upper.push({ d: x + y, k: 0, x, y, o, sx, sy: sy - FLOOR_PX }); }
     else if (o !== O.NONE && !FLAT.has(o) && o !== O.PART) { items.push({ d: x + y, k: 0, x, y, o, sx, sy }); if (o === O.TREE || o === O.PINE) visTrees.push({ wx, wy }); }
     if (o === O.FLOWER || o === O.FLOWERBED) visFlowers.push({ wx, wy });
     if ((g === T.GRASS || g === T.FOREST || g === T.SWAMP) && hash2(x, y, 5) < 0.25) visGrass.push({ wx, wy });
@@ -824,6 +835,15 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     return d > meD && meX > l + 6 && meX < l + s.w - 6 && meY > t && meY < t + s.h - 10 && (yf ?? y) > meY + 18 ? (yf != null && inB >= 0 ? 0.22 : 0.42) : null;
   };
   const drawItem = it => {
+    if (it.corpse) {
+      const c = it.corpse; let f = FALLS['m' + c.id];
+      const live = G.monsters[c.id]; if (!f && live && live.dieAt && now - live.dieAt < 1500) return;   // a queda ao vivo ainda vai começar
+      if (!f && R3.ok) { f = startFall({ key: 'm' + c.id, type: c.type, x: c.x, y: c.y, dir: c.id % 8, ix: c.ix, iy: c.iy, cls: 'knight', big: MON[c.type].big, force: 1 }); if (f) f.fromCorpse = true; }
+      if (f) { if (f.fromCorpse && !f.done && !f.staged) { for (let k = 0; k < 400 && !(f.mode === 'rag' ? ragStep(f) : rigidStep(f)); k++); } drawFall(ctx, f, it.sx, it.sy, now, 1, c.type !== 'dragon' && MON_LOOK[c.type] ? 2 : 0); }
+      if (!c.looted && dist(c.x, c.y, G.me.x, G.me.y) < 1.7) { const t = now / 300; for (let k = 0; k < 2; k++) dab(ctx, it.sx + Math.cos(t + k * 3) * 10, it.sy - 10 + Math.sin(t + k) * 4, 2, 2, '#ffe890'); }
+      if (G.loot && G.loot.id === c.id) { const k = Math.min(1, (now - G.loot.t0) / 1300); ctx.strokeStyle = '#ffe890'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(it.sx, it.sy - 34, 9, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); ctx.stroke(); }
+      return;
+    }
     if (it.chest) {
       const c = it.chest, s = smallSprite('chest', c.open ? 1 : 0); ctx.imageSmoothingEnabled = true; if (s) pblit(ctx, s, it.sx, it.sy);
       if (c.mine && !c.open) { G.lights.push({ x: it.sx, y: it.sy - 10, r: 40, c: '255,220,120', a: 0.7 }); const t = now / 300; for (let k = 0; k < 3; k++) dab(ctx, it.sx + Math.cos(t + k * 2.1) * 12, it.sy - 22 + Math.sin(t * 1.3 + k) * 6, 2, 2, '#ffe890'); }
@@ -847,7 +867,6 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
       const s = it.sp, kp = s.c.width / s.w, sx0 = (s.ax + it.col * 32) * kp, x0 = Math.max(0, sx0), x1 = Math.min(s.c.width, sx0 + 32.6 * kp);
       if (x1 > x0) { if (it.al) ctx.globalAlpha = it.al; ctx.drawImage(s.c, x0, 0, x1 - x0, s.c.height, it.sx - s.ax + x0 / kp, it.sy - s.ay, (x1 - x0) / kp, s.h); ctx.globalAlpha = 1; }
       if (!it.first) return;
-      if (day.night) for (const [wx, wy, wz] of buildingWindows(it.b)) { const p = iso(wx, wy); G.lights.push({ x: p.sx + ox, y: p.sy + oy - wz, r: 28, c: it.b.kind === 'temple' ? '190,210,255' : '255,190,100', a: 0.85 }); }
       if ((it.b.kind === 'tavern' || it.b.kind === 'house' || it.b.kind === 'smith') && Math.random() < (it.b.kind !== 'house' ? 0.14 : 0.05)) { const p = iso(it.b.x - 0.5 + it.b.w * 0.3, it.b.y - 0.5 + it.b.h * 0.35); spawnPart('smoke', p.sx, p.sy - (bldTopArt(it.b) * 0.9 + 30)); }
       if (it.b.kind === 'smith') { const p = iso(it.b.x - 0.5 + it.b.w * 0.5, it.b.y - 0.5 + it.b.h); G.lights.push({ x: p.sx + ox, y: p.sy + oy - 16, r: 62, c: '255,130,50', a: 1, flick: 1 }); if (Math.random() < 0.1) spawnPart('ember', p.sx, p.sy - 20); }
       return;
@@ -894,6 +913,15 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
   ambient(visTrees, visFlowers, visGrass, day.night);
   drawParticles(ctx, ox, oy, now, dt);
 
+  // luzes das casas à noite: todas as janelas, lanterna na porta e o cômodo onde você está
+  if (day.dark > 0.2) for (const b of BUILDINGS) {
+    if (b.kind === 'stairtower') continue;
+    const c = iso(b.x + b.w / 2, b.y + b.h / 2), cx = c.sx + ox, cy = c.sy + oy; if (cx < -300 || cx > vw + 300 || cy < -400 || cy > vh + 300) continue;
+    const col = b.kind === 'temple' ? '190,210,255' : '255,190,100';
+    for (const [wx, wy, wz] of buildingWindows(b)) { const p = iso(wx, wy); G.lights.push({ x: p.sx + ox, y: p.sy + oy - wz, r: 34, c: col, a: 0.9 }); }
+    const d = doorOf(b), p = iso(d.x, d.y); G.lights.push({ x: p.sx + ox, y: p.sy + oy - 30, r: 64, c: '255,175,90', a: 0.95, flick: 1 });
+  }
+  if (inside && day.dark > 0.05) { const b = inside.b, c = iso(b.x + b.w / 2 - 0.5, b.y + b.h / 2 - 0.5); G.lights.push({ x: c.sx + ox, y: c.sy + oy - 20, r: Math.max(b.w, b.h) * 22, c: '255,200,140', a: 1 }); }
   // 7) iluminação noturna (camada em resolução reduzida = luz suave)
   if (day.dark > 0.01) {
     const lw = Math.ceil(vw / 2), lh = Math.ceil(vh / 2);

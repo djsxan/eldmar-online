@@ -80,7 +80,7 @@ function clientOnServer(m) {
         const e = m.k === 'm' ? G.monsters[m.id] : G.players[m.id];
         const pos = e ? tileW(e.rx, e.ry, (e.z || 0) * FLOOR_PX) : tileW(m.x, m.y);
         if (e) {
-          e.hitAt = t;
+          e.hitAt = t; if (m.ax != null) e.lastHit = [m.x - m.ax, m.y - m.ay];
           if (!(m.k === 'm' && NO_BLOOD.has(e.type)) && Math.random() < 0.4) addBlood(e.rx + (Math.random() - 0.5) * 0.5, e.ry + (Math.random() - 0.5) * 0.5, e.z || 0, 0.28 + Math.random() * 0.2, 45000);
           // empurrão na direção oposta a quem bateu (em coordenadas de tela)
           const vx = (m.x - (m.ax ?? m.x)) - (m.y - (m.ay ?? m.y)), vy = ((m.x - (m.ax ?? m.x)) + (m.y - (m.ay ?? m.y))) * 0.5, vl = Math.hypot(vx, vy) || 1;
@@ -119,7 +119,7 @@ function clientOnServer(m) {
       break;
     case 'cast': { const e = G.players[m.id]; if (e) { e.cast = { start: now, end: now + m.ms, el: m.el }; } break; }
     case 'castend': { const e = G.players[m.id]; if (e) e.cast = null; break; }
-    case 'mdie': { const e = G.monsters[m.id]; if (e) e.dieAt = now + (m.d || 0); if (G.target === m.id) setTarget(null); break; }
+    case 'mdie': { const e = G.monsters[m.id]; if (e) { e.dieAt = now + (m.d || 0); later(m.d || 0, () => beginMonsterFall(e)); } if (G.target === m.id) setTarget(null); break; }
     case 'chat': {
       addChat(m.name, m.text);
       const e = m.id && G.players[m.id];
@@ -134,6 +134,7 @@ function clientOnServer(m) {
     case 'carry': { const c = G.players[m.by]; if (c) c.carrying = m.id || null; break; }
     case 'respawned': showBanner('Capela da Aurora', 'Você despertou nas ruínas e perdeu metade da experiência do nível.', true); break;
     case 'chestopen': showBanner('Baú do chefe', '+' + m.gold + ' de ouro, 2 poções e ' + m.items.filter(k => LOOT[k]).map(k => LOOT[k].name).join(', ')); break;
+    case 'dev': if (m.ok) { G.dev = true; G.noclip = true; G.me.skin = 'weaver'; showBanner('O Tecelão desperta', 'F2 abre o painel do criador'); buildDevPanel(); } else showToast('Senha do criador incorreta.'); break;
     case 'shake': G.shake = Math.max(G.shake, m.s || 6); break;
     case 'tele': G.teles.push({ ...m, t0: now }); break;
     case 'fires': for (const [x, y, r, ms] of m.l) G.fires.push({ x, y, r, z: m.z || 0, t0: now + (m.ms || 0), until: now + ms }); G.breaths.push({ t0: now, ms: 650 }); break;
@@ -145,6 +146,7 @@ function clientOnServer(m) {
     }
     case 'obj': WORLD.obj[m.i] = m.o; break;
     case 'throwfx': G.throws.push({ ...m, t0: now }); break;
+    case 'lootgold': showToast('+ ' + m.g + ' de ouro'); break;
     case 'loot': { const it = LOOT[m.k]; if (it) { showToast('+ ' + it.name); G.newLoot = m.k; } break; }
     case 'qprog': { const q = QUESTS.find(x => x.id === m.id); if (q) showToast(`${q.name}: ${m.n}/${q.count}`); break; }
     case 'qdone': { const q = QUESTS.find(x => x.id === m.id); if (q) showBanner('Contrato cumprido', `${q.name} — +${q.xp} xp, +${q.gold} ouro`); break; }
@@ -153,6 +155,7 @@ function clientOnServer(m) {
 
 function applySnapshot(m, now) {
   G.chests = (m.ch || []).map(c => ({ id: c[0], x: c[1] / 100, y: c[2] / 100, open: !!c[3], mine: !!c[4] }));
+  G.corpses = (m.co || []).map(c => ({ id: c[0], type: MON_TYPES[c[1]], x: c[2] / 100, y: c[3] / 100, z: c[4], looted: !!c[5], ix: c[6] / 10, iy: c[7] / 10 }));
   const seenP = new Set();
   for (let [id, x100, y100, z, dir, fl, hpPct, carrying, lifted] of m.p) {
     seenP.add(id);
@@ -210,7 +213,7 @@ function monsterNear(x, y, r = 0.5) {
   for (const id in G.monsters) { const m = G.monsters[id]; if (!m.dieAt && dist(m.rx, m.ry, x, y) < r) return true; }
   return false;
 }
-function freeAt(x, y, z) { const me = G.me; if (me && me.fl > 0) return canStandFloor(x, y, me.fb, me.fl, 0.22); return canStandZ(x, y, z, 0.22) && (z >= 0.5 || G.slide || !monsterNear(x, y)); }
+function freeAt(x, y, z) { if (G.dev && G.noclip) return true; const me = G.me; if (me && me.fl > 0) return canStandFloor(x, y, me.fb, me.fl, 0.22); return canStandZ(x, y, z, 0.22) && (z >= 0.5 || G.slide || !monsterNear(x, y)); }
 
 function myInput() {
   const k = G.keys;
@@ -271,6 +274,7 @@ function updateLocal(now, dt) {
     if (me.crouch) sp *= CROUCH_MUL;
     if (kneel) sp *= KNEEL_MUL;
     if (now < (G.slowUntil || 0)) sp *= 0.5;   // rugido do dragão
+    if (G.dev) sp = PLAYER_SPEED * (G.keys.has('shift') ? 10 : 4);   // Tecelão: voo livre ultrarrápido
     if (G.slide) { const k = (now - G.slide.t0) / SLIDE_MS; sp = PLAYER_SPEED * RUN_MUL * 1.5 * (1 - k * 0.65); if (Math.random() < 0.5) { const w = tileW(me.x, me.y, 0); spawnPart('dust', w.x, w.y); } }
     if (me.carrying || me.lifted) sp *= 0.75;
     if (me.downed) sp *= 0.22;
@@ -673,6 +677,7 @@ function standUp() {
 }
 canvas.addEventListener('mousedown', e => {
   if (!G.started) return;
+  if (G.dev && G.devPlace) { if (e.button === 2) { G.devPlace = null; return; } const w = screenToWorld(e.clientX, e.clientY); Net.send({ t: 'dev', a: 'summon', kind: G.devPlace.kind, v: G.devPlace.v, x: w.x, y: w.y }); return; }
   $('chat-input').blur();
   const me = G.me;
   const mon = monsterUnderMouse(e.clientX, e.clientY);
@@ -726,11 +731,14 @@ window.addEventListener('keydown', e => {
   if (k === 'e') { drinkPot('mp'); return; }
   if (k === 'r' && G.me.downed) { Net.send({ t: 'giveup' }); return; }
   if (k === 'f' && !e.repeat && openNearChest(1.8)) return;
+  if (k === 'f' && !e.repeat && !nearestDowned()) { const c = nearCorpse(); if (c) { G.loot = { id: c.id, t0: performance.now() }; G.keys.add('f'); return; } }
   if (k === 'f' && !e.repeat) { const d = nearestDowned(); if (d) { G.reviving = d.id; Net.send({ t: 'revive', id: d.id, on: true }); } return; }
   if (k === 'g' && !e.repeat) { liftOrThrow(); return; }
   if (k === 'x') { attackNearest(); return; }
   if (k === 'v' && !e.repeat) { if (G.me.sit) standUp(); else if (!G.me.walking) sitDown(null); return; }
   if (k === 'i' && !e.repeat) { togglePanel('inv'); return; }
+  if (k === 'f2' && G.dev) { e.preventDefault(); $('devpanel').classList.toggle('hidden'); return; }
+  if (k === 'escape' && G.devPlace) { G.devPlace = null; showToast('Colocação cancelada.'); return; }
   if (k === 'j' && !e.repeat) { togglePanel('journal'); return; }
   if (k === 'm' && !e.repeat) { toggleWorldMap(); return; }
   if (k === 't') { if (!e.repeat) openEmoteWheel(); return; }
@@ -763,7 +771,7 @@ function frame() {
   S3.budget = G.started ? 2 : 5;
   let cam = lobbyCam;
   if (G.started) {
-    updateLocal(now, dt);
+    updateLocal(now, dt); updateFalls(now); updateLooting(now);
     for (const id in G.players) { const e = G.players[id]; if (id !== G.myId) { if (e.fling) stepFling(e, now); else interp(e, now); } updateIdle(e, now); bleed(e, now); }
     for (const id in G.monsters) { const q = G.monsters[id]; if (q.dieAt && !q._pool && now > q.dieAt && !NO_BLOOD.has(q.type)) { q._pool = 1; addBlood(q.rx, q.ry, q.z || 0, MON[q.type].big ? 1.3 : 0.8, 60000); } }
     for (const id in G.monsters) { const m = G.monsters[id]; interp(m, now); if (m.dieAt && now > m.dieAt + 650) delete G.monsters[id]; }
@@ -880,7 +888,7 @@ function lockLobby(b) { for (const el of document.querySelectorAll('#lobby butto
 function helloMsg() {
   const name = $('name').value.trim() || 'Aventureiro';
   const saved = loadChars()[charKey(name, chosenClass)] || {};
-  return { t: 'hello', name, color: chosenColor, cls: chosenClass, skin: chosenSkin[chosenClass], lvl: saved.lvl, xp: saved.xp, gold: saved.gold, pots: saved.pots, inv: saved.inv, quests: saved.quests, qdone: saved.qdone };
+  return { t: 'hello', dev: G.devPw || undefined, name, color: chosenColor, cls: chosenClass, skin: chosenSkin[chosenClass], lvl: saved.lvl, xp: saved.xp, gold: saved.gold, pots: saved.pots, inv: saved.inv, quests: saved.quests, qdone: saved.qdone };
 }
 function showRoom(code) { $('room-code').textContent = Net.offline ? 'offline' : code; }
 function createRoom(code = randomCode(), tries = 0) {
@@ -1132,8 +1140,10 @@ function applySettings() {
   for (const b of document.querySelectorAll('#pz-quality button')) b.classList.toggle('on', b.dataset.q === SET.quality);
   $('pz-bright').value = SET.bright; $('pz-bright-v').textContent = Math.round(SET.bright * 100) + '%';
   $('pz-zoom').value = SET.zoom; $('pz-zoom-v').textContent = Math.round(SET.zoom * 100) + '%';
+  for (const b of document.querySelectorAll('#pz-phys button')) b.classList.toggle('on', b.dataset.p === (SET.phys || 'ragdoll'));
   document.documentElement.style.setProperty('--pad', SET.pad); $('pz-pad').value = SET.pad; $('pz-pad-v').textContent = Math.round(SET.pad * 100) + '%';
 }
+for (const b of document.querySelectorAll('#pz-phys button')) b.addEventListener('click', () => { SET.phys = b.dataset.p; saveSettings(); applySettings(); });
 $('pz-pad').addEventListener('input', e => { SET.pad = +e.target.value; saveSettings(); applySettings(); });
 function togglePause(force) {
   G.paused = force != null ? force : !G.paused;
@@ -1154,6 +1164,70 @@ $('pz-full').addEventListener('click', () => { if (document.fullscreenElement) d
 $('pz-quit').addEventListener('click', () => { try { saveChar(); saveFog && G.fog && saveFog(); } catch (e) { } location.reload(); });
 applySettings();
 
+// ---------- modo criador: O Tecelão ----------
+if (/[?&]criador\b/.test(location.search)) { const pw = window.prompt('Senha do Tecelão:'); if (pw) G.devPw = pw; }
+function buildDevPanel() {
+  if ($('devpanel')) return;
+  const d = document.createElement('div'); d.id = 'devpanel'; d.className = 'gpanel';
+  const monOpts = MON_TYPES.map(k => '<option value="' + k + '">' + MON[k].name + '</option>').join('');
+  const OBJS = [['BARREL', 'Barril'], ['CRATE', 'Caixa'], ['ROCK', 'Pedra'], ['TREE', 'Árvore'], ['PINE', 'Pinheiro'], ['DEADTREE', 'Árvore morta'], ['CAMPFIRE', 'Fogueira'], ['TENT', 'Tenda'], ['TORCH', 'Tocha'], ['LAMP', 'Poste'], ['BANNER', 'Estandarte'], ['STATUE', 'Estátua'], ['BONES', 'Ossos'], ['HOARD', 'Tesouro'], ['ARMORPILE', 'Restos de cavaleiro'], ['NONE', '— apagar objeto —']];
+  const goto = [['Cidadela', CENTER, CENTER + 6]].concat(BASTIONS.map(b => [b.name, b.x, b.y]));
+  d.innerHTML = '<div class="gp-head"><span>O Tecelão</span><button class="gp-x" data-close="devpanel">✕</button></div>' +
+    '<div class="gp-sub">Poderes</div><div class="dv-row"><label><input type="checkbox" id="dv-noclip" checked> Atravessar paredes</label><label><input type="checkbox" id="dv-hide"> Invisível</label></div>' +
+    '<div class="dv-row"><button id="dv-fog">Revelar mapa</button><button id="dv-heal">Curar</button><button id="dv-clear">Limpar área</button></div>' +
+    '<div class="dv-row">Hora: <button data-t="">Real</button><button data-t="day">Dia</button><button data-t="night">Noite</button></div>' +
+    '<div class="gp-sub">Ir para</div><div class="dv-row dv-wrap">' + goto.map((g2, i) => '<button data-g="' + i + '">' + g2[0] + '</button>').join('') + '</div>' +
+    '<div class="gp-sub">Invocar</div><div class="dv-row"><select id="dv-mon">' + monOpts + '</select><button id="dv-pmon">Colocar monstro</button></div>' +
+    '<div class="dv-row"><select id="dv-obj">' + OBJS.map(o => '<option value="' + o[0] + '">' + o[1] + '</option>').join('') + '</select><button id="dv-pobj">Colocar objeto</button></div>' +
+    '<div class="gp-note">Clique no chão para colocar (vários seguidos) · botão direito ou Esc cancela · Shift voa mais rápido · clique no mapa (M) para viajar · F2 fecha</div>';
+  document.body.appendChild(d);
+  d.querySelector('.gp-x').onclick = () => d.classList.add('hidden');
+  $('dv-noclip').onchange = e => { G.noclip = e.target.checked; };
+  $('dv-hide').onchange = e => Net.send({ t: 'dev', a: 'hide', on: e.target.checked });
+  $('dv-fog').onclick = () => { if (G.fog) { G.fog.fill(1); showToast('Mapa revelado.'); } };
+  $('dv-heal').onclick = () => Net.send({ t: 'dev', a: 'heal' });
+  $('dv-clear').onclick = () => Net.send({ t: 'dev', a: 'clear' });
+  d.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { G.devTime = b.dataset.t || null; });
+  d.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { const g2 = goto[+b.dataset.g]; devTp(g2[1], g2[2] + 3); });
+  $('dv-pmon').onclick = () => { G.devPlace = { kind: 'mon', v: $('dv-mon').value }; showToast('Clique no chão para colocar.'); };
+  $('dv-pobj').onclick = () => { G.devPlace = { kind: 'obj', v: $('dv-obj').value }; showToast('Clique no chão para colocar.'); };
+  // viajar clicando no mapa
+  $('wm-canvas').addEventListener('click', e => {
+    if (!G.dev) return;
+    const cv = $('wm-canvas'), r = cv.getBoundingClientRect(), size = r.width, s = size / (MAP_W * Math.SQRT2) * 1.02;
+    const a = (e.clientX - r.left - size / 2) / Math.SQRT1_2, b2 = (e.clientY - r.top - size / 2) / Math.SQRT1_2;
+    devTp((a + b2) / 2 / s + MAP_W / 2, (b2 - a) / 2 / s + MAP_H / 2); toggleWorldMap();
+  });
+}
+function devTp(x, y) { const me = G.me; Object.assign(me, { x, y, rx: x, ry: y, z: 0, fl: 0, fb: -1 }); Net.send({ t: 'dev', a: 'tp', x, y, z: 0 }); }
+// ---------- quedas: monstros e jogadores caídos ----------
+function beginMonsterFall(e) {
+  if (e.type === 'wisp' || FALLS['m' + e.id]) return;
+  const h = e.lastHit || [Math.random() - 0.5, Math.random() - 0.5];
+  const stand = e._spr || null;
+  startFall({ key: 'm' + e.id, type: e.type, x: e.rx, y: e.ry, z: e.z || 0, dir: e.dg ?? e.dir ?? 0, ix: h[0], iy: h[1], cls: 'knight', big: MON[e.type].big, force: MON[e.type].big ? 0.7 : 1, stand });
+}
+function updateFalls(now) {
+  for (const id in G.players) {
+    const e = G.players[id];
+    if (e.downed && !e._fell && e.visible) { e._fell = true; const h = e.lastHit || [Math.random() - 0.5, Math.random() - 0.5]; startFall({ key: 'p' + id, hero: { cls: e.cls, skin: e.skin, color: e.color }, cls: e.cls, x: e.rx, y: e.ry, dir: e.dir || 0, ix: h[0], iy: h[1], stand: e._spr }); }
+    else if (!e.downed && e._fell) { e._fell = false; delete FALLS['p' + id]; }
+  }
+  for (const k in FALLS) if (k[0] === 'm' && !(G.corpses || []).some(c => 'm' + c.id === k) && now - FALLS[k].t0 > 4000) delete FALLS[k];
+}
+// revistar / esfolar: segurar F perto de um corpo
+function nearCorpse(r = 1.6) { const me = G.me; let best = null, bd = r; for (const c of G.corpses || []) { if (c.looted) continue; const d = dist(c.x, c.y, me.x, me.y); if (d < bd) { bd = d; best = c; } } return best; }
+function updateLooting(now) {
+  const me = G.me, c = nearCorpse(), pr = $('prompt');
+  if (c && !me.downed) { pr.textContent = (MON[c.type].beh ? 'Segure F para esfolar' : 'Segure F para revistar'); pr.classList.remove('hidden'); } else if (!G.loot) pr.classList.add('hidden');
+  if (G.loot) {
+    const lc = (G.corpses || []).find(q => q.id === G.loot.id);
+    if (!G.keys.has('f') || !lc || lc.looted || dist(lc.x, lc.y, me.x, me.y) > 1.9 || me.walking) { G.loot = null; me.crouch = false; return; }
+    me.crouch = true; me.walking = false;
+    if (Math.random() < 0.2) { const w = tileW(lc.x, lc.y, 0); spawnPart('dust', w.x, w.y); }
+    if (now - G.loot.t0 > 1300) { Net.send({ t: 'skin', id: lc.id }); G.loot = null; me.crouch = false; }
+  }
+}
 // ---------- pegar e arremessar objetos (G) ----------
 function liftOrThrow() {
   const me = G.me; if (!me || me.downed) return;
@@ -1172,7 +1246,7 @@ function liftOrThrow() {
   if (best >= 0) Net.send({ t: 'lift', i: best }); else showToast('Nada para pegar aqui.');
 }
 // ---------- sangue no chão: respingos, pingos de quem sangra e rastro de quem se arrasta caído (5 min) ----------
-const NO_BLOOD = new Set(['skeleton', 'cryptlord', 'slime', 'elderslime', 'wisp']);
+const NO_BLOOD = new Set(['skeleton', 'cryptlord', 'slime', 'elderslime', 'wisp', 'spider']);   // aranhas e insetos não sangram
 function addBlood(x, y, z, r, ms) { G.blood.push({ x, y, z, r, t0: performance.now(), until: performance.now() + ms, seed: Math.random() * 1000 }); if (G.blood.length > 500) G.blood.shift(); }
 function bleed(e, now) {
   if (!e.visible) return;

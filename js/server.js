@@ -71,7 +71,7 @@ function spawnAt(type, x, y, extra) {
 function initBastions() {
   S.bslots = []; S.chests = S.chests || {};
   for (const B of BASTIONS) {
-    if (B.kind === 'dragon') { S.bslots.push({ b: B, type: B.boss, pos: [B.x, B.y], boss: true, z: 1 }); continue; }
+    if (B.kind === 'dragon') { const a = Math.atan2(CENTER - B.y, CENTER - B.x); S.bslots.push({ b: B, type: B.boss, pos: [B.x + Math.cos(a) * 0.8, B.y + Math.sin(a) * 0.8], boss: true, z: 1 }); continue; }
     const spots = [];
     for (let k = 0; k < 800 && spots.length < 40; k++) { const a = Math.random() * 6.28, r = 1 + Math.random() * (B.r - 1.5), x = B.x + Math.cos(a) * r, y = B.y + Math.sin(a) * r; if (monStand(x, y, null) && REACH[Math.round(y) * MAP_W + Math.round(x)]) spots.push([x, y]); }
     if (!spots.length) continue;
@@ -96,9 +96,11 @@ function tickBastions(now) {
     const [x, y] = s.pos;
     if (s.deadAt) { let busy = false; for (const id in S.players) if (dist(S.players[id].x, S.players[id].y, x, y) < 12) busy = true; if (busy) continue; }
     const ox = s.patrol ? (s.off - 1) * 0.7 : 0;
+    if (MON[s.type].dragon && s.deadAt) { sys('Um rugido ecoa das Terras Selvagens... o dragão voltou ao covil.'); Net.toAll({ t: 'shake', s: 3 }); }
     s.mid = spawnAt(s.type, x + ox, y, { bs: s.b.id, patrol: s.patrol ? { pts: s.patrol, i: 0 } : null, z: s.z || 0, sleep: !!MON[s.type].dragon, ang: Math.PI * 0.75 }); s.deadAt = 0;
   }
   for (const id in S.chests) if (now > S.chests[id].until) delete S.chests[id];
+  for (const id in S.corpses || {}) if (now > S.corpses[id].until) delete S.corpses[id];
   // objetos quebrados voltam ao lugar depois de 3 min (se ninguém estiver em cima)
   if (S.objBack && S.objBack.length) S.objBack = S.objBack.filter(q => { if (now < q.at) return true; const x = q.i % MAP_W, y = Math.floor(q.i / MAP_W); for (const id in S.players) if (dist(S.players[id].x, S.players[id].y, x, y) < 0.9) return true; for (const id in S.monsters) if (dist(S.monsters[id].x, S.monsters[id].y, x, y) < 0.9) return true; setObj(q.i, q.o); return false; });
 }
@@ -144,6 +146,11 @@ function hostOnClient(from, m) {
     np.hp = np.maxHp; np.mp = np.maxMp;
     if (!m.lvl) { np.gold = 30; np.pots.hp = 3; np.pots.mp = 2; } // kit inicial
     S.players[from] = np;
+    if (m.dev && typeof crypto !== 'undefined' && crypto.subtle) crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(m.dev))).then(buf => {
+      const h = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+      if (h !== DEV_HASH || !S.players[from]) { Net.toOne(from, { t: 'dev', ok: 0 }); return; }
+      np.dev = true; np.skin = 'weaver'; np.devHidden = false; Net.toOne(from, { t: 'dev', ok: 1 }); Net.toAll({ t: 'pinfo', p: pinfo(np) });
+    });
     Net.toOne(from, { t: 'welcome', you: from, x: np.x, y: np.y, players: Object.values(S.players).map(pinfo), objs: S.objMods || {} });
     Net.toOthers({ t: 'pinfo', p: pinfo(np) }, from);
     sendStat(np);
@@ -216,6 +223,27 @@ function hostOnClient(from, m) {
       }, ms);
       break;
     }
+    case 'dev': {
+      if (!p.dev) break;
+      const x = +m.x, y = +m.y;
+      if (m.a === 'summon' && isFinite(x) && isFinite(y) && inBounds(Math.round(x), Math.round(y))) {
+        const t = Math.round(y) * MAP_W + Math.round(x), top = WORLD.ground[t] === T.CLIFF && WORLD.fl1[t] > 0;
+        if (m.kind === 'mon' && MON[m.v]) spawnAt(m.v, x, y, { z: top ? 1 : 0, sleep: !!MON[m.v].dragon, ang: 0 });
+        else if (m.kind === 'obj' && O[m.v] != null && WORLD.bld[t] < 0) setObj(t, O[m.v]);
+      } else if (m.a === 'clear') { for (const id in S.monsters) { const q = S.monsters[id]; if (dist(q.x, q.y, p.x, p.y) < 12) { delete S.monsters[id]; near(q.x, q.y, { t: 'mdie', id: q.id, d: 0 }); } } }
+      else if (m.a === 'heal') { p.hp = p.maxHp; p.mp = p.maxMp; sendStat(p); }
+      else if (m.a === 'hide') p.devHidden = !!m.on;
+      else if (m.a === 'tp' && isFinite(x) && isFinite(y)) { p.x = clamp(x, 1, MAP_W - 2); p.y = clamp(y, 1, MAP_H - 2); p.z = +m.z || 0; p.fl = 0; p.fb = -1; Net.toOne(p.id, { t: 'tp', x: p.x, y: p.y, z: p.z, fl: 0, fb: -1 }); }
+      break;
+    }
+    case 'skin': {
+      const c = S.corpses && S.corpses[m.id]; if (!c || c.looted || p.downed || dist(p.x, p.y, c.x, c.y) > 1.9) break;
+      c.looted = true;
+      if (c.gold) { p.gold += c.gold; Net.toOne(p.id, { t: 'lootgold', g: c.gold }); }
+      for (const k of c.items) { if (!p.inv[k] && Object.keys(p.inv).length >= INV_SLOTS) { tell(p, 'Inventário cheio.'); break; } p.inv[k] = Math.min(999, (p.inv[k] || 0) + 1); Net.toOne(p.id, { t: 'loot', k }); }
+      if (!c.gold && !c.items.length) tell(p, 'Nada de útil aqui.');
+      sendStat(p); break;
+    }
     case 'open': {
       const c = S.chests && S.chests[m.id]; if (!c || p.downed || dist(p.x, p.y, c.x, c.y) > 2) break;
       if (!c.who.has(p.id)) { tell(p, 'Este baú não é seu: você não lutou contra o chefe.'); break; }
@@ -242,6 +270,7 @@ function hostOnClient(from, m) {
 function handleMove(p, m) {
   if (p.carriedBy) return;
   if (now_() < (p.flungUntil || 0)) return;   // voando/caído depois do golpe de cauda
+  if (p.dev) { const x = +m.x, y = +m.y; if (isFinite(x) && isFinite(y)) { p.x = clamp(x, 1, MAP_W - 2); p.y = clamp(y, 1, MAP_H - 2); p.z = +m.z || 0; p.dir = m.d | 0; p.walking = !!m.w; p.lastMv = now_(); } return; }
   const now = now_();
   const x = +m.x, y = +m.y;
   if (!isFinite(x) || !isFinite(y)) return;
@@ -311,20 +340,11 @@ function killMonster(m, p, delay) {
   near(m.x, m.y, { t: 'mdie', id: m.id, d: delay });
   for (const id in S.players) if (S.players[id].target === m.id) S.players[id].target = null;
   const def = MON[m.type];
-  const gold = rint(def.gold[0], def.gold[1]);
-  p.gold += gold;
-  if (gold > 0) sfx(m.x, m.y, `+${gold} ouro`, '#e8c860', delay + 250);
-  // saque: material do monstro (55%, troll sempre) e gema rara (3%)
-  const drops = [];
+  // o corpo fica no chão (até o monstro voltar) com o ouro e os recursos dentro: é preciso revistar/esfolar (segurar F)
+  const gold = rint(def.gold[0], def.gold[1]), drops = [];
   for (const [k, ch] of MON_LOOT[m.type] || []) if (Math.random() < ch) drops.push(k);
   if (Math.random() < 0.03) drops.push('gem');
-  for (const k of drops) {
-    if (!p.inv[k] && Object.keys(p.inv).length >= INV_SLOTS) { tell(p, 'Inventário cheio.'); break; }
-    p.inv[k] = Math.min(999, (p.inv[k] || 0) + 1);
-    sfx(m.x, m.y, '+ ' + LOOT[k].name, LOOT[k].color, delay + 600);
-    Net.toOne(p.id, { t: 'loot', k });
-  }
-  if (drops.length) sendStat(p);
+  if (m.type !== 'wisp') (S.corpses = S.corpses || {})[m.id] = { id: m.id, type: m.type, x: m.x, y: m.y, z: m.z || 0, gold, items: drops, looted: !gold && !drops.length, until: now_() + (def.dragon ? (BASTIONS.find(b => b.id === 'dragon') || {}).respawn || BOSS_RESPAWN : def.boss ? BOSS_RESPAWN : BASTION_RESPAWN), ix: m.x - p.x, iy: m.y - p.y };
   if (def.boss) spawnChest(m);
   const group = Object.values(S.players).filter(q => !q.downed && dist(q.x, q.y, m.x, m.y) <= 10);
   if (!group.includes(p)) group.push(p);
@@ -363,6 +383,7 @@ function gainXp(p, amount, delay = 0) {
 }
 
 function damagePlayer(p, raw, m, delay = 0) {
+  if (p.dev) return;   // o Tecelão não se fere
   if (p.downed) {
     // lobos atacam quem está caído: a pessoa sangra mais rápido
     if (m && MON[m.type].beh === 'pred') { p.downed.until -= 2500; near(p.x, p.y, { t: 'hit', k: 'p', id: p.id, x: p.x, y: p.y, dmg: 0, d: delay, ax: m.x, ay: m.y }); }
@@ -656,7 +677,7 @@ function monsterThink(m, players, now, dt) {
   }
   let tgt = null;
   const pred = d.beh === 'pred';
-  const valid = p => p && (!p.downed || (pred && !p.carriedBy)) && p.z < 0.5 && !inSafe(p.x, p.y);
+  const valid = p => p && !p.dev && (!p.downed || (pred && !p.carriedBy)) && p.z < 0.5 && !inSafe(p.x, p.y);
   // lobo: sempre caça quem está de joelhos ou caído; quem está cansado, 50% de chance (sorteio renovado a cada 8 s)
   const prey = p => {
     if (!pred) return true;
@@ -705,10 +726,12 @@ const angDiff = (a, b) => { let d = (a - b) % (Math.PI * 2); if (d > Math.PI) d 
 function dragonDir(m) { const dx = Math.cos(m.ang), dy = Math.sin(m.ang); return dirFromVec(dx, dy, 0); }
 function dragonThink(m, players, now, dt) {
   const d = MON[m.type];
-  const onTop = p => p && !p.downed && p.z >= 0.5 && dist(p.x, p.y, m.homeX, m.homeY) < 8;
+  const onTop = p => p && !p.dev && !p.downed && p.z >= 0.5 && dist(p.x, p.y, m.homeX, m.homeY) < 8;
   const near0 = players.filter(onTop);
   if (m.sleep) {
-    const wake = m.aggro || near0.some(p => dist(p.x, p.y, m.x, m.y) < (p.crouch ? 2.2 : 4.5));
+    // acorda com quem chega perto (agachado chega mais perto) ou com barulho (correr, lutar) num raio maior
+    const noisy = p => (p.running && p.walking) || now - p.lastCombat < 2500;
+    const wake = m.aggro || near0.some(p => dist(p.x, p.y, m.x, m.y) < (p.crouch ? 2.2 : 4.5)) || players.some(p => !p.dev && !p.downed && !p.crouch && noisy(p) && dist(p.x, p.y, m.x, m.y) < 10);
     if (!wake) return;
     m.sleep = false; m.nextRoar = now + 300; m.busyUntil = now + 300;
   }
@@ -721,6 +744,9 @@ function dragonThink(m, players, now, dt) {
     return;
   }
   m.idleSince = 0;
+  // fúria abaixo de 30%: mais rápido, sopro mais largo, olhos e garganta brilhando
+  const fury = m.hp < d.hp * 0.3; if (fury && !m.fury) { m.fury = true; near(m.x, m.y, { t: 'shake', s: 10 }); sys(d.name + ' entra em fúria!'); }
+  const cdk = fury ? 0.6 : 1;
   if (now < (m.busyUntil || 0)) return;
   const tgt = near0.find(p => p.id === m.aggro) || near0.slice().sort((a, b) => dist(a.x, a.y, m.x, m.y) - dist(b.x, b.y, m.x, m.y))[0];
   m.aggro = tgt.id;
@@ -736,19 +762,19 @@ function dragonThink(m, players, now, dt) {
   // golpe de cauda: quem está atrás ou dos lados voa longe
   const flank = near0.filter(p => dist(p.x, p.y, m.x, m.y) < 4.4 && Math.abs(angDiff(Math.atan2(p.y - m.y, p.x - m.x), m.ang)) > 1.5);
   if (flank.length && now >= (m.cdTail || 0)) {
-    m.cdTail = now + 5500; m.busyUntil = now + DRAGON_MS.tail; anim('m', m, 'tail', flank[0].x, flank[0].y);
+    m.cdTail = now + 5500 * cdk; m.busyUntil = now + DRAGON_MS.tail; anim('m', m, 'tail', flank[0].x, flank[0].y);
     setTimeout(() => { if (!S.monsters[m.id]) return; for (const p of Object.values(S.players)) { if (p.downed || p.z < 0.5 || dist(p.x, p.y, m.x, m.y) > 4.6 || Math.abs(angDiff(Math.atan2(p.y - m.y, p.x - m.x), m.ang)) < 1.1) continue; damagePlayer(p, rint(24, 38), m, 0); if (!p.downed) flingPlayer(p, m.x, m.y, 6); } }, 430);
     return;
   }
   // sopro de fogo: avisa no chão, depois queima o cone e deixa o chão em chamas
   if (dd > 3.0 && dd < 8.5 && Math.abs(turn) < 0.5 && now >= (m.cdBreath || 0)) {
-    m.cdBreath = now + 9000; m.busyUntil = now + DRAGON_MS.breath; m.ang = want;
+    m.cdBreath = now + 9000 * cdk; m.busyUntil = now + DRAGON_MS.breath; m.ang = want;
     anim('m', m, 'breath', tgt.x, tgt.y);
     const a0 = want, x0 = m.x + Math.cos(a0) * 2.2, y0 = m.y + Math.sin(a0) * 2.2;
-    near(m.x, m.y, { t: 'tele', x: x0, y: y0, z: 1, a: a0, len: 7.5, w: 0.5, ms: 1050 });
+    const bw = fury ? 0.7 : 0.5; near(m.x, m.y, { t: 'tele', x: x0, y: y0, z: 1, a: a0, len: 7.5, w: bw, ms: 1050 });
     setTimeout(() => {
       if (!S.monsters[m.id]) return;
-      for (const p of Object.values(S.players)) { if (p.downed) continue; const ax = p.x - x0, ay = p.y - y0, l = Math.hypot(ax, ay); if (l > 7.5 || Math.abs(angDiff(Math.atan2(ay, ax), a0)) > 0.5) continue; damagePlayer(p, rint(38, 56), m, 0); }
+      for (const p of Object.values(S.players)) { if (p.downed) continue; const ax = p.x - x0, ay = p.y - y0, l = Math.hypot(ax, ay); if (l > 7.5 || Math.abs(angDiff(Math.atan2(ay, ax), a0)) > bw) continue; damagePlayer(p, rint(38, 56), m, 0); }
       const list = []; for (let k = 1; k <= 6; k++) { const r = k * 1.15, sp = (Math.random() - 0.5) * r * 0.5; list.push([x0 + Math.cos(a0) * r - Math.sin(a0) * sp, y0 + Math.sin(a0) * r + Math.cos(a0) * sp, 0.9 + k * 0.08, 5000]); }
       S.fires = (S.fires || []).concat(list.map(([x, y, r, ms]) => ({ x, y, r, until: now_() + ms })));
       near(m.x, m.y, { t: 'fires', l: list, z: 1, ms: 520 });
@@ -757,10 +783,10 @@ function dragonThink(m, players, now, dt) {
   }
   // mordida
   if (dd <= 3.4) {
-    if (now >= m.nextAtk && Math.abs(turn) < 0.8) { m.nextAtk = now + 1800; m.busyUntil = now + 500; anim('m', m, 'bite', tgt.x, tgt.y); setTimeout(() => { if (S.monsters[m.id] && !tgt.downed && dist(tgt.x, tgt.y, m.x, m.y) < 3.7) damagePlayer(tgt, rint(d.dmg[0], d.dmg[1]), m, 0); }, 380); }
+    if (now >= m.nextAtk && Math.abs(turn) < 0.8) { m.nextAtk = now + 1800 * cdk; m.busyUntil = now + 500; anim('m', m, 'bite', tgt.x, tgt.y); setTimeout(() => { if (S.monsters[m.id] && !tgt.downed && dist(tgt.x, tgt.y, m.x, m.y) < 3.7) damagePlayer(tgt, rint(d.dmg[0], d.dmg[1]), m, 0); }, 380); }
     return;
   }
-  moveToward(m, tgt.x, tgt.y, d.speed * dt);
+  moveToward(m, tgt.x, tgt.y, d.speed * dt * (fury ? 1.35 : 1));
 }
 // arremesso realista: a pessoa voa em arco para longe e cai (pode cair da mesa)
 function flingPlayer(p, fx, fy, D) {
@@ -848,16 +874,18 @@ function hostTick() {
     const pl = [], ml = [];
     for (const p of players) {
       if (dist(p.x, p.y, r.x, r.y) > VIEW_RADIUS) continue;
+      if (p.devHidden && p.id !== r.id) continue;
       let fl = (p.walking ? 1 : 0) | (p.downed ? 2 : 0) | (p.carriedBy ? 4 : 0) | (p.carrying ? 8 : 0) | (p.running && p.walking ? 256 : 0) | (p.sit ? 512 : 0) | (p.sit === 'c' ? 1024 : 0) | ((p.fl || 0) << 11) | (p.crouch ? 8192 : 0) | (p.slide ? 16384 : 0);
       for (const b in BUFF_BITS) if (buffOn(p, b)) fl |= BUFF_BITS[b];
       pl.push([p.id, Math.round(p.x * 100), Math.round(p.y * 100), Math.round(p.z * 100), p.dir | 0, fl, Math.round(p.hp / p.maxHp * 100), p.carrying || 0, p.lifted || 0]);
     }
     for (const m of mons) {
       if (Math.abs(m.x - r.x) > VIEW_RADIUS || Math.abs(m.y - r.y) > VIEW_RADIUS) continue;
-      ml.push([m.id, MON_TYPES.indexOf(m.type), Math.round(m.x * 100), Math.round(m.y * 100), m.hp, (m.slowUntil > now ? 1 : 0) | (m.stunUntil > now ? 2 : 0) | (m.sleep ? 4 : 0), m.face, MON[m.type].dragon ? dragonDir(m) : -1]);
+      ml.push([m.id, MON_TYPES.indexOf(m.type), Math.round(m.x * 100), Math.round(m.y * 100), m.hp, (m.slowUntil > now ? 1 : 0) | (m.stunUntil > now ? 2 : 0) | (m.sleep ? 4 : 0) | (m.fury ? 8 : 0), m.face, MON[m.type].dragon ? dragonDir(m) : -1]);
     }
     const ch = []; for (const id in S.chests) { const c = S.chests[id]; if (Math.abs(c.x - r.x) <= VIEW_RADIUS && Math.abs(c.y - r.y) <= VIEW_RADIUS) ch.push([c.id, Math.round(c.x * 100), Math.round(c.y * 100), c.opened.has(r.id) ? 1 : 0, c.who.has(r.id) ? 1 : 0]); }
-    Net.toOne(r.id, { t: 's', p: pl, m: ml, ch }, true);
+    const co = []; for (const id in S.corpses || {}) { const c = S.corpses[id]; if (Math.abs(c.x - r.x) <= VIEW_RADIUS && Math.abs(c.y - r.y) <= VIEW_RADIUS) co.push([c.id, MON_TYPES.indexOf(c.type), Math.round(c.x * 100), Math.round(c.y * 100), c.z, c.looted ? 1 : 0, Math.round(c.ix * 10), Math.round(c.iy * 10)]); }
+    Net.toOne(r.id, { t: 's', p: pl, m: ml, ch, co }, true);
   }
 }
 

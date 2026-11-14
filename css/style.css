@@ -328,3 +328,10 @@ body.tired #game { filter: saturate(0.8); }
 #btn-crouch { display: none; position: fixed; z-index: 6; left: 66px; bottom: 312px; width: 44px; height: 44px; border-radius: 50%; border: 0; font-size: 20px; color: #e8d29a; background: rgba(20,14,8,0.6); box-shadow: 0 0 0 1px rgba(201,162,74,0.5); }
 body.touch #btn-crouch { display: block; } #btn-crouch.on { background: rgba(140,100,40,0.8); color: #fff; }
 
+
+/* painel do criador (O Tecelão) */
+#devpanel { top: 80px; left: auto; right: 16px; transform: none; width: 340px; z-index: 32; }
+#devpanel .dv-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 5px 0; font-size: 14px; }
+#devpanel button, #devpanel select { padding: 4px 8px; font: 600 13px 'Alegreya Sans SC', sans-serif; color: #f0e2c0; background: #2a2016; border: 1px solid #6a5028; border-radius: 4px; cursor: pointer; }
+#devpanel select { flex: 1; }
+#devpanel label { display: flex; gap: 4px; align-items: center; cursor: pointer; }
