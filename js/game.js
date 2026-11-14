@@ -172,7 +172,7 @@ function clientOnServer(m) {
     case 'whiff': case 'swoosh': break;
     case 'miss': { const e = G.monsters[m.id]; if (e) { const w = tileW(e.rx, e.ry, 30); for (let k = 0; k < 5; k++) spawnPart('dust', w.x, w.y); } break; }
     case 'dead': {
-      G.dead = true; .classList.add('hidden'); .classList.add('hidden'); try { const all = loadChars(); delete all[charKey(G.me.name, G.me.cls)]; localStorage.setItem(SAVE_KEY, JSON.stringify(all)); } catch (e) { }
+      G.dead = true; $('downed-ui').classList.add('hidden'); $('hud').classList.add('hidden'); try { const all = loadChars(); delete all[charKey(G.me.name, G.me.cls)]; localStorage.setItem(SAVE_KEY, JSON.stringify(all)); } catch (e) { }
       const d = document.createElement('div'); d.id = 'deathscreen'; d.innerHTML = '<div class="ds-box"><div class="ds-title">Você morreu</div><div class="ds-sub">' + m.name + ', nível ' + m.lvl + ' — ' + m.reason + '</div><div class="ds-note">Em Sxan a morte é para sempre. Seu personagem se foi.</div><button class="btn gold" onclick="location.reload()">Começar de novo</button></div>';
       document.body.appendChild(d); break;
     }
