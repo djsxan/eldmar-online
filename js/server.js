@@ -254,6 +254,13 @@ function hostOnClient(from, m) {
     case 'aim': if (['head', 'torso', 'legs'].includes(m.z)) p.aim = m.z; break;
     case 'band': bandage(p); break;
     case 'use': useItem(p, String(m.k)); break;
+    case 'harvest': {
+      const i = m.i | 0, o = WORLD.obj[i], x = i % MAP_W, y = Math.floor(i / MAP_W); if (p.downed || dist(p.x, p.y, x, y) > 1.8 || (o !== O.BERRY && o !== O.HERB)) break;
+      const k = o === O.BERRY ? 'berries' : 'herb', n = o === O.BERRY ? 2 + (Math.random() < 0.5 ? 1 : 0) : 1;
+      if (!p.inv[k] && Object.keys(p.inv).length >= INV_SLOTS) { tell(p, 'Inventário cheio.'); break; }
+      p.inv[k] = (p.inv[k] || 0) + n; setObj(i, o === O.BERRY ? O.BUSH : O.NONE); (S.objBack = S.objBack || []).push({ i, o, at: now_() + (o === O.BERRY ? 240000 : 300000) });
+      Net.toOne(p.id, { t: 'loot', k }); sendStat(p); break;
+    }
     case 'cook': cookOrDrink(p, 'cook'); break;
     case 'drinkw': cookOrDrink(p, 'drink'); break;
     case 'skin': {
@@ -450,6 +457,7 @@ function useItem(p, k) {
   const take = () => { if (--p.inv[k] <= 0) delete p.inv[k]; };
   if (FOOD[k]) { take(); p.food = Math.min(100, p.food + FOOD[k]); if (k === 'cookedmeat') p.water = Math.max(0, p.water - 5); if ((k === 'venison' || k === 'pork') && Math.random() < 0.3) { p.sickUntil = now + 120000; tell(p, 'A carne crua caiu mal. Você está enjoado (sede dobrada por 2 min).'); } else tell(p, 'Você comeu ' + LOOT[k].name.toLowerCase() + '.'); }
   else if (k === 'ointment') { take(); p.infect = 0; p.infT = 0; tell(p, 'O unguento arde, mas a febre baixa.'); }
+  else if (k === 'herb') { take(); p.infect = Math.max(0, (p.infect || 0) - 1); p.infT = 0; for (const b of BODY_PARTS) if (p.bleed[b] > 0 && p.bleed[b] <= 0.6) p.bleed[b] = 0; tell(p, 'A erva amarga acalma a febre e estanca os cortes leves.'); }
   else if (k === 'firewood') {
     const tx = Math.round(p.x + Math.cos(p.fa || 0)), ty = Math.round(p.y + Math.sin(p.fa || 0)), t = ty * MAP_W + tx;
     if (!inBounds(tx, ty) || WORLD.obj[t] !== O.NONE || WORLD.bld[t] >= 0 || WORLD.ground[t] === T.WATER || WORLD.ground[t] === T.CLIFF) { tell(p, 'Não dá para acender a fogueira aí.'); return; }
@@ -715,7 +723,7 @@ function npcAction(p, m) {
     say(`${qty}x ${ITEMS[m.item].name}. Boa caçada, e volte inteiro.`);
   } else if (n.id === 'merchant' && m.a === 'sell') {
     let total = 0, n2 = 0;
-    for (const k in p.inv) { if (!LOOT[k] || (m.item && m.item !== k) || (!m.item && ['bread', 'cookedmeat', 'ointment', 'firewood'].includes(k))) continue; total += LOOT[k].price * p.inv[k]; n2 += p.inv[k]; delete p.inv[k]; }
+    for (const k in p.inv) { if (!LOOT[k] || (m.item && m.item !== k) || (!m.item && ['bread', 'cookedmeat', 'ointment', 'firewood', 'berries', 'herb'].includes(k))) continue; total += LOOT[k].price * p.inv[k]; n2 += p.inv[k]; delete p.inv[k]; }
     if (!n2) { say('Você não tem nada que me interesse agora.'); return; }
     p.gold += total;
     say(`Fechado: ${n2} ${n2 > 1 ? 'itens' : 'item'} por ${total} de ouro. Traga mais quando puder.`);

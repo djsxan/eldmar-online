@@ -399,6 +399,74 @@ function mBush(v) {
   if (v === 2) for (let k = 0; k < 14; k++) { const a = R() * 6.28; g.add(mk(new THREE.SphereGeometry(0.03, 6, 5).translate(Math.cos(a) * 0.35, 0.2 + R() * 0.4, Math.sin(a) * 0.35), smat(null, '#6a1a3a', { rough: 0.35 }))); }
   return g;
 }
+// ---------- espécies novas ----------
+function mOak(v) {
+  const R = rng(1101 + v * 7), bark = smat('bark', '#5a4430', { bump: 2.2 }), g = grp();
+  const top = V3((R() - 0.5) * 0.1, 0.85, (R() - 0.5) * 0.1); g.add(limb(V3(0, -0.05, 0), top, 0.24, 0.17, bark, 10));
+  for (let k = 0; k < 5; k++) { const a = k / 5 * Math.PI * 2 + R(); g.add(limb(V3(0, 0.2, 0), V3(Math.cos(a) * 0.4, -0.02, Math.sin(a) * 0.4), 0.1, 0.03, bark, 6)); }
+  const leafM = smat(null, '#5a8a3a', { leafMap: leafTex(), rough: 0.85 }), blobs = [[0, 1.75, 0, 0.75, 0.48]];
+  for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2 + R() * 0.6, d = 0.7 + R() * 0.2; blobs.push([Math.cos(a) * d, 1.35 + R() * 0.35, Math.sin(a) * d, 0.55 + R() * 0.12, 0.38 + R() * 0.08]); }
+  for (const [bx, by, bz, rx, ry] of blobs) { if (bx || bz) g.add(limb(V3(top.x, 0.8, top.z), V3(bx * 0.75, by - 0.2, bz * 0.75), 0.1, 0.045, bark, 6)); g.add(crown(R, bx, by, bz, rx, ry, Math.round(rx * 120), 0.42, leafM, '#203a16')); }
+  return g;
+}
+function mBirch(v) {
+  const R = rng(1201 + v * 7), bark = smat(null, '#e8e2d2', { rough: 0.7 }), dark = smat(null, '#2a2622', { rough: 0.9 }), g = grp();
+  const top = V3((R() - 0.5) * 0.25, 2.2, (R() - 0.5) * 0.25); g.add(limb(V3(0, -0.05, 0), top, 0.085, 0.045, bark, 8));
+  for (let k = 0; k < 10; k++) { const t = 0.1 + R() * 0.8, y = t * 2.1; g.add(mk(new THREE.BoxGeometry(0.05 + R() * 0.05, 0.02, 0.012).translate(top.x * t + (R() - 0.5) * 0.02, y, top.z * t + 0.07), dark, false)); }
+  const leafM = smat(null, '#9ac04e', { leafMap: leafTex(), rough: 0.8 });
+  for (let k = 0; k < 5; k++) { const a = k * 1.3 + R(), y = 1.3 + k * 0.22, d = 0.25 + R() * 0.15; g.add(limb(V3(top.x * y / 2.2, y - 0.2, top.z * y / 2.2), V3(Math.cos(a) * d, y + 0.1, Math.sin(a) * d), 0.025, 0.012, bark, 5)); g.add(crown(R, Math.cos(a) * d, y + 0.1, Math.sin(a) * d, 0.3, 0.28, 40, 0.28, leafM, null)); }
+  g.add(crown(R, top.x, 2.3, top.z, 0.35, 0.3, 46, 0.28, leafM, null));
+  return g;
+}
+function mWillow(v) {
+  const R = rng(1301 + v * 7), bark = smat('bark', '#4e4232', { bump: 2 }), g = grp();
+  const lean = (R() - 0.5) * 0.4, top = V3(lean, 1.25, (R() - 0.5) * 0.3); g.add(limb(V3(0, -0.05, 0), top, 0.2, 0.13, bark, 9));
+  const leafM = smat(null, '#7aa04a', { leafMap: leafTex(), rough: 0.85, side: THREE.DoubleSide });
+  g.add(crown(R, top.x, 1.75, top.z, 0.85, 0.45, 110, 0.4, leafM, '#2a4020'));
+  // galhos caídos: cortinas de folhas penduradas até perto do chão
+  const cards = [];
+  for (let k = 0; k < 90; k++) { const a = R() * Math.PI * 2, d = 0.55 + R() * 0.45, len = 0.8 + R() * 0.6; for (let s = 0; s < 3; s++) cards.push({ x: top.x + Math.cos(a) * d, y: 1.7 - s * len / 3 - 0.15, z: top.z + Math.sin(a) * d, rx: 0, ry: a + Math.PI / 2, rz: (R() - 0.5) * 0.3, s: 0.32 }); }
+  g.add(mk(leafCards(cards, V3(top.x, 1.2, top.z), 0.32), leafM));
+  return g;
+}
+function mFern(v) {
+  const R = rng(1401 + v * 5), g = grp(), leafM = smat(null, ['#4a7a30', '#5a8a36', '#6a8a3a'][v % 3], { leafMap: leafTex(), rough: 0.85, side: THREE.DoubleSide });
+  const cards = [];
+  for (let f = 0; f < 9; f++) { const a = f / 9 * Math.PI * 2 + R() * 0.4, len = 0.45 + R() * 0.25; for (let s = 1; s <= 6; s++) { const t = s / 6, rr = t * len, h = Math.sin(t * Math.PI * 0.85) * 0.35; cards.push({ x: Math.cos(a) * rr, y: h, z: Math.sin(a) * rr, rx: -0.6 + t, ry: -a, rz: 0, s: 0.14 * (1.2 - t * 0.6) }); } }
+  g.add(mk(leafCards(cards, V3(0, 0.1, 0), 0.14), leafM, false));
+  return g;
+}
+function mRoots(v) {
+  const R = rng(1501 + v), bark = smat('bark', '#4a3826', { bump: 2 }), g = grp();
+  for (let k = 0; k < 5; k++) { const a = R() * 6.28, a2 = a + (R() - 0.5) * 1.2, l = 0.35 + R() * 0.25; g.add(limb(V3(Math.cos(a) * 0.05, 0.06, Math.sin(a) * 0.05), V3(Math.cos(a) * l * 0.6, 0.09, Math.sin(a) * l * 0.6), 0.05, 0.035, bark, 5)); g.add(limb(V3(Math.cos(a) * l * 0.6, 0.09, Math.sin(a) * l * 0.6), V3(Math.cos(a2) * l, 0.0, Math.sin(a2) * l), 0.035, 0.012, bark, 5)); }
+  return g;
+}
+function mShrooms(v) {
+  const R = rng(1601 + v), g = grp(), stem = smat(null, '#e8dfca', { rough: 0.7 }), cap = smat(null, v ? '#8a5a2a' : '#c8b07a', { rough: 0.5 });
+  for (let k = 0; k < 9; k++) { const a = k / 9 * Math.PI * 2, x = Math.cos(a) * 0.36, z = Math.sin(a) * 0.36, s = 0.7 + R() * 0.5; g.add(mk(CYL(0.018 * s, 0.024 * s, 0.1 * s, x, 0.05 * s, z, 7), stem)); g.add(mk(new THREE.SphereGeometry(0.06 * s, 12, 6, 0, 6.28, 0, Math.PI / 2).scale(1, 0.6, 1).translate(x, 0.09 * s, z), cap)); }
+  return g;
+}
+function mBerry(v) {
+  const R = rng(1701 + v * 3), leafM = smat(null, '#4e7a34', { leafMap: leafTex(), rough: 0.8 }), g = grp();
+  for (const [x, z, r] of [[-0.18, 0.05, 0.28], [0.18, -0.05, 0.28], [0, 0, 0.33]]) g.add(crown(R, x, r * 0.85, z, r, r * 0.75, 44, 0.28, leafM, '#1a301a'));
+  const berry = smat(null, v ? '#2a2a7a' : '#c0182a', { rough: 0.3 });
+  for (let k = 0; k < 22; k++) { const a = R() * 6.28, el = R() * 1.2; g.add(mk(new THREE.SphereGeometry(0.03, 7, 5).translate(Math.cos(a) * 0.32 * Math.cos(el - 0.3), 0.22 + Math.sin(el) * 0.25, Math.sin(a) * 0.32 * Math.cos(el - 0.3)), berry)); }
+  return g;
+}
+function mHerb(v) {
+  const R = rng(1801 + v), g = grp(), leafM = smat(null, '#6aa040', { leafMap: leafTex(), rough: 0.8, side: THREE.DoubleSide }), fl = smat(null, v ? '#c8b8f0' : '#f4f0e0', { emissive: v ? '#4a3a7a' : '#4a4a3a', ei: 0.2 });
+  const cards = []; for (let k = 0; k < 14; k++) { const a = R() * 6.28, r = 0.05 + R() * 0.14; cards.push({ x: Math.cos(a) * r, y: 0.05 + R() * 0.18, z: Math.sin(a) * r, rx: -0.9, ry: -a, rz: 0, s: 0.12 }); }
+  g.add(mk(leafCards(cards, V3(0, 0.1, 0), 0.12), leafM, false));
+  for (let k = 0; k < 6; k++) { const a = R() * 6.28, r = R() * 0.1, h = 0.3 + R() * 0.12; g.add(limb(V3(Math.cos(a) * r, 0, Math.sin(a) * r), V3(Math.cos(a) * r, h, Math.sin(a) * r), 0.006, 0.004, smat(null, '#4a7a2a'), 4)); g.add(mk(new THREE.SphereGeometry(0.025, 6, 5).translate(Math.cos(a) * r, h, Math.sin(a) * r), fl)); }
+  return g;
+}
+function mBoulder(v) {
+  const g = rockGeo(1900 + v * 11, 0.7, 1.15, 0.85, 1.0).translate(0, 0.32, 0);
+  vcolor(g, (c, x, y, z, ny) => { const m = ny > 0.25 && vnoise(x * 4, z * 4, 19) > 0.3; const l = vnoise(x * 9, y * 9, 21) > 0.75; c.set(m ? '#4e6e2c' : l ? '#a8a070' : '#6e6a62'); c.convertSRGBToLinear(); });
+  return grp(mk(g, smat('rock', '#ffffff', { vc: true, bump: 1.5 })));
+}
+const NATURE = { oak: [mOak, 2.15], birch: [mBirch, 2.0], willow: [mWillow, 2.05], fern: [mFern, 1.15], roots: [mRoots, 1.0], shrooms: [mShrooms, 0.95], berry: [mBerry, 1.05], herb: [mHerb, 1.0], boulder: [mBoulder, 1.15] };
+function natureSprite(kind, v) { const N = NATURE[kind]; if (!N || !S3.ok) return null; return scen3('nt|' + kind + '|' + v, () => { const g = N[0](v); g.scale.setScalar(N[1]); return g; }); }
 function rockGeo(seed, r, sx, sy, sz) {
   const g = new THREE.IcosahedronGeometry(r, 2), p = g.attributes.position, R = rng(seed), off = [R() * 9, R() * 9, R() * 9];
   for (let i = 0; i < p.count; i++) {
@@ -1347,10 +1415,10 @@ function interiorSprite(b, fl = 0) {
     const orig = window[name];
     window[name] = function (...a) { return scen3(key(...a), () => make(...a)) || orig.apply(null, a); };
   };
-  wrap('treeSprite', (v, w, t) => `tr|${v}|${t}`, (v, w, t) => sc(mTree(v, t || 0), 1.35));
-  wrap('pineSprite', v => `pi|${v}`, v => sc(mPine(v), 1.35));
-  wrap('deadTreeSprite', v => `dt|${v}`, v => sc(mDeadTree(v), 1.25));
-  wrap('bushSprite', v => `bu|${v}`, v => sc(mBush(v), 0.8));
+  wrap('treeSprite', (v, w, t) => `tr|${v}|${t}`, (v, w, t) => sc(mTree(v, t || 0), 2.15));
+  wrap('pineSprite', v => `pi|${v}`, v => sc(mPine(v), v % 2 ? 2.45 : 1.95));
+  wrap('deadTreeSprite', v => `dt|${v}`, v => sc(mDeadTree(v), 2.0));
+  wrap('bushSprite', v => `bu|${v}`, v => sc(mBush(v), 1.05));
   wrap('rockSprite', (v, m) => `ro|${v}|${m}`, (v, m) => mRock(v, m));
   wrap('grassSprite', (v, w, d) => `gr|${v}|${d}`, (v, w, d) => sc(mGrass(v, d), 0.7));
   const SMALL = { mushroom: mMushroom, reeds: mReeds, stump: mStump, log: mLog, deadtree: mDeadTree, grave: mGrave, tent: mTent, barrel: mBarrel, crate: mCrate, hay: mHay, bench: mBench, well: mWell, stall: mStall, spikes: mSpikes, rubblebig: mRubble, dummy: mDummy, statue: mStatue, anvil: mAnvil, cave: mCave, chest: mChest, hoard: mHoard, armorpile: mArmorPile, ruintower: mRuinTower, weaponrack: mWeaponRack, cart: mCart, table: mTable };

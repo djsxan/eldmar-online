@@ -12,11 +12,11 @@ const O = {
   REEDS: 10, LILY: 11, STUMP: 12, DEADTREE: 13, GRAVE: 14, BONES: 15, TENT: 16, CAMPFIRE: 17, FENCE: 18,
   TORCH: 19, BARREL: 20, CRATE: 21, HAY: 22, WELL: 23, STALL: 24, BENCH: 25, BANNER: 26, LOG: 27,
   FLOWERBED: 28, SPIKES: 29, WALL: 30, TOWER: 31, PART: 32, GATE: 33, STAIRS: 34, RUBBLE: 35, RUBBLEBIG: 36,
-  STATUE: 37, BRAZIER: 38, DUMMY: 39, WATERFALL: 40, LOWWALL: 41, IVY: 42, ANVIL: 43, WEAPONRACK: 44, CART: 45, TABLE: 46, CAVE: 47, HOARD: 48, ARMORPILE: 49, RUINTOWER: 50,
+  STATUE: 37, BRAZIER: 38, DUMMY: 39, WATERFALL: 40, LOWWALL: 41, IVY: 42, ANVIL: 43, WEAPONRACK: 44, CART: 45, TABLE: 46, CAVE: 47, HOARD: 48, ARMORPILE: 49, RUINTOWER: 50, OAK: 51, BIRCH: 52, WILLOW: 53, FERN: 54, ROOTS: 55, SHROOMS: 56, BERRY: 57, HERB: 58, BOULDER: 59,
 };
 const BLOCKING = new Set([O.TREE, O.PINE, O.ROCK, O.FOUNTAIN, O.STUMP, O.DEADTREE, O.GRAVE, O.TENT,
   O.CAMPFIRE, O.FENCE, O.BARREL, O.CRATE, O.HAY, O.WELL, O.STALL, O.LOG, O.SPIKES,
-  O.WALL, O.TOWER, O.PART, O.RUBBLEBIG, O.CAVE, O.HOARD, O.RUINTOWER, O.STATUE, O.BRAZIER, O.DUMMY, O.WATERFALL, O.LOWWALL, O.ANVIL, O.WEAPONRACK, O.CART, O.TABLE]);
+  O.WALL, O.TOWER, O.PART, O.RUBBLEBIG, O.CAVE, O.HOARD, O.RUINTOWER, O.OAK, O.BIRCH, O.WILLOW, O.BOULDER, O.STATUE, O.BRAZIER, O.DUMMY, O.WATERFALL, O.LOWWALL, O.ANVIL, O.WEAPONRACK, O.CART, O.TABLE]);
 // objetos soltos que dá para pegar e arremessar (dano base)
 const THROWABLE = { [O.BARREL]: 18, [O.CRATE]: 20, [O.ROCK]: 26 };
 // objetos rasteiros (vão direto para o chão pré-desenhado)
@@ -429,6 +429,57 @@ function generateWorld() {
     if (o !== O.TREE && o !== O.PINE && o !== O.DEADTREE && o !== O.ROCK) continue;
     for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [-1, 1]]) { const j = idx(x + dx, y + dy), q = obj[j]; if (q === O.TREE || q === O.PINE || q === O.DEADTREE || q === O.ROCK || q === O.BUSH) obj[j] = O.TALLGRASS; }
   }
+  // ---- natureza densa: florestas fechadas com clareiras e trilhas, bosques nos campos, salgueiros na água, riachos e poças ----
+  {
+    const TREES = new Set([O.TREE, O.PINE, O.OAK, O.BIRCH, O.WILLOW, O.DEADTREE]);
+    for (let y = 2; y < MAP_H - 2; y++) for (let x = 2; x < MAP_W - 2; x++) {
+      const i = idx(x, y), g = ground[i], z = zone[i];
+      if (g === T.CLIFF || g === T.WATER || g === T.SHALLOW || g === T.SAND || g === T.BRIDGE || z === Z.VILLAGE || z === Z.OUTSKIRTS || river[i]) continue;
+      if (Math.hypot(x - MOUNTAIN.x, y - MOUNTAIN.y) < MOUNTAIN.r + 1) continue;
+      const clr = vnoise(x / 16, y / 16, 951), trail = Math.abs(vnoise(x / 24, y / 24, 952) - 0.5) < 0.022, grove = vnoise(x / 11, y / 11, 953), sp = vnoise(x / 9, y / 9, 954), r = R(x, y, 955), r2 = R(x, y, 956);
+      let o = obj[i];
+      if (trail && (z === Z.FOREST || z === Z.WILD || z === Z.FIELDS)) { obj[i] = O.NONE; ground[i] = T.DIRT; continue; }
+      if (z === Z.FOREST || z === Z.WILD) {
+        if (clr < 0.3) {   // clareira: grama, flores, frutas e ervas
+          o = r < 0.05 ? O.FLOWER : r < 0.22 ? O.TALLGRASS : r < 0.235 ? O.BERRY : r < 0.245 ? O.HERB : r < 0.252 ? O.ROCK : O.NONE;
+          if (g === T.FOREST) ground[i] = T.GRASS;
+        } else {
+          const dense = clr > 0.45, treeP = dense ? 0.3 : 0.16;
+          if (r < treeP) o = z === Z.WILD ? (sp < 0.6 ? O.PINE : sp < 0.8 ? O.BIRCH : O.OAK) : (sp < 0.35 ? O.OAK : sp < 0.6 ? O.TREE : sp < 0.8 ? O.PINE : O.BIRCH);
+          else if (r < treeP + 0.06) o = r2 < 0.22 ? O.BERRY : O.BUSH;
+          else if (r < treeP + 0.17) o = O.FERN;
+          else if (r < treeP + 0.19) o = r2 < 0.5 ? O.LOG : O.ROOTS;
+          else if (r < treeP + 0.205) o = r2 < 0.4 ? O.SHROOMS : O.MUSHROOM;
+          else if (r < treeP + 0.215) o = r2 < 0.5 ? O.BOULDER : O.ROCK;
+          else if (r < treeP + 0.222) o = O.HERB;
+          else if (r < treeP + 0.3) o = O.TALLGRASS; else o = O.NONE;
+          if (dense) ground[i] = T.FOREST;
+        }
+      } else if (z === Z.FIELDS) {
+        if (grove > 0.66) o = r < 0.28 ? (sp < 0.5 ? O.OAK : sp < 0.75 ? O.BIRCH : O.TREE) : r < 0.36 ? O.BUSH : r < 0.42 ? O.FERN : r < 0.45 ? O.BERRY : o;
+        else if (r < 0.006) o = O.OAK; else if (r < 0.009) o = O.BOULDER; else if (r < 0.014) o = O.BERRY; else if (r < 0.017) o = O.HERB;
+      } else if (z === Z.SWAMP) {
+        let wet = false; for (const [dx, dy] of DIRS8) { const q = ground[idx(x + dx, y + dy)]; if (q === T.WATER || q === T.SHALLOW) wet = true; }
+        if (wet && r < 0.08) o = O.WILLOW; else if (r < 0.008) o = O.WILLOW; else if (r < 0.032) o = O.HERB; else if (r < 0.06 && o === O.NONE) o = O.FERN;
+      } else if (z === Z.BONES || z === Z.ORCS) { if (r < 0.006) o = O.BOULDER; }
+      obj[i] = o;
+    }
+    // árvores e pedregulhos nunca encostados pelos lados (sempre dá para passar); nas diagonais pode
+    for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) { const i = idx(x, y); if (!TREES.has(obj[i]) && obj[i] !== O.BOULDER) continue; for (const [dx, dy] of [[1, 0], [0, 1]]) { const j = idx(x + dx, y + dy); if (TREES.has(obj[j]) || obj[j] === O.BOULDER) obj[j] = O.FERN; } }
+    // riachos sinuosos com juncos nas margens
+    for (let c = 0; c < 9; c++) {
+      let x = 20 + Math.floor(R(c, 1, 960) * (MAP_W - 40)), y = 20 + Math.floor(R(c, 2, 960) * (MAP_H - 40)), a = R(c, 3, 960) * 6.28;
+      for (let s = 0; s < 70; s++) {
+        a += (vnoise(x / 6, y / 6, 961 + c) - 0.5) * 0.9; x += Math.cos(a); y += Math.sin(a);
+        const X = Math.round(x), Y = Math.round(y); if (X < 3 || Y < 3 || X >= MAP_W - 3 || Y >= MAP_H - 3) break;
+        const i = idx(X, Y), z = zone[i]; if (z === Z.VILLAGE || z === Z.OUTSKIRTS || ground[i] === T.CLIFF || ground[i] === T.WATER) break;
+        ground[i] = T.SHALLOW; obj[i] = O.NONE;
+        for (const [dx, dy] of DIRS8) { const j = idx(X + dx, Y + dy); if (ground[j] !== T.SHALLOW && ground[j] !== T.WATER && ground[j] !== T.CLIFF && R(X + dx, Y + dy, 962) < 0.25) obj[j] = O.REEDS; }
+      }
+    }
+    // poças
+    for (let c = 0; c < 70; c++) { const X = 10 + Math.floor(R(c, 4, 963) * (MAP_W - 20)), Y = 10 + Math.floor(R(c, 5, 963) * (MAP_H - 20)), z = zone[idx(X, Y)]; if (z !== Z.FOREST && z !== Z.FIELDS && z !== Z.SWAMP && z !== Z.WILD) continue; const rr = 0.8 + R(c, 6, 963) * 1.2; for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const i = idx(X + dx, Y + dy); if (Math.hypot(dx, dy) <= rr && ground[i] !== T.CLIFF && ground[i] !== T.WATER) { ground[i] = T.SHALLOW; obj[i] = O.NONE; } } }
+  }
   // árvores ao pé da montanha
   for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
     const i = idx(x, y);
@@ -834,7 +885,7 @@ function walkableTile(x, y, z = 0) {
   return g !== T.WATER && g !== T.CLIFF && !BLOCKING.has(WORLD.obj[i]) && !NPC_AT.has(i);
 }
 // objetos redondos: colidem só no tamanho real (círculo), não no tile inteiro
-const OBJ_R = { [O.TREE]: 0.3, [O.PINE]: 0.28, [O.ROCK]: 0.34, [O.STUMP]: 0.24, [O.DEADTREE]: 0.24, [O.GRAVE]: 0.28, [O.CAMPFIRE]: 0.3,
+const OBJ_R = { [O.TREE]: 0.38, [O.PINE]: 0.34, [O.OAK]: 0.44, [O.BIRCH]: 0.26, [O.WILLOW]: 0.4, [O.ROCK]: 0.34, [O.STUMP]: 0.24, [O.DEADTREE]: 0.3, [O.GRAVE]: 0.28, [O.CAMPFIRE]: 0.3,
   [O.BARREL]: 0.28, [O.CRATE]: 0.32, [O.HOARD]: 0.5, [O.HAY]: 0.38, [O.BRAZIER]: 0.24, [O.DUMMY]: 0.22, [O.STATUE]: 0.4, [O.ANVIL]: 0.3, [O.WEAPONRACK]: 0.32, [O.WELL]: 0.46 };
 function solidTile(x, y, L) {
   if (!inBounds(x, y)) return true;

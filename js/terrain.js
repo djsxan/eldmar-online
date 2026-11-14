@@ -4,7 +4,7 @@
 //  de grama, pedras e flores. A água fica por baixo, animada.
 // ============================================================
 const CHUNK = 128;           // tamanho do bloco em unidades de arte
-const TEXR = 1.8;            // texels por unidade de arte
+const TEXR = 2.3;            // texels por unidade de arte
 const HTW = 32, HTH = 16;    // meio tile
 function iso(x, y) { return { sx: (x - y) * HTW, sy: (x + y) * HTH }; }
 function unIso(px_, py_) { const a = px_ / HTW, b = py_ / HTH; return { x: (a + b) / 2, y: (b - a) / 2 }; }
@@ -36,7 +36,7 @@ const ZONEC = {
 // ---------- materiais realistas com relevo ----------
 // Cada material vira uma textura repetível de 4x4 tiles com cor e altura.
 // A luz do sol (fixa) é calculada pelo relevo e já vem embutida.
-const MT = 64, MTS = 256, MTP = MTS / MT;           // texels por tile, tamanho, período em tiles
+const MT = 96, MTS = 384, MTP = MTS / MT;           // texels por tile, tamanho, período em tiles
 const SUN3 = (() => { const v = [-0.9, 0.95, 0.5], l = Math.hypot(...v); return v.map(c => c / l); })();
 function pn(x, y, f, s) {                            // ruído de valor periódico (repete a cada MTP tiles)
   const P = MTP * f, X = x * f, Y = y * f, xi = Math.floor(X), yi = Math.floor(Y), u = smooth(X - xi), v = smooth(Y - yi);
@@ -61,27 +61,45 @@ const HX = h => rgbOf(h);
 // cada material: (u, v) em tiles -> [altura 0..1, cor]
 const MATDEF = {
   grass: (u, v) => {
-    const n = fbm(u, v, 1.5, 11), f = fbm(u, v, 9, 12, 3), blade = pn(u * 1.0, v * 3.2, 14, 13) * pn(u * 3.2, v, 14, 14);
-    const h = n * 0.35 + f * 0.35 + blade * 0.5;
-    let c = mixc(HX('#3e5a26'), HX('#6a8a3e'), clamp(n * 1.3 - 0.15 + f * 0.3, 0, 1));
-    if (blade > 0.55) c = mixc(c, HX('#8aa850'), (blade - 0.55) * 1.6);
-    if (hash2(Math.floor(u * 40), Math.floor(v * 40), 15) < 0.025) c = mixc(c, HX('#c8c070'), 0.5);
+    // grama: manchas grandes de tom, touceiras, lâminas finas, falhas de terra e pontos secos/flores
+    const n = fbm(u, v, 1.2, 11), m = fbm(u, v, 3.5, 16, 3), f = fbm(u, v, 11, 12, 3);
+    const [cd, , cid] = cells(u, v, 6, 17, 1), tuft = Math.max(0, 0.42 - cd) / 0.42;
+    const blade = pn(u * 1.0, v * 3.4, 16, 13) * pn(u * 3.4, v, 16, 14), streak = pn(u * 0.6, v * 5, 22, 18);
+    const bare = clamp((0.36 - n) * 5 + (0.4 - m) * 2, 0, 1) * 0.8;
+    const h = n * 0.25 + tuft * 0.35 + blade * 0.35 + streak * 0.15 - bare * 0.2;
+    let c = mixc(HX('#34501f'), HX('#6c8e3c'), clamp(n * 1.2 - 0.12 + m * 0.35, 0, 1));
+    c = mixc(c, mixc(HX('#4a6e2a'), HX('#88a84c'), cid), tuft * 0.55);
+    if (blade > 0.5) c = mixc(c, HX('#9ab85a'), (blade - 0.5) * 1.4);
+    c = mixc(c, HX('#2a3c18'), clamp((0.3 - streak) * 2, 0, 0.35));
+    c = mixc(c, mixc(HX('#5e4a32'), HX('#7a6448'), f), bare);
+    const sp = hash2(Math.floor(u * 48), Math.floor(v * 48), 15);
+    if (sp < 0.02) c = mixc(c, HX('#c8c070'), 0.55); else if (sp > 0.994) c = mixc(c, HX('#f0ece0'), 0.7);
     return [h, c];
   },
   forest: (u, v) => {
-    const n = fbm(u, v, 2, 21), f = fbm(u, v, 10, 22, 3), [d1, , id] = cells(u, v, 9, 23, 1);
-    const leaf = d1 < 0.32 && id < 0.55;
-    const h = n * 0.4 + f * 0.3 + (leaf ? 0.35 - d1 : 0);
-    let c = mixc(HX('#26361c'), HX('#46582a'), clamp(n * 1.2 - 0.1, 0, 1));
-    if (leaf) c = mixc(HX('#5a4224'), HX('#8a6a34'), id * 1.8);
+    // chão da floresta: terra escura, folhas caídas de várias cores, musgo e gravetos
+    const n = fbm(u, v, 1.8, 21), f = fbm(u, v, 10, 22, 3), [d1, , id] = cells(u, v, 11, 23, 1), [d2, , id2] = cells(u, v + 0.37, 7, 24, 1);
+    const leaf = d1 < 0.36 && id < 0.7, leaf2 = d2 < 0.3 && id2 < 0.5, moss = clamp((fbm(u, v, 4, 25, 3) - 0.58) * 4, 0, 1);
+    const twig = Math.abs(pn(u * 6 + v * 2, v * 0.5, 9, 26) - 0.5) < 0.012;
+    const h = n * 0.3 + f * 0.25 + (leaf ? 0.4 - d1 : 0) + (leaf2 ? 0.3 - d2 : 0) + moss * 0.25;
+    let c = mixc(HX('#20180f'), HX('#3e3220'), clamp(n * 1.3 - 0.1 + f * 0.2, 0, 1));
+    if (leaf2) c = mixc(HX('#4a3a1c'), HX('#6a5428'), id2 * 2);
+    if (leaf) c = mixc(mixc(HX('#7a4a1c'), HX('#a8742c'), id * 1.4), HX('#5a6a2a'), id > 0.55 ? 0.6 : 0);
+    c = mixc(c, mixc(HX('#3a5a22'), HX('#5a7a32'), f), moss * 0.85);
+    if (twig) c = mixc(c, HX('#1a120a'), 0.8);
     return [h, c];
   },
   dirt: (u, v) => {
-    const n = fbm(u, v, 2, 31), f = fbm(u, v, 12, 32, 3), [d1, , id] = cells(u, v, 7, 33, 0.9);
-    const peb = id < 0.4 ? Math.max(0, 0.3 - d1) / 0.3 : 0;
-    const h = n * 0.4 + f * 0.25 + peb * 0.6;
-    let c = mixc(HX('#4e3a26'), HX('#7a5e40'), clamp(n * 1.3 - 0.2 + f * 0.2, 0, 1));
-    if (peb > 0) c = mixc(c, mixc(HX('#7a746a'), HX('#a49c8c'), id * 2.5), Math.min(1, peb * 2));
+    // terra batida: grão fino, partes úmidas, rachaduras leves e pedrinhas de vários tamanhos
+    const n = fbm(u, v, 1.6, 31), f = fbm(u, v, 14, 32, 3), wet = clamp((fbm(u, v, 2.5, 34, 3) - 0.6) * 4, 0, 1);
+    const [d1, , id] = cells(u, v, 7, 33, 0.9), [e1, e2] = cells(u, v, 3, 35, 1), crack = clamp(1 - (e2 - e1) * 14, 0, 1) * (1 - wet) * 0.5;
+    const peb = id < 0.35 ? Math.max(0, 0.28 - d1) / 0.28 : 0, [s1, , sid] = cells(u, v, 22, 36, 1), grit = sid < 0.3 ? Math.max(0, 0.3 - s1) / 0.3 : 0;
+    const h = n * 0.35 + f * 0.2 + peb * 0.6 + grit * 0.2 - crack * 0.25 - wet * 0.15;
+    let c = mixc(HX('#4a3622'), HX('#7e6244'), clamp(n * 1.25 - 0.18 + f * 0.25, 0, 1));
+    c = mixc(c, HX('#2e2216'), wet * 0.6);
+    c = mixc(c, HX('#3a2a1a'), crack);
+    if (grit > 0) c = mixc(c, HX('#8a7a64'), grit * 0.5);
+    if (peb > 0) c = mixc(c, mixc(HX('#6e675c'), HX('#a8a090'), id * 2.8), Math.min(1, peb * 2.2));
     return [h, c];
   },
   sand: (u, v) => {
@@ -90,29 +108,38 @@ const MATDEF = {
     return [h, mixc(HX('#a48e64'), HX('#d0bc90'), clamp(n * 0.9 + w * 0.25 + g * 0.15 - 0.1, 0, 1))];
   },
   stone: (u, v) => {
-    const n = fbm(u, v, 2, 51), [d1, d2, id] = cells(u, v, 2.5, 52, 1), crack = clamp((d2 - d1) * 9, 0, 1);
-    const h = n * 0.45 + crack * 0.4 + fbm(u, v, 14, 53, 2) * 0.15;
-    let c = mixc(HX('#55524b'), HX('#8e8a80'), clamp(n * 1.1 + id * 0.25 - 0.15, 0, 1));
-    c = mixc(HX('#2e2c28'), c, 0.4 + crack * 0.6);
+    // rocha: camadas, fraturas, líquen
+    const n = fbm(u, v, 1.8, 51), [d1, d2, id] = cells(u, v, 2.2, 52, 1), crack = clamp((d2 - d1) * 9, 0, 1), strata = Math.sin((v * 3 + fbm(u, v, 1.5, 54) * 2.5) * Math.PI * 2) * 0.5 + 0.5;
+    const lich = clamp((fbm(u, v, 6, 55, 3) - 0.66) * 5, 0, 1);
+    const h = n * 0.4 + crack * 0.35 + strata * 0.15 + fbm(u, v, 16, 53, 2) * 0.12;
+    let c = mixc(HX('#4e4b45'), HX('#908b80'), clamp(n * 1.05 + id * 0.25 + strata * 0.15 - 0.2, 0, 1));
+    c = mixc(HX('#26241f'), c, 0.35 + crack * 0.65);
+    c = mixc(c, HX('#9a9a5a'), lich * 0.6);
     return [h, c];
   },
   cobble: (u, v) => {
-    const [d1, d2, id] = cells(u, v, 5, 61, 0.8), e = clamp((d2 - d1) * 3.2, 0, 1), dome = Math.sqrt(e);
-    const f = fbm(u, v, 16, 62, 2);
-    const h = dome * 0.85 + f * 0.15;
-    let c = mixc(HX('#55524b'), HX('#88837a'), id * 0.8 + f * 0.3);
-    c = mixc(HX('#2a2822'), c, clamp(e * 3, 0, 1));
-    if (e < 0.18 && hash2(Math.floor(u * 20), Math.floor(v * 20), 63) < 0.3) c = mixc(c, HX('#4a6a2a'), 0.6);   // musgo nas juntas
+    // calçamento: pedras arredondadas de tamanhos variados, topo gasto e polido, juntas com terra e musgo
+    const [d1, d2, id] = cells(u, v, 4.6, 61, 0.85), e = clamp((d2 - d1) * 3.4, 0, 1), dome = Math.sqrt(e);
+    const f = fbm(u, v, 18, 62, 2), g2 = fbm(u, v, 2, 64, 2), wear = clamp((e - 0.55) * 3, 0, 1);
+    const h = dome * 0.85 + f * 0.12;
+    let c = mixc(mixc(HX('#58534a'), HX('#8a847a'), id), mixc(HX('#6a5e4a'), HX('#7a7468'), id), clamp(g2 * 1.4 - 0.4, 0, 1) * 0.6);
+    c = mixc(c, HX('#a49e92'), wear * 0.35);
+    c = mixc(c, HX('#3a3428'), f * 0.25);
+    const joint = clamp(e * 3.2, 0, 1); c = mixc(e < 0.16 && hash2(Math.floor(u * 24), Math.floor(v * 24), 63) < 0.35 ? HX('#3e5a24') : HX('#2a241c'), c, joint);
     return [h, c];
   },
   floor: (u, v) => {
-    const row = Math.floor(v * 2), off = row % 2 ? 0.5 : 0, uu = u * 1.5 + off, cu = Math.floor(uu), cv = row;
-    const fu = uu - cu, fv = v * 2 - row, edge = Math.min(fu, 1 - fu, fv, 1 - fv) * 2;
-    const id = hash2(((cu % 6) + 6) % 6, ((cv % 8) + 8) % 8, 71), f = fbm(u, v, 10, 72, 3);
-    const bev = clamp(edge * 9, 0, 1);
-    const h = bev * 0.75 + f * 0.25 - (fbm(u, v, 5, 73, 2) > 0.7 ? 0.2 : 0);
-    let c = mixc(HX('#66625a'), HX('#9a948a'), id * 0.8 + f * 0.25);
-    c = mixc(HX('#2a2824'), c, clamp(edge * 14, 0, 1));
+    // lajes grandes: bordas lascadas, grão fino, rachaduras e terra nas juntas
+    const row = Math.floor(v * 1.6), off = row % 2 ? 0.45 : 0, uu = u * 1.2 + off, cu = Math.floor(uu), cv = row;
+    const chip = (fbm(u, v, 9, 74, 2) - 0.5) * 0.12, fu = uu - cu, fv = v * 1.6 - row, edge = Math.min(fu, 1 - fu, fv, 1 - fv) * 2 + chip;
+    const id = hash2(((cu % 5) + 5) % 5, ((cv % 6) + 6) % 6, 71), f = fbm(u, v, 12, 72, 3), g2 = fbm(u, v, 3, 75, 2);
+    const [c1, c2] = cells(u, v, 2.3, 76, 1), crack = id < 0.18 && fbm(u, v, 3, 77, 2) > 0.55 ? clamp(1 - (c2 - c1) * 40, 0, 1) : 0;
+    const bev = clamp(edge * 8, 0, 1);
+    const h = bev * 0.7 + f * 0.2 - crack * 0.3;
+    let c = mixc(HX('#625e56'), HX('#a29c90'), id * 0.75 + f * 0.25);
+    c = mixc(c, HX('#6e6250'), clamp(g2 - 0.5, 0, 0.5));
+    c = mixc(c, HX('#2e2a24'), crack * 0.8);
+    c = mixc(HX('#2a2620'), c, clamp(edge * 12, 0, 1));
     return [h, c];
   },
   wood: (u, v) => {
@@ -138,7 +165,7 @@ const MATDEF = {
     return [h, c];
   },
   shallow: (u, v) => { const n = fbm(u, v, 2, 111), w = fbm(u, v, 6, 112, 2); return [n * 0.5 + w * 0.3, mixc(HX('#5e7e7a'), HX('#8aa8a0'), n)]; },
-  cliff: (u, v) => { const n = fbm(u, v, 2, 121), [d1, d2] = cells(u, v, 3, 122, 1), cr = clamp((d2 - d1) * 8, 0, 1); return [n * 0.5 + cr * 0.4, mixc(HX('#2e2c28'), mixc(HX('#4c4942'), HX('#6e6a60'), n), cr)]; },
+  cliff: (u, v) => { const n = fbm(u, v, 2, 121), [d1, d2] = cells(u, v, 3, 122, 1), cr = clamp((d2 - d1) * 8, 0, 1), st = Math.sin((v * 4 + fbm(u, v, 1.2, 123) * 3) * Math.PI * 2) * 0.5 + 0.5, li = clamp((fbm(u, v, 7, 124, 3) - 0.68) * 5, 0, 1); let c = mixc(HX('#2a2824'), mixc(HX('#4c4942'), HX('#7a756a'), clamp(n + st * 0.25 - 0.1, 0, 1)), cr); c = mixc(c, HX('#7a8a4a'), li * 0.5); return [n * 0.45 + cr * 0.35 + st * 0.15, c]; },
 };
 const MAT_OF = { [T.GRASS]: 'grass', [T.FOREST]: 'forest', [T.SAND]: 'sand', [T.STONE]: 'stone', [T.DIRT]: 'dirt', [T.BRIDGE]: 'wood', [T.COBBLE]: 'cobble', [T.SWAMP]: 'swamp', [T.DEAD]: 'dead', [T.SHALLOW]: 'shallow', [T.CLIFF]: 'cliff', [T.FLOORSTONE]: 'floor' };
 const MTEX = {};

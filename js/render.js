@@ -470,11 +470,20 @@ function drawAuras1(ctx, e, sx, sy, now) {
 // ---------- objetos ----------
 // ---------- objetos ----------
 const TREE_TINT = { [Z.FOREST]: 3, [Z.SWAMP]: 3, [Z.WILD]: 1 };
-const SWAY = { [O.TREE]: 0.035, [O.PINE]: 0.025, [O.BUSH]: 0.03, [O.TALLGRASS]: 0.09, [O.REEDS]: 0.08 };
-const CASTS = new Set([O.TREE, O.PINE, O.DEADTREE, O.BUSH, O.ROCK, O.WALL, O.LOWWALL, O.STATUE, O.LAMP, O.BANNER, O.TENT, O.WELL, O.STALL, O.HAY, O.BARREL, O.CRATE, O.CART, O.GRAVE, O.DUMMY, O.WEAPONRACK, O.STUMP, O.TORCH, O.BRAZIER, O.FENCE, O.GATE]);
+const SWAY = { [O.TREE]: 0.035, [O.PINE]: 0.025, [O.BUSH]: 0.03, [O.TALLGRASS]: 0.09, [O.REEDS]: 0.08, [O.OAK]: 0.025, [O.BIRCH]: 0.045, [O.WILLOW]: 0.05, [O.FERN]: 0.07, [O.HERB]: 0.06, [O.BERRY]: 0.03 };
+const CASTS = new Set([O.OAK, O.BIRCH, O.WILLOW, O.BOULDER, O.BERRY, O.TREE, O.PINE, O.DEADTREE, O.BUSH, O.ROCK, O.WALL, O.LOWWALL, O.STATUE, O.LAMP, O.BANNER, O.TENT, O.WELL, O.STALL, O.HAY, O.BARREL, O.CRATE, O.CART, O.GRAVE, O.DUMMY, O.WEAPONRACK, O.STUMP, O.TORCH, O.BRAZIER, O.FENCE, O.GATE]);
 function objSprite(o, x, y) {
   const h = hash2(x, y, 17), v = Math.floor(h * 3), i = y * MAP_W + x, z = WORLD.zone[i];
   switch (o) {
+    case O.OAK: return natureSprite('oak', v & 1) || treeSprite(v, 1, 3);
+    case O.BIRCH: return natureSprite('birch', v & 1) || treeSprite(v, 1, 1);
+    case O.WILLOW: return natureSprite('willow', v & 1) || treeSprite(v, 1, 0);
+    case O.FERN: return natureSprite('fern', v % 3) || grassSprite(v, 1, 0);
+    case O.ROOTS: return natureSprite('roots', v & 1) || smallSprite('stump');
+    case O.SHROOMS: return natureSprite('shrooms', v & 1) || smallSprite('mushroom', 0);
+    case O.BERRY: return natureSprite('berry', v & 1) || bushSprite(2);
+    case O.HERB: return natureSprite('herb', v & 1) || grassSprite(v, 1, 0);
+    case O.BOULDER: return natureSprite('boulder', v % 3) || rockSprite(1, 1);
     case O.TREE: return treeSprite(v, 1, h > 0.88 && z !== Z.FOREST ? 2 : (TREE_TINT[z] || 0));
     case O.PINE: return pineSprite(v);
     case O.ROCK: return rockSprite(v, z === Z.FOREST || z === Z.SWAMP ? 1 : 0);
@@ -766,7 +775,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     if (sx < -140 || sx > vw + 140 || sy < -60 || sy > vh + 300) continue;
     if (g === T.CLIFF) items.push({ d: x + y, k: 0, cliff: true, x, y, sx, sy, o });
     else if (o !== O.NONE && !FLAT.has(o) && o !== O.PART && g === T.CLIFF) { upper.push({ d: x + y, k: 0, x, y, o, sx, sy: sy - FLOOR_PX }); }
-    else if (o !== O.NONE && !FLAT.has(o) && o !== O.PART) { items.push({ d: x + y, k: 0, x, y, o, sx, sy }); if (o === O.TREE || o === O.PINE) visTrees.push({ wx, wy }); }
+    else if (o !== O.NONE && !FLAT.has(o) && o !== O.PART) { items.push({ d: x + y, k: 0, x, y, o, sx, sy }); if (o === O.TREE || o === O.PINE || o === O.OAK || o === O.BIRCH || o === O.WILLOW) visTrees.push({ wx, wy }); }
     if (o === O.FLOWER || o === O.FLOWERBED) visFlowers.push({ wx, wy });
     if ((g === T.GRASS || g === T.FOREST || g === T.SWAMP) && hash2(x, y, 5) < 0.25) visGrass.push({ wx, wy });
     if (WORLD.fl1[i] === 2 && !hideUpper) upper.push({ d: x + y, k: 5, x, y, sx, sy });
@@ -1094,7 +1103,7 @@ const MINI = (() => {
   const cols = { [T.WATER]: '#2a5a8a', [T.SAND]: '#cbb282', [T.GRASS]: '#5a8c3c', [T.FOREST]: '#3a6530', [T.STONE]: '#8a877e', [T.DIRT]: '#7d5f3e', [T.BRIDGE]: '#6f4a2a', [T.COBBLE]: '#9c978b', [T.SWAMP]: '#4a5632', [T.DEAD]: '#978a58', [T.SHALLOW]: '#6a9a9a', [T.CLIFF]: '#6b665c', [T.FLOORSTONE]: '#a39e93' };
   for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
     const i = y * MAP_W + x, o = WORLD.obj[i];
-    m.fillStyle = WORLD.bld[i] >= 0 ? '#7a3a2a' : (o === O.WALL || o === O.TOWER || o === O.PART) ? '#d8d2c4' : (o === O.TREE || o === O.PINE) ? '#2a4a20' : (o === O.FENCE ? '#5a3a1e' : WORLD.ground[i] === T.CLIFF && WORLD.height[i] >= 4 ? '#e8ecef' : cols[WORLD.ground[i]]);
+    m.fillStyle = WORLD.bld[i] >= 0 ? '#7a3a2a' : (o === O.WALL || o === O.TOWER || o === O.PART) ? '#d8d2c4' : (o === O.TREE || o === O.PINE || o === O.OAK || o === O.BIRCH || o === O.WILLOW) ? '#2a4a20' : (o === O.FENCE ? '#5a3a1e' : WORLD.ground[i] === T.CLIFF && WORLD.height[i] >= 4 ? '#e8ecef' : cols[WORLD.ground[i]]);
     m.fillRect(x, y, 1, 1);
   }
   return c;

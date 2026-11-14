@@ -524,7 +524,7 @@ function updateInv() {
   if (me.pots && me.pots.hp) list.push({ k: 'hp', n: me.pots.hp, name: ITEMS.hp.name, icon: '🧪', color: '#e85a5a', desc: ITEMS.hp.desc + ' Clique para beber (Q).', use: () => drinkPot('hp') });
   if (me.pots && me.pots.water) list.push({ k: 'water', n: me.pots.water, name: 'Odre', icon: '💧', color: '#6ab8ff', desc: 'Goles de água. Clique para beber; encha em rios, poços e fontes (F).', use: () => Net.send({ t: 'use', k: 'water' }) });
   if (me.pots && me.pots.mp) list.push({ k: 'mp', n: me.pots.mp, name: ITEMS.mp.name, icon: '🧪', color: '#5a8ae8', desc: ITEMS.mp.desc + ' Clique para beber (E).', use: () => drinkPot('mp') });
-  for (const k in (me.inv || {})) { const it = LOOT[k]; if (it && me.inv[k] > 0) list.push({ k, n: me.inv[k], name: it.name, icon: it.icon, color: it.color, desc: it.desc + ' Vale ' + it.price + ' de ouro cada no Empório.', use: FOOD[k] || k === 'ointment' || k === 'firewood' ? () => Net.send({ t: 'use', k }) : null }); }
+  for (const k in (me.inv || {})) { const it = LOOT[k]; if (it && me.inv[k] > 0) list.push({ k, n: me.inv[k], name: it.name, icon: it.icon, color: it.color, desc: it.desc + ' Vale ' + it.price + ' de ouro cada no Empório.', use: FOOD[k] || k === 'ointment' || k === 'firewood' || k === 'herb' ? () => Net.send({ t: 'use', k }) : null }); }
   grid.innerHTML = '';
   for (let i = 0; i < INV_SLOTS; i++) {
     const s = document.createElement('div'), it = list[i]; s.className = 'inv-slot';
@@ -1309,8 +1309,10 @@ function devTp(x, y) { const me = G.me; Object.assign(me, { x, y, rx: x, ry: y, 
 function nearObjKinds(r, test) { const me = G.me; for (let y = Math.round(me.y) - 2; y <= Math.round(me.y) + 2; y++) for (let x = Math.round(me.x) - 2; x <= Math.round(me.x) + 2; x++) { if (!inBounds(x, y)) continue; const i = y * MAP_W + x; if (test(WORLD.ground[i], WORLD.obj[i]) && dist(x, y, me.x, me.y) < r) return true; } return false; }
 const nearFireC = () => nearObjKinds(1.9, (g, o) => o === O.CAMPFIRE || o === O.BRAZIER || o === O.TORCH) || (G.fires || []).some(f => dist(f.x, f.y, G.me.x, G.me.y) < 1.9);
 const nearWaterC = () => nearObjKinds(1.9, (g, o) => g === T.WATER || g === T.SHALLOW || o === O.WELL || o === O.FOUNTAIN);
+function nearHarvest() { const me = G.me; let best = -1, bd = 1.7; for (let y = Math.round(me.y) - 2; y <= Math.round(me.y) + 2; y++) for (let x = Math.round(me.x) - 2; x <= Math.round(me.x) + 2; x++) { if (!inBounds(x, y)) continue; const i = y * MAP_W + x, o = WORLD.obj[i]; if (o !== O.BERRY && o !== O.HERB) continue; const d = dist(x, y, me.x, me.y); if (d < bd) { bd = d; best = i; } } return best; }
 function survivalAction() {
-  const me = G.me, raw = me.inv && (me.inv.venison || me.inv.pork);
+  const me = G.me, raw = me.inv && (me.inv.venison || me.inv.pork), hv = nearHarvest();
+  if (hv >= 0) { Net.send({ t: 'harvest', i: hv }); return true; }
   if (raw && nearFireC()) { Net.send({ t: 'cook' }); return true; }
   if (nearWaterC() && ((me.water ?? 100) < 98 || (me.hasSkin && (me.pots.water || 0) < 5))) { Net.send({ t: 'drinkw' }); return true; }
   return false;
@@ -1325,7 +1327,7 @@ function updateNeeds() {
   if (me.sick > 0) out.push(['🤢', 'Enjoado', 1]);
   el.innerHTML = out.map(([i, t, s]) => '<span class="nd s' + s + '" title="' + t + '">' + i + '</span>').join('');
   document.body.classList.toggle('cold', (me.cold || 0) > 50); document.body.classList.toggle('fever', !!me.infect);
-  const pr = $('prompt'); if (!G.loot && !nearCorpse()) { const raw = me.inv && (me.inv.venison || me.inv.pork); const txt = raw && nearFireC() ? 'F: assar a carne' : nearWaterC() && (me.water ?? 100) < 98 ? 'F: beber' : ''; if (txt) { pr.textContent = txt; pr.classList.remove('hidden'); } else pr.classList.add('hidden'); }
+  const pr = $('prompt'); if (!G.loot && !nearCorpse()) { const raw = me.inv && (me.inv.venison || me.inv.pork); const hv = nearHarvest(); const txt = hv >= 0 ? (WORLD.obj[hv] === O.BERRY ? 'F: colher frutas' : 'F: colher erva') : raw && nearFireC() ? 'F: assar a carne' : nearWaterC() && (me.water ?? 100) < 98 ? 'F: beber' : ''; if (txt) { pr.textContent = txt; pr.classList.remove('hidden'); } else pr.classList.add('hidden'); }
   if ($('pz-surv')) $('pz-surv').innerHTML = '<div><b>Fome</b> ' + Math.round(100 - (me.food ?? 100)) + '% · <b>Sede</b> ' + Math.round(100 - (me.water ?? 100)) + '% · <b>Frio</b> ' + Math.round(me.cold || 0) + '%</div><div><b>Infecção</b> ' + ['nenhuma', 'febre', 'grave'][me.infect || 0] + (me.sick > 0 ? ' · <b>enjoado</b>' : '') + '</div><div class="gp-note">Coma e beba, fique perto do fogo à noite, trate feridas graves com bandagem. A morte é permanente.</div>';
 }
 // ---------- sangue em jato e pedaços decepados ----------
