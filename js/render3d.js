@@ -329,6 +329,7 @@ function applyPose(R, Q, P, walkPh) {
   // cantil na mão (e a arma some enquanto bebe)
   { const b = (Q.bot || 0) > 0.5; if (b && !R.bottle) { const g = new THREE.Group(), lm = mat('#6a4a2a', 'leather'); g.add(mesh(capG(0.035, 0.07), lm, 0, -0.05, 0.02)); g.add(mesh(cylG(0.012, 0.016, 0.04, 8), mat('#3a2a1a', 'wood'), 0, 0.0, 0.02)); R.A.hand.add(g); R.bottle = g; }
     if (R.bottle) R.bottle.visible = b; if (R.weapon && !R.weapon.bow) R.weapon.obj.visible = !b; }
+  { const ha = (Q.harrow || 0) > 0.5; if (ha && !R.harrow) { const g = new THREE.Group(); g.add(mesh(cylG(0.006, 0.006, 0.72, 5), mat('#6a4a2a', 'wood'), 0, -0.02, 0)); g.add(mesh(coneG(0.014, 0.05, 4), mat('#8a8f96', 'metal'), 0, 0.36, 0)); for (const s of [-1, 1]) { const f = mesh(boxG(0.003, 0.08, 0.03), mat('#e8e0cc', 'cloth'), s * 0.008, -0.34, 0); g.add(f); } R.B.hand.add(g); R.harrow = g; } if (R.harrow) R.harrow.visible = ha; }
   { const pp = (Q.pipe || 0) > 0.5; if (pp && !R.pipe) { const g = new THREE.Group(), wd = mat('#4a2e1a', 'wood'); g.add(mesh(cylG(0.006, 0.006, 0.12, 6), wd, 0, -0.02, 0.06)); g.children[0].rotation.x = Math.PI / 2; g.add(mesh(cylG(0.018, 0.014, 0.035, 8), wd, 0, 0.0, 0.12)); R.A.hand.add(g); R.pipe = g; } if (R.pipe) R.pipe.visible = pp; }
   // arco e escudo seguem a mão, mas ficam "de pé" (orientados pelo tronco)
   if ((R.weapon && R.weapon.bow) || R.shield) {

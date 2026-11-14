@@ -280,6 +280,7 @@ function heroPoseFor(e, now) {
   if (e.custP && !e.walking) { Object.assign(P, e.custP); if (P.sit) P.walk = -1; return P; }
   if (e.walking) { P.walk = Math.floor(e.walkDist * (e.cls === 'knight' ? 8.5 : 9.5) / (e.running ? 1.45 : 1)) % 12; if (e.running) P.run = 1; }
   if (e.anim) { const t = actProg(e.anim, now); if (t >= 0 && ACTS[e.anim.a]) P.act = { k: e.anim.a, f: Math.min(11, Math.floor(t * 12)) }; }
+  if (!P.act && typeof bowPose === 'function') { const bp = bowPose(e, now); if (bp) P.act = bp; }
   if (!e.isNpc) { P.lost = e.lost || 0; P.pro = e.pro || 0; }
   if (e.knockUntil && now < e.knockUntil && now >= e.knockUntil - 650) P.act = { k: 'getup', f: Math.min(11, Math.floor((1 - (e.knockUntil - now) / 650) * 12)) };
   if (!P.act && (e === G.me ? G.parrying : e.parrying)) { P.act = { k: 'parry', f: 6 }; P.run = 0; }
@@ -788,6 +789,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
       else if (!t.nf) { const f = (now - t.t0 - t.ms) / 700, [x0, y0] = pts[0], [x1, y1] = pts[7], gr = ctx.createLinearGradient(x0, y0, x1, y1); gr.addColorStop(0, 'rgba(255,250,200,' + (0.95 * (1 - f)).toFixed(2) + ')'); gr.addColorStop(0.35, 'rgba(255,170,40,' + (0.85 * (1 - f)).toFixed(2) + ')'); gr.addColorStop(1, 'rgba(200,40,10,0)'); ctx.fillStyle = gr; ctx.fill(); G.lights.push({ x: (x0 + x1) / 2, y: (y0 + y1) / 2, r: 200, c: '255,140,40', a: 1 - f }); if (Math.random() < 0.6) spawnPart('ember', x0 + (x1 - x0) * Math.random() - G.view.ox, y0 + (y1 - y0) * Math.random() - G.view.oy); }
     }
     if (typeof drawZones === 'function') drawZones(ctx, now, P);
+    if (typeof drawBowGround === 'function') drawBowGround(ctx, now, P);
     G.fires = G.fires.filter(f => f.until > now);
     for (const f of G.fires) { if (now < f.t0) continue; const [fx, fy] = P(f.x, f.y, f.z), fade = Math.min(1, (f.until - now) / 800); ctx.globalAlpha = fade; liveFlame(ctx, fx, fy, 1.1 * f.r, now, f.x * 13 + f.y); ctx.globalAlpha = 1; G.lights.push({ x: fx, y: fy - 14, r: 60, c: '255,150,60', a: fade, flick: 1 }); if (Math.random() < 0.05) spawnPart('smoke', fx - G.view.ox, fy - G.view.oy - 20); }
   }
@@ -913,6 +915,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
       const live = G.monsters[c.id]; if (!f && live && live.dieAt && now - live.dieAt < 1500) return;   // a queda ao vivo ainda vai começar
       if (!f && R3.ok) { f = startFall({ lost: c.lost || 0, key: 'm' + c.id, type: c.type, x: c.x, y: c.y, dir: c.id % 8, ix: c.ix, iy: c.iy, cls: 'knight', big: MON[c.type].big, force: 1 }); if (f) f.fromCorpse = true; }
       if (f) { if (f.fromCorpse && !f.done && !f.staged) { for (let k = 0; k < 400 && !(f.mode === 'rag' ? ragStep(f) : rigidStep(f)); k++); } drawFall(ctx, f, it.sx, it.sy, now, 1, c.type !== 'dragon' && MON_LOOK[c.type] ? 2 : 0); }
+      { const ca = G.corpseArrows && G.corpseArrows[c.id]; if (ca) drawStuck(ctx, { arrows: ca.arrows, dir: ca.dir }, it.sx, it.sy, now, ca.dir); }
       if (!c.looted && dist(c.x, c.y, G.me.x, G.me.y) < 1.7) { const t = now / 300; for (let k = 0; k < 2; k++) dab(ctx, it.sx + Math.cos(t + k * 3) * 10, it.sy - 10 + Math.sin(t + k) * 4, 2, 2, '#ffe890'); }
       if (G.loot && G.loot.id === c.id) { const k = Math.min(1, (now - G.loot.t0) / 1300); ctx.strokeStyle = '#ffe890'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(it.sx, it.sy - 34, 9, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); ctx.stroke(); }
       return;
@@ -948,13 +951,13 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
     const e = it.e;
     ctx.imageSmoothingEnabled = false;
     if (it.k === 1) {
-      drawMonsterEntity(ctx, e, it.sx, it.sy, now);
+      drawMonsterEntity(ctx, e, it.sx, it.sy, now); if (e.arrows && !FALLS['m' + e.id]) drawStuck(ctx, e, it.sx, it.sy, now);
     } else if (it.k === 3) {
       drawHeroEntity(ctx, e, it.sx, it.sy, now);
       labels.push({ sx: it.sx, sy: it.sy - (R3.ok ? 56 : 78), name: e.name, color: '#b8e0a8', npc: e, e });
     } else {
       ctx.imageSmoothingEnabled = true; drawAuras(ctx, e, it.sx, it.sy, now); ctx.imageSmoothingEnabled = false;
-      drawHeroEntity(ctx, e, it.sx, it.sy, now);
+      drawHeroEntity(ctx, e, it.sx, it.sy, now); if (e.arrows) drawStuck(ctx, e, it.sx, it.sy, now);
       heroExtras(e, it.sx, it.sy);
       if (e.burnUntil > now && typeof drawOnFire === 'function') drawOnFire(ctx, it.sx, it.sy, now, (e.x || 0) * 7.1);
       if (e.carrying && G.players[e.carrying]) drawCarried(ctx, G.players[e.carrying], it.sx, it.sy);
@@ -967,6 +970,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
   for (const it of items) if (!it.inside) drawItem(it);
   for (const it of upper) drawItem(it);
   for (const it of sky) drawItem(it);   // o dragão voando passa por cima de tudo
+  if (typeof drawBowTop === 'function') drawBowTop(ctx, now);
   // dentro de uma construção: a cidade escurece e o cômodo aparece cortado, com quem está dentro
   if (inside) {
     ctx.fillStyle = 'rgba(8,5,2,0.6)'; ctx.fillRect(-20, -20, vw + 40, vh + 40);

@@ -3,8 +3,8 @@
 //  Mexa aqui para balancear o jogo.
 // ============================================================
 const GAME_NAME = 'World of Sxan';
-const VERSION = 'v1.18.0';
-const VERSION_NAME = 'Terra Sem Lei';
+const VERSION = 'v1.19.0';
+const VERSION_NAME = 'Arco e Flecha';
 
 const PLAYER_SPEED = 2.7;          // tiles por segundo (1 tile ≈ 2 m)
 // configurações do jogador (menu de pausa)
@@ -354,3 +354,6 @@ const MELEE_USE = { knight: 'sword', archer: 'dagger', mage: 'staff' }, RANGED_U
 const maxHpOf = p => Math.floor(maxHpFor(p.cls, p.lvl) * (1 + treeEff(p, 'hp') + useBonus(p, 'vigor')));
 const maxMpOf = p => Math.floor(maxMpFor(p.cls, p.lvl) * (1 + treeEff(p, 'mp')));
 const cstMaxOf = p => Math.round(CST_MAX * (1 + treeEff(p, 'cst')));
+
+// arco: tempo de puxar, pegar flecha, soltar; segurar no máximo cansa e treme; velocidades em tiles/s
+const BOW = { draw: 1000, nock: 800, loose: 350, holdSway: 2000, holdDrain: 16, maxRange: 18, vMin: 5, vMax: 13, g: 9.8 };

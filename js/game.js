@@ -49,6 +49,7 @@ function setBuffs(e, list) { const now = performance.now(); e.buffs = {}; for (c
 function clientOnServer(m) {
   const now = performance.now();
   if (typeof progEvent === 'function' && progEvent(m, now)) return;
+  if (typeof bowEvent === 'function' && bowEvent(m, now)) return;
   switch (m.t) {
     case 'welcome':
       G.myId = m.you; setTimeout(() => Net.send({ t: 'duel', on: SET.duel ? 1 : 0 }), 500);
@@ -67,7 +68,7 @@ function clientOnServer(m) {
       const oldLvl = e.lvl;
       if (m.slow) G.slowUntil = now + m.slow;
       if (m.knock) G.knockUntil = now + m.knock;
-      G.cst = m.cst ?? CST_MAX; G.cstMax = m.cstMax || CST_MAX; if (m.tree) e.tree = m.tree; if (m.use) e.use = m.use; if (typeof onProgStat === 'function') onProgStat(); G.stunUntil = now + (m.stun || 0); G.ripUntil = now + (m.rip || 0);
+      G.cst = m.cst ?? CST_MAX; G.cstMax = m.cstMax || CST_MAX; e.arw = m.arw || []; if (m.tree) e.tree = m.tree; if (m.use) e.use = m.use; if (typeof onProgStat === 'function') onProgStat(); G.stunUntil = now + (m.stun || 0); G.ripUntil = now + (m.rip || 0);
       Object.assign(e, { hp: m.hp, maxHp: m.maxHp, mp: m.mp, maxMp: m.maxMp, lvl: m.lvl, xp: m.xp, gold: m.gold, pots: m.pots, food: m.food, water: m.water, cold: m.cold, infect: m.infect, sick: m.sick, hasSkin: m.hasSkin, body: m.body, bleed: m.bleed, lost: m.lost || 0, pro: m.pro || 0, inv: m.inv || {}, combat: m.combat, quests: m.quests, qdone: m.qdone });
       setBuffs(e, m.buffs);
       G.cdEnd = m.cds.map(r => now + r);
@@ -124,7 +125,7 @@ function clientOnServer(m) {
       break;
     case 'cast': { const e = G.players[m.id]; if (e) { e.cast = { start: now, end: now + m.ms, el: m.el }; } break; }
     case 'castend': { const e = G.players[m.id]; if (e) e.cast = null; break; }
-    case 'mdie': { const e = G.monsters[m.id]; if (e) { e.dieAt = now + (m.d || 0); later(m.d || 0, () => beginMonsterFall(e)); } if (G.target === m.id) setTarget(null); break; }
+    case 'mdie': { const e = G.monsters[m.id]; if (e && e.arrows && G.corpseArrows) G.corpseArrows[m.id] = { arrows: e.arrows, dir: e.dir || 0 }; if (e) { e.dieAt = now + (m.d || 0); later(m.d || 0, () => beginMonsterFall(e)); } if (G.target === m.id) setTarget(null); break; }
     case 'chat': {
       addChat(m.name, m.text);
       const e = m.id && G.players[m.id];
@@ -206,7 +207,7 @@ function applySnapshot(m, now) {
       continue;
     }
     e.hp = hpPct; e.maxHp = 100; e.z = z;
-    e.srvDir = dir; e.srvWalk = !!(fl & 1); if (e !== G.me) { e.running = !!(fl & 256); e.fl = (fl >> 11) & 3; e.crouch = !!(fl & 8192); e.slide = !!(fl & 16384); e.sit = fl & 512 ? { chair: fl & 1024 ? 1 : 0 } : null; e.sleepB = fl & 32768 ? 1 : null; }
+    e.srvDir = dir; e.srvWalk = !!(fl & 1); if (e !== G.me) { e.running = !!(fl & 256); e.fl = (fl >> 11) & 3; e.crouch = !!(fl & 8192); e.slide = !!(fl & 16384); e.sit = fl & 512 ? { chair: fl & 1024 ? 1 : 0 } : null; e.sleepB = fl & 32768 ? 1 : null; e.bowDrawT = fl & 65536 ? (e.bowDrawT || performance.now()) : 0; }
     e.buf.push({ t: now, x, y });
     if (e.buf.length > 6) e.buf.shift();
   }
@@ -766,7 +767,10 @@ canvas.addEventListener('mousedown', e => {
     const me = G.me; $('chat-input').blur();
     if (e.button === 3 || e.button === 4) { e.preventDefault(); strike('under'); return; }
     if (e.button === 2) { G.parrying = true; Net.send({ t: 'parry', on: 1, a: me.fa ?? 0 }); return; }
-    if (e.button === 0 && me.cls !== 'knight') {   // arqueiro e mago: clique esquerdo dispara (segure para continuar)
+    if (e.button === 0) G.mouse0 = true;
+    if (e.button === 0 && me.cls === 'archer') { const mon = monsterUnderMouse(e.clientX, e.clientY); if (mon) setTarget(mon.id); bowPress(); return; }   // arco: segurar puxa
+    if (e.button === 2 && me.cls === 'archer' && G.bow.st === 'drawing') { bowCancel(); return; }                          // botão direito relaxa a corda
+    if (e.button === 0 && me.cls !== 'knight') {   // mago: clique esquerdo dispara (segure para continuar)
       const mon = monsterUnderMouse(e.clientX, e.clientY); if (mon) setTarget(mon.id);
       G.shootHeld = true; G.shootT = performance.now(); Net.send({ t: 'shoot', a: me.fa ?? 0, id: mon ? mon.id : (G.target || 0) }); return;
     }
@@ -838,7 +842,7 @@ function strike(k) {
   const a = me.fa ?? 0; Net.send({ t: 'atk', k, a });
 }
 canvas.addEventListener('mousemove', e => { if (G.started) { G.mouseW = screenToWorld(e.clientX, e.clientY); G.mouseHist = (G.mouseHist || []).filter(q => performance.now() - q.t < 180).concat([{ t: performance.now(), x: e.clientX }]); } });
-canvas.addEventListener('mouseup', e => { if (e.button === 0) G.shootHeld = false; if (e.button === 3 || e.button === 4) e.preventDefault(); if (e.button === 2 && G.parrying) { G.parrying = false; Net.send({ t: 'parry', on: 0 }); } });
+canvas.addEventListener('mouseup', e => { if (e.button === 0) { G.shootHeld = false; G.mouse0 = false; if (isArcher()) bowRelease(); } if (e.button === 3 || e.button === 4) e.preventDefault(); if (e.button === 2 && G.parrying) { G.parrying = false; Net.send({ t: 'parry', on: 0 }); } });
 window.addEventListener('auxclick', e => { if (e.button === 3 || e.button === 4) e.preventDefault(); });
 window.addEventListener('mouseup', e => { if (e.button === 2 && G.parrying) { G.parrying = false; Net.send({ t: 'parry', on: 0 }); } });
 
@@ -862,6 +866,7 @@ window.addEventListener('keydown', e => {
   if (k === 'f' && !e.repeat && G.me && G.me.carrying && STAGE.x >= 0 && dist(G.me.x, G.me.y, STAGE.x, STAGE.y) < 3.4) { Net.send({ t: 'exec' }); return; }
   if (k === 'f' && !e.repeat && !nearestDowned()) { const c = nearCorpse(); if (c) { G.loot = { id: c.id, t0: performance.now() }; G.keys.add('f'); return; } }
   if (k === 'f' && !e.repeat && !nearestDowned() && !nearCorpse() && survivalAction()) return;
+  if (k === 'f' && !e.repeat && (G.me.arw || []).length && !nearestDowned() && !nearCorpse()) { Net.send({ t: 'pullarrow' }); return; }   // arrancar flecha cravada
   if (k === 'f' && !e.repeat && inCombatZone() && !nearestDowned() && !nearCorpse() && !(G.chests || []).some(c => c.mine && !c.open && dist(c.x, c.y, G.me.x, G.me.y) < 1.8)) { Net.send({ t: 'kick', a: G.me.fa ?? 0 }); return; }
   if (k === 'f' && !e.repeat) { const d = nearestDowned(); if (d) { G.reviving = d.id; Net.send({ t: 'revive', id: d.id, on: true }); } return; }
   if (k === 'g' && !e.repeat) { liftOrThrow(); return; }
@@ -911,6 +916,7 @@ function frame() {
   let cam = lobbyCam;
   if (G.started) {
     updateLocal(now, dt); updateFalls(now); updateLooting(now); if (typeof updateLife === 'function') updateLife(now);
+    bowUpdate(now);
     if (G.shootHeld && inCombatZone() && now - (G.shootT || 0) > 220) { G.shootT = now; Net.send({ t: 'shoot', a: G.me.fa ?? 0, id: G.target || 0 }); }
     { // luta com o dragão: a câmera se afasta devagar para caber tudo na tela (só se o zoom não foi mudado à mão)
       let near = false; for (const id in G.monsters) { const q = G.monsters[id]; if (MON[q.type].dragon && !q.dieAt && !(q.flags & 4) && dist(q.rx, q.ry, G.me.rx, G.me.ry) < 22) near = true; }
