@@ -12,16 +12,17 @@ const O = {
   REEDS: 10, LILY: 11, STUMP: 12, DEADTREE: 13, GRAVE: 14, BONES: 15, TENT: 16, CAMPFIRE: 17, FENCE: 18,
   TORCH: 19, BARREL: 20, CRATE: 21, HAY: 22, WELL: 23, STALL: 24, BENCH: 25, BANNER: 26, LOG: 27,
   FLOWERBED: 28, SPIKES: 29, WALL: 30, TOWER: 31, PART: 32, GATE: 33, STAIRS: 34, RUBBLE: 35, RUBBLEBIG: 36,
-  STATUE: 37, BRAZIER: 38, DUMMY: 39, WATERFALL: 40, LOWWALL: 41, IVY: 42, ANVIL: 43, WEAPONRACK: 44, CART: 45, TABLE: 46, CAVE: 47, HOARD: 48, ARMORPILE: 49, RUINTOWER: 50, OAK: 51, BIRCH: 52, WILLOW: 53, FERN: 54, ROOTS: 55, SHROOMS: 56, BERRY: 57, HERB: 58, BOULDER: 59,
+  STATUE: 37, BRAZIER: 38, DUMMY: 39, WATERFALL: 40, LOWWALL: 41, IVY: 42, ANVIL: 43, WEAPONRACK: 44, CART: 45, TABLE: 46, CAVE: 47, HOARD: 48, ARMORPILE: 49, RUINTOWER: 50, OAK: 51, BIRCH: 52, WILLOW: 53, FERN: 54, ROOTS: 55, SHROOMS: 56, BERRY: 57, HERB: 58, BOULDER: 59, GUILLOTINE: 60,
 };
 const BLOCKING = new Set([O.TREE, O.PINE, O.ROCK, O.FOUNTAIN, O.STUMP, O.DEADTREE, O.GRAVE, O.TENT,
   O.CAMPFIRE, O.FENCE, O.BARREL, O.CRATE, O.HAY, O.WELL, O.STALL, O.LOG, O.SPIKES,
-  O.WALL, O.TOWER, O.PART, O.RUBBLEBIG, O.CAVE, O.HOARD, O.RUINTOWER, O.OAK, O.BIRCH, O.WILLOW, O.BOULDER, O.STATUE, O.BRAZIER, O.DUMMY, O.WATERFALL, O.LOWWALL, O.ANVIL, O.WEAPONRACK, O.CART, O.TABLE]);
+  O.WALL, O.TOWER, O.PART, O.RUBBLEBIG, O.CAVE, O.HOARD, O.RUINTOWER, O.OAK, O.BIRCH, O.WILLOW, O.BOULDER, O.GUILLOTINE, O.STATUE, O.BRAZIER, O.DUMMY, O.WATERFALL, O.LOWWALL, O.ANVIL, O.WEAPONRACK, O.CART, O.TABLE]);
 // objetos soltos que dá para pegar e arremessar (dano base)
 const THROWABLE = { [O.BARREL]: 18, [O.CRATE]: 20, [O.ROCK]: 26 };
 // objetos rasteiros (vão direto para o chão pré-desenhado)
 const FLAT = new Set([O.FLOWER, O.LILY, O.FLOWERBED, O.BONES, O.RUBBLE, O.IVY]);
-const BEDS = [];   // camas do térreo (onde dá para deitar e dormir): { x, y, dx, dy (travesseiro -> pés), bi }
+const BEDS = [];
+const STAGE = { x: -1, y: -1 };   // cadafalso da guilhotina (centro do tablado 3x3)   // camas do térreo (onde dá para deitar e dormir): { x, y, dx, dy (travesseiro -> pés), bi }
 const DIRS8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 
 const Z = { VILLAGE: 0, FIELDS: 1, FOREST: 2, SWAMP: 3, BONES: 4, ORCS: 5, WILD: 6, OUTSKIRTS: 7 };
@@ -247,6 +248,7 @@ const NPCS = TEST3D ? [] : [
   { id: 'guard3', name: 'Sentinela Odo', kind: 'guard', x: C - 1.4, y: C - 29.4 },
   { id: 'guard4', name: 'Sentinela Wyn', kind: 'guard', x: C + 2.4, y: C - 29.4 },
   { id: 'fruit', name: 'Marta, a Fruteira', kind: 'fruit', x: C - 3, y: C + 9, stall: [C - 3, C + 10] },
+  { id: 'executioner', name: 'Mestre Corvo, o Carrasco', kind: 'executioner', x: C - 4.6, y: C + 3.4 },
 ];
 // ---------- bairro de teste ----------
 if (TEST3D) {
@@ -691,30 +693,33 @@ function generateWorld() {
 
   // ---- construções fixas + casas geradas (cidade densa, com vielas entre elas) ----
   // a casa não pode ficar sobre ruas nem outros prédios; a margem de 1 tile em volta pode ser rua (vira a calçada), mas não outro prédio
+  // faixa estreita entre a muralha norte e o castelo: margem de 1 tile
+  const freeNE = (ax, ay, w, h) => { for (let y = ay - 1; y <= ay + h; y++) for (let x = ax - 1; x <= ax + w; x++) { const inner = x >= ax && x < ax + w && y >= ay && y < ay + h; if (!inb(x, y) || bld[idx(x, y)] !== -1 || (used[idx(x, y)] && (inner || rdir[idx(x, y)] === 0))) return false; if (x <= x0 + 1 || x >= x1 - 1 || y <= y0 + 1) return false; } return true; };
   const free = (ax, ay, w, h) => { const mg = ax < C - 10 ? 4 : 3; for (let y = ay - mg; y <= ay + h + mg - 1; y++) for (let x = ax - mg; x <= ax + w + mg - 1; x++) { const inner = x >= ax && x < ax + w && y >= ay && y < ay + h; if (!inb(x, y) || bld[idx(x, y)] !== -1 || (inner && used[idx(x, y)])) return false; if (x <= x0 + 1 || x >= x1 - 1 || y <= y0 + 1 || y >= y1 - 1) return false; } return true; };
   // os prédios fixos ocupam a área deles (+1 de margem) antes de sortear as casas
   for (const b of BUILDINGS) reserve(b.x - 1, b.y - 1, b.x + b.w, b.y + b.h);
   const houses = [];
   const roadDist = (px, py) => { let best = 99; for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) { const xx = Math.round(px) + dx, yy = Math.round(py) + dy; if (inb(xx, yy) && rdir[idx(xx, yy)] && bld[idx(xx, yy)] < 0) best = Math.min(best, Math.abs(dx) + Math.abs(dy)); } return best; };
   // 1ª rodada: cidade toda (até 12 casas); 2ª rodada: até 3 casas extras no lado oeste (canto superior esquerdo da tela)
-  for (let k = 0, cap = 12; k < 16000; k++) {
+  for (let k = 0, cap = 12; k < 20000; k++) {
     if (k === 12000) cap = houses.length + 3;
-    if (houses.length >= cap) { if (k < 12000) { k = 11999; continue; } break; }
-    const west = k >= 12000;
-    const x = west ? x0 + 3 + Math.floor(R(k, 3, 700) * (C - 16 - x0)) : x0 + 3 + Math.floor(R(k, 3, 700) * (x1 - x0 - 10)), y = west ? C - 24 + Math.floor(R(k, 4, 700) * 30) : y0 + 3 + Math.floor(R(k, 4, 700) * (y1 - y0 - 10));
-    { const km = west ? 3 : 15; if (x + 6 > KEEP.x0 - km && x < KEEP.x1 + km && y + 6 > KEEP.y0 - km && y < KEEP.y1 + km) continue; }   // praça aberta em volta do castelo
+    if (k === 16000) cap = houses.length + 5;
+    if (houses.length >= cap) { if (k < 12000) { k = 11999; continue; } if (k < 16000) { k = 15999; continue; } break; }
+    const west = k >= 12000 && k < 16000, ne = k >= 16000;
+    const x = ne ? C - 14 + Math.floor(R(k, 3, 700) * 34) : west ? x0 + 3 + Math.floor(R(k, 3, 700) * (C - 16 - x0)) : x0 + 3 + Math.floor(R(k, 3, 700) * (x1 - x0 - 10)), y = ne ? y0 + 2 + Math.floor(R(k, 4, 700) * 3) : west ? C - 24 + Math.floor(R(k, 4, 700) * 30) : y0 + 3 + Math.floor(R(k, 4, 700) * (y1 - y0 - 10));
+    { const km = ne ? 1 : west ? 3 : 15; if (x + 6 > KEEP.x0 - km && x < KEEP.x1 + km && y + 6 > KEEP.y0 - km && y < KEEP.y1 + km) continue; }   // praça aberta em volta do castelo
     const nearKeep = x + 6 > KEEP.x0 - 19 && x < KEEP.x1 + 19 && y + 6 > KEEP.y0 - 19 && y < KEEP.y1 + 19, rr = R(k, 1, 700);
     const ai = nearKeep || rr < 0.55 ? Math.floor(R(k, 8, 700) * 4) : rr < 0.93 ? 4 + Math.floor(R(k, 8, 700) * 4) : 8 + Math.floor(R(k, 8, 700) * 2), T0 = HOUSE_TYPES[ai];
     let bestHb = null, bestD = 99;
     for (const door of ['S', 'N', 'E', 'W']) {
       const w = door === 'S' || door === 'N' ? T0.A : T0.D, h = door === 'S' || door === 'N' ? T0.D : T0.A;
-      if (!free(x, y, w, h)) continue;
+      if (!(ne ? freeNE(x, y, w, h) : free(x, y, w, h))) continue;
       const hb = { x, y, ...BH('house', w, h, T0.H, T0.RH, '', { v: T0.v, arch: ai, door, floors: T0.floors }) };
       { const [dtx, dty] = doorTile(hb), v = DOOR_V[door]; let okF = true; for (let q = 1; q <= 2; q++) { const fx = dtx + v[0] * q, fy = dty + v[1] * q; if (!inb(fx, fy) || bld[idx(fx, fy)] !== -1 || fx <= x0 + 1 || fx >= x1 - 1 || fy <= y0 + 1 || fy >= y1 - 1) okF = false; } if (!okF) continue; }
       const d0 = doorOf(hb), dd = roadDist(d0.x, d0.y);
       if (dd < bestD) { bestD = dd; bestHb = hb; }
     }
-    if (!bestHb || bestD > 9) continue;
+    if (!bestHb || bestD > (ne ? 40 : 9)) continue;
     const hb = bestHb, w = hb.w, h = hb.h;
     houses.push(hb);
     { const [dtx, dty] = doorTile(hb), v = DOOR_V[hb.door]; for (let q = 1; q <= 2; q++) used[idx(dtx + v[0] * q, dty + v[1] * q)] = 1; }
@@ -768,6 +773,14 @@ function generateWorld() {
   for (let x = x0 + 5; x < x1 - 4; x += 7) { if (Math.abs(x - C) > 4) { decoAny(x, C + 4, O.LAMP); } }
   // bandeiras do castelo e pátio interno
   for (const x of [KEEP.x0 + 4, KEEP.x1 - 4]) decoAny(x, KEEP.y1 + 2, O.BANNER);
+  // cadafalso com guilhotina: em frente ao castelo, à esquerda da porta, diante da estátua e do estandarte (tablado 3x3 + 1 tile livre para a escada)
+  { let best = null;
+    for (let r = 0; r < 7 && !best; r++) for (let dy = -r; dy <= r && !best; dy++) for (let dx = -r; dx <= r && !best; dx++) {
+      const cx = C - 7 + dx, cy = KEEP.y1 + 5 + dy; let ok = true;
+      for (let yy = cy - 1; yy <= cy + 2 && ok; yy++) for (let xx = cx - 1; xx <= cx + 1 && ok; xx++) { const i = idx(xx, yy); if (bld[i] !== -1 || BLOCKING.has(obj[i]) || ground[i] === T.WATER || rdir[i] && yy > cy + 1) ok = false; }
+      if (ok) best = [cx, cy];
+    }
+    if (best) { const [cx, cy] = best; for (let yy = cy - 1; yy <= cy + 1; yy++) for (let xx = cx - 1; xx <= cx + 1; xx++) obj[idx(xx, yy)] = O.PART; obj[idx(cx, cy)] = O.GUILLOTINE; obj[idx(cx, cy + 2)] = O.NONE; STAGE.x = cx; STAGE.y = cy; } }
   for (const [x, y, o] of [[C - 4, KEEP.y1 - 3, O.FLOWERBED], [C + 5, KEEP.y1 - 3, O.FLOWERBED], [C - 1, KEEP.y1 - 2, O.BRAZIER], [C + 2, KEEP.y1 - 2, O.BRAZIER], [C - 6, KEEP.y1 - 2, O.BENCH], [C + 7, KEEP.y1 - 2, O.BENCH], [C - 4, KEEP.y1 - 6, O.STATUE], [C + 5, KEEP.y1 - 6, O.STATUE]]) decoAny(x, y, o);
   // catedral: cemitério e jardim
   const T0 = BUILDINGS[0];
@@ -876,6 +889,8 @@ function generateDistrict() {
   return { ground, obj, zone, bld, fl1, stair, stairK, tvar, toff, rdir, wdir, gateId, gates, seats, height, flow, river };
 }
 const WORLD = TEST3D ? generateDistrict() : generateWorld();
+// o carrasco fica ao lado do cadafalso, perto da alavanca
+if (STAGE.x >= 0) { const ex = NPCS.find(n => n.id === 'executioner'); if (ex) { const c = [[2, 0.6], [2, -0.6], [-2, 0.6], [0.6, 2]].find(([dx, dy]) => !BLOCKING.has(WORLD.obj[Math.round(STAGE.y + dy) * MAP_W + Math.round(STAGE.x + dx)])) || [2, 0.6]; ex.x = STAGE.x + c[0]; ex.y = STAGE.y + c[1]; } }
 const NPC_AT = new Set(NPCS.map(n => Math.round(n.y) * MAP_W + Math.round(n.x)));
 
 function inBounds(x, y) { return x >= 0 && y >= 0 && x < MAP_W && y < MAP_H; }

@@ -465,7 +465,33 @@ function mBoulder(v) {
   vcolor(g, (c, x, y, z, ny) => { const m = ny > 0.25 && vnoise(x * 4, z * 4, 19) > 0.3; const l = vnoise(x * 9, y * 9, 21) > 0.75; c.set(m ? '#4e6e2c' : l ? '#a8a070' : '#6e6a62'); c.convertSRGBToLinear(); });
   return grp(mk(g, smat('rock', '#ffffff', { vc: true, bump: 1.5 })));
 }
-const NATURE = { oak: [mOak, 2.15], birch: [mBirch, 2.0], willow: [mWillow, 2.05], fern: [mFern, 1.15], roots: [mRoots, 1.0], shrooms: [mShrooms, 0.95], berry: [mBerry, 1.05], herb: [mHerb, 1.0], boulder: [mBoulder, 1.15] };
+// cadafalso: tablado de 3x3 tiles com escada na frente, guarda-corpo, guilhotina, cesto e alavanca (v=1: lâmina embaixo)
+function mGuillotine(v) {
+  const o = grp(), W = WOOD(), D = DWOOD(), iron = smat(null, '#9aa0a8', { metal: 1, rough: 0.3 }), rope = smat(null, '#a88a5a', { rough: 0.9 });
+  o.add(wbox(2.9, 0.12, 2.9, 0, 0.74, 0, W, 2)); o.add(wbox(2.8, 0.68, 2.8, 0, 0.34, 0, D, 2));
+  for (const [x, z] of [[-1.4, -1.4], [1.4, -1.4], [-1.4, 1.4], [1.4, 1.4]]) o.add(wbox(0.16, 0.8, 0.16, x, 0.4, z, D, 1.5));
+  for (let s = 0; s < 4; s++) o.add(wbox(0.95, 0.18, 0.26, 0, 0.09 + s * 0.18, 2.12 - s * 0.22, W, 1.5));
+  // guarda-corpo nos lados e atrás
+  for (const [x, z, w, d] of [[-1.38, 0, 0.06, 2.8], [1.38, 0, 0.06, 2.8], [0, -1.38, 2.8, 0.06]]) { o.add(wbox(w, 0.06, d, x, 1.3, z, D, 1.5)); }
+  for (const [x, z] of [[-1.38, -1.38], [-1.38, 0], [-1.38, 1.3], [1.38, -1.38], [1.38, 0], [1.38, 1.3], [0, -1.38]]) o.add(wbox(0.07, 0.52, 0.07, x, 1.06, z, D, 1.5));
+  // guilhotina: dois montantes altos, travessa, lâmina inclinada, luneta e prancha
+  const z0 = -0.25;
+  for (const x of [-0.34, 0.34]) o.add(wbox(0.13, 2.6, 0.13, x, 2.1, z0, D, 2));
+  o.add(wbox(0.95, 0.16, 0.2, 0, 3.42, z0, D, 2)); o.add(wbox(0.12, 0.12, 0.6, 0, 3.42, z0 - 0.1, D, 2));
+  const by = v ? 1.32 : 2.85, bl = new THREE.Shape(); bl.moveTo(-0.28, 0.22); bl.lineTo(0.28, 0.22); bl.lineTo(0.28, 0.02); bl.lineTo(-0.28, -0.14); bl.closePath();
+  o.add(mk(new THREE.ExtrudeGeometry(bl, { depth: 0.03, bevelEnabled: false }).translate(0, by, z0 - 0.015), iron));
+  o.add(wbox(0.6, 0.14, 0.1, 0, by + 0.29, z0, D, 1));
+  o.add(wbox(0.62, 0.16, 0.14, 0, 1.12, z0, D, 1.5)); o.add(wbox(0.62, 0.12, 0.14, 0, 1.38, z0, D, 1.5));
+  o.add(mk(new THREE.TorusGeometry(0.09, 0.03, 6, 14).translate(0, 1.24, z0 + 0.08), D));
+  o.add(wbox(0.4, 0.08, 1.3, 0, 0.98, z0 - 0.75, W, 1.5)); for (const zz of [-0.5, -1.3]) o.add(wbox(0.08, 0.2, 0.08, 0, 0.88, z0 + zz, D, 1));
+  // cesto na frente da luneta e alavanca com corda
+  o.add(mk(new THREE.CylinderGeometry(0.2, 0.15, 0.24, 12, 1, true).translate(0, 0.92, z0 + 0.38), smat(null, '#8a6a3a', { side: THREE.DoubleSide, rough: 0.9 })));
+  const lv = mk(BOX(0.05, 0.5, 0.05, 0, 0.25, 0), D); lv.position.set(0.55, 0.8, z0 + 0.1); lv.rotation.z = v ? -0.6 : 0.5; o.add(lv);
+  o.add(mk(new THREE.CylinderGeometry(0.008, 0.008, 2.2, 4).translate(0.36, 2.3, z0 + 0.06), rope));
+  if (v) o.add(mk(new THREE.CircleGeometry(0.35, 14).rotateX(-Math.PI / 2).translate(0, 0.81, z0 + 0.3), smat(null, '#5a0c0c', { rough: 0.3 })));
+  return o;
+}
+const NATURE = { guil: [mGuillotine, 1.0], oak: [mOak, 2.15], birch: [mBirch, 2.0], willow: [mWillow, 2.05], fern: [mFern, 1.15], roots: [mRoots, 1.0], shrooms: [mShrooms, 0.95], berry: [mBerry, 1.05], herb: [mHerb, 1.0], boulder: [mBoulder, 1.15] };
 function natureSprite(kind, v) { const N = NATURE[kind]; if (!N || !S3.ok) return null; return scen3('nt|' + kind + '|' + v, () => { const g = N[0](v); g.scale.setScalar(N[1]); return g; }); }
 function rockGeo(seed, r, sx, sy, sz) {
   const g = new THREE.IcosahedronGeometry(r, 2), p = g.attributes.position, R = rng(seed), off = [R() * 9, R() * 9, R() * 9];

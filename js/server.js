@@ -290,6 +290,13 @@ function hostOnClient(from, m) {
       break;
     }
     case 'emote': { const k = ['salute', 'dance', 'point'].includes(m.k) ? m.k : null; if (k && !p.downed) near(p.x, p.y, { t: 'emote', id: p.id, k }); break; }
+    case 'exec': {   // entrega o condenado caído ao carrasco: deita na guilhotina, a lâmina cai e a cabeça rola (morte permanente)
+      const v = S.players[p.carrying]; if (!v || !v.downed || STAGE.x < 0 || v.execAt || dist(p.x, p.y, STAGE.x, STAGE.y) > 3.4) break;
+      dropCarried(p); const now = now_(); v.x = STAGE.x; v.y = STAGE.y; v.z = 0; v.execAt = now + 2600; v.downed.until = Math.max(v.downed.until, now + 12000);
+      near(STAGE.x, STAGE.y, { t: 'exec', id: v.id, x: STAGE.x, y: STAGE.y, ms: 2600 }); sys(p.name + ' levou ' + v.name + ' ao cadafalso!');
+      setTimeout(() => { const q = S.players[v.id]; if (!q) return; q.execAt = 0; if (!q.downed) return; q.downed = null; severPlayer(q, 'head', { x: STAGE.x, y: STAGE.y + 1, name: 'o Carrasco' }); }, 2600);
+      break;
+    }
     case 'sleep': {
       if (!m.on || p.downed || p.carrying || p.carriedBy) { p.sleep = null; break; }
       const b = BEDS[m.b | 0]; if (!b || dist(p.x, p.y, b.x, b.y) > 2.6) break;

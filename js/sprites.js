@@ -44,6 +44,7 @@ function shadeHex(hex, amt) {
   return '#' + h(r) + h(g) + h(b);
 }
 const NPC_LOOKS = {
+  executioner: () => Object.assign(heroLook('knight', 'iron', '#1c1816'), { armor: 'leather', body: tone('#1c1816'), body2: tone('#3a2a1e'), accent: tone('#1c1816'), trim: tone('#4a3a2a'), legs: tone('#2a2420'), boots: tone('#1a1410'), head: 'hood', headTone: tone('#0e0c0b'), weapon: 'axe', shield: null, capeTone: null, skin: tone('#c89a7a') }),
   fruit: () => Object.assign(heroLook('archer', 'scout', '#3e5a34'), { armor: 'robe', body: tone('#3e5a34'), body2: tone('#efe6cf'), accent: tone('#efe6cf'), trim: tone('#a8342a'), head: 'none', hairStyle: 'long', hair: tone('#3a2414'), weapon: null, quiver: false, skin: tone('#e6bea0'), capeTone: null }),
   priest: () => Object.assign(heroLook('mage', 'adept', '#e9e2cf'), { body: tone('#e9e2cf'), body2: tone('#c9a24a'), head: 'hood', accent: tone('#f2ecdc'), weapon: 'book', beard: null, hair: tone('#6b4a2b'), skin: tone('#e2b896') }),
   merchant: () => Object.assign(heroLook('archer', 'scout', '#2f5a3a'), { armor: 'vest', body: tone('#7a3b22'), body2: tone('#d6c9a8'), head: 'cap', headTone: tone('#2f5a3a'), weapon: null, quiver: false, beard: tone('#5a3a22'), hair: tone('#5a3a22') }),
@@ -603,7 +604,7 @@ function heroSprite(cls, skin, color, P) {
   const L = lookFor(lk, () => heroLook(cls, skin, color));
   return sprite('h|' + lk + '|' + poseKey(P), HW, HH, HAX, HAY, pc => drawHeroPC(pc, L, P, cls), { ok: 0.42 });
 }
-const NPC_CLS = { fruit: 'archer', priest: 'mage', merchant: 'archer', innkeeper: 'archer', guard: 'knight', captain: 'knight', smith: 'knight' };
+const NPC_CLS = { executioner: 'knight', fruit: 'archer', priest: 'mage', merchant: 'archer', innkeeper: 'archer', guard: 'knight', captain: 'knight', smith: 'knight' };
 function npcSprite(kind, P) {
   const L = lookFor('npc:' + kind, NPC_LOOKS[kind]);
   return sprite('n|' + kind + '|' + poseKey(P), HW, HH, HAX, HAY, pc => drawHeroPC(pc, L, P, NPC_CLS[kind] || 'knight'), { ok: 0.42 });

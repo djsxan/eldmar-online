@@ -30,7 +30,7 @@ function anySprite(cls, skin, color, P, kind) {
 function later(ms, fn) { if (!ms || ms <= 0) fn(); else G.timers.push({ at: performance.now() + ms, fn }); }
 const IDLE_SETS = {
   knight: ['look', 'stretch', 'polish', 'kick', 'sit', 'look'], archer: ['look', 'stretch', 'yawn', 'polish', 'sit', 'kick'], mage: ['look', 'yawn', 'polish', 'stretch', 'sit'],
-  fruit: ['look', 'wave', 'look', 'stretch'], priest: ['pray', 'read', 'look', 'pray'], merchant: ['look', 'wave', 'kick', 'look'], innkeeper: ['drink', 'look', 'wave', 'drink'], guard: ['salute', 'look', 'kick', 'look'], captain: ['look', 'salute', 'polish', 'look'],
+  fruit: ['look', 'wave', 'look', 'stretch'], executioner: ['look', 'polish', 'look', 'stretch'], priest: ['pray', 'read', 'look', 'pray'], merchant: ['look', 'wave', 'kick', 'look'], innkeeper: ['drink', 'look', 'wave', 'drink'], guard: ['salute', 'look', 'kick', 'look'], captain: ['look', 'salute', 'polish', 'look'],
 };
 function updateIdle(e, now) {
   if (e.walking || (e.anim && now - e.anim.t0 < 700) || e.downed || (e.cast && e.cast.end > now)) { e.idleT = now; e.idleAnim = null; return; }
@@ -142,6 +142,7 @@ function clientOnServer(m) {
     case 'shake': G.shake = Math.max(G.shake, m.s || 6); break;
     case 'tele': G.teles.push({ ...m, t0: now }); break;
     case 'fires': for (const [x, y, r, ms] of m.l) { const t = Math.round(y) * MAP_W + Math.round(x); G.fires.push({ x, y, r, z: m.z != null ? m.z : (WORLD.ground[t] === T.CLIFF && WORLD.fl1[t] > 0 ? 1 : 0), t0: now + (m.ms || 0), until: now + ms }); } if (!m.nb) G.breaths.push({ t0: now, ms: 650 }); break;
+    case 'exec': { const e = G.players[m.id]; if (e) e.exec = { t0: now, ms: m.ms }; G.bladeAt = now + m.ms; const x = G.npcs.executioner; if (x) x.anim = { a: 'execute', t0: now + m.ms - 380, ms: 720 }; break; }
     case 'jet': { const e = G.monsters[m.id]; if (e) e.jet = { ...m, t0: now }; break; }
     case 'grab': { const e = G.players[m.id]; if (e) e.grab = { mid: m.mid, until: now + m.ms + 400 }; break; }
     case 'burn': { const e = G.players[m.id]; if (e) e.burnUntil = m.ms ? now + m.ms : 0; break; }
@@ -631,6 +632,7 @@ function flashDamage() { const v = $('vignette'); v.classList.remove('hit'); voi
 // ---------- diálogos com NPCs ----------
 const GUARD_TEXT = 'Além do fosso: os Campos (★) logo além da paliçada; o Bosque Sombrio (★★) ao norte; o Pântano Pútrido (★★) a leste; as Colinas de Ossos (★★★) ao sul; o Acampamento Orc (★★★) a oeste. Perto do mar, as Terras Selvagens (★★★★). A cachoeira fica na montanha, a noroeste.';
 const NPC_DIALOG = {
+  executioner: { greet: 'A justiça de Sxan é rápida e limpa. Traga o condenado caído até o cadafalso — carregue-o e aperte F aqui perto — e eu cuido do resto.', opts: [] },
   fruit: { greet: 'Frutas fresquinhas do pomar, colhidas hoje cedo! Maçã docinha, amora do mato... leva uma?', opts: [
     ['Maçã — 3 ouro', { a: 'buyl', item: 'apple', qty: 1 }], ['5 Maçãs — 15 ouro', { a: 'buyl', item: 'apple', qty: 5 }],
     ['Frutas Silvestres — 3 ouro', { a: 'buyl', item: 'berries', qty: 1 }], ['5 Frutas Silvestres — 15 ouro', { a: 'buyl', item: 'berries', qty: 5 }]] },
@@ -845,6 +847,7 @@ window.addEventListener('keydown', e => {
   if (k === 'e') { drinkPot('mp'); return; }
   if (k === 'r' && G.me.downed) { if (!PERMADEATH || window.confirm('Desistir é MORTE PERMANENTE: seu personagem será apagado. Tem certeza?')) Net.send({ t: 'giveup' }); return; }
   if (k === 'f' && !e.repeat && openNearChest(1.8)) return;
+  if (k === 'f' && !e.repeat && G.me && G.me.carrying && STAGE.x >= 0 && dist(G.me.x, G.me.y, STAGE.x, STAGE.y) < 3.4) { Net.send({ t: 'exec' }); return; }
   if (k === 'f' && !e.repeat && !nearestDowned()) { const c = nearCorpse(); if (c) { G.loot = { id: c.id, t0: performance.now() }; G.keys.add('f'); return; } }
   if (k === 'f' && !e.repeat && !nearestDowned() && !nearCorpse() && survivalAction()) return;
   if (k === 'f' && !e.repeat && inCombatZone() && !nearestDowned() && !nearCorpse() && !(G.chests || []).some(c => c.mine && !c.open && dist(c.x, c.y, G.me.x, G.me.y) < 1.8)) { Net.send({ t: 'kick', a: G.me.fa ?? 0 }); return; }
@@ -1357,7 +1360,7 @@ function updateNeeds() {
   if (me.sick > 0) out.push(['🤢', 'Enjoado', 1]);
   el.innerHTML = out.map(([i, t, s]) => '<span class="nd s' + s + '" title="' + t + '">' + i + '</span>').join('');
   document.body.classList.toggle('cold', (me.cold || 0) > 50); document.body.classList.toggle('fever', !!me.infect);
-  const pr = $('prompt'); if (!G.loot && !nearCorpse()) { const raw = me.inv && (me.inv.venison || me.inv.pork); const hv = nearHarvest(); const txt = hv >= 0 ? (WORLD.obj[hv] === O.BERRY ? 'F: colher frutas' : 'F: colher erva') : raw && nearFireC() ? 'F: assar a carne' : nearWaterC() && (me.water ?? 100) < 98 ? 'F: beber' : ''; if (txt) { pr.textContent = txt; pr.classList.remove('hidden'); } else pr.classList.add('hidden'); }
+  const pr = $('prompt'); if (!G.loot && !nearCorpse()) { const raw = me.inv && (me.inv.venison || me.inv.pork); const hv = nearHarvest(), exN = me.carrying && STAGE.x >= 0 && dist(me.x, me.y, STAGE.x, STAGE.y) < 3.4; const txt = exN ? 'F: entregar ao carrasco (execução)' : hv >= 0 ? (WORLD.obj[hv] === O.BERRY ? 'F: colher frutas' : 'F: colher erva') : raw && nearFireC() ? 'F: assar a carne' : nearWaterC() && (me.water ?? 100) < 98 ? 'F: beber' : ''; if (txt) { pr.textContent = txt; pr.classList.remove('hidden'); } else pr.classList.add('hidden'); }
   if ($('pz-surv')) $('pz-surv').innerHTML = '<div><b>Fome</b> ' + Math.round(100 - (me.food ?? 100)) + '% · <b>Sede</b> ' + Math.round(100 - (me.water ?? 100)) + '% · <b>Frio</b> ' + Math.round(me.cold || 0) + '%</div><div><b>Infecção</b> ' + ['nenhuma', 'febre', 'grave'][me.infect || 0] + (me.sick > 0 ? ' · <b>enjoado</b>' : '') + '</div><div class="gp-note">Coma e beba, fique perto do fogo à noite, trate feridas graves com bandagem. A morte é permanente.</div>';
 }
 // ---------- sangue em jato e pedaços decepados ----------

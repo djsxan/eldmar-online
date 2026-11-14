@@ -327,6 +327,10 @@ function drawWeaverAura(ctx, sx, sy, now) {
   G.lights.push({ x: sx, y: sy - 30, r: 80, c: '235,245,255', a: 0.85 });
 }
 function drawHeroEntity(ctx, e, sx, sy, now) {
+  if (R3.ok && e.exec && now < e.exec.t0 + e.exec.ms + 1500) {   // deitado na guilhotina, com a cabeça na luneta
+    const s = heroSprite3D(e.cls, e.skin, e.color, { dir: 6, walk: -1, down: true, lost: e.lost || 0, pro: e.pro || 0 });
+    ctx.imageSmoothingEnabled = true; pblit(ctx, woundOf(s, 3), sx, sy - 0.95 * (typeof HV !== 'undefined' ? HV : 25)); e._spr = null; return;
+  }
   if (R3.ok && e.sleepB && !e.downed) {   // deitado na cama, dormindo
     const P = { dir: e.dir || 0, walk: -1, down: true, lost: e.lost || 0, pro: e.pro || 0 };
     const s = e.isNpc ? npcSprite3D(e.kind, P) : heroSprite3D(e.cls, e.skin, e.color, P);
@@ -499,6 +503,7 @@ const CASTS = new Set([O.OAK, O.BIRCH, O.WILLOW, O.BOULDER, O.BERRY, O.TREE, O.P
 function objSprite(o, x, y) {
   const h = hash2(x, y, 17), v = Math.floor(h * 3), i = y * MAP_W + x, z = WORLD.zone[i];
   switch (o) {
+    case O.GUILLOTINE: return natureSprite('guil', G.bladeAt && performance.now() >= G.bladeAt && performance.now() < G.bladeAt + 5000 ? 1 : 0) || smallSprite('cart');
     case O.OAK: return natureSprite('oak', v & 1) || treeSprite(v, 1, 3);
     case O.BIRCH: return natureSprite('birch', v & 1) || treeSprite(v, 1, 1);
     case O.WILLOW: return natureSprite('willow', v & 1) || treeSprite(v, 1, 0);
