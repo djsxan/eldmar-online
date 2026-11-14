@@ -368,13 +368,13 @@ function buildingSprite(b, night) {
     const style = {
       temple: { wall: '#d8d0bc', roof: '#3a5480', tex: 'stone', roofTex: 'shingle', trim: '#c9a24a' },
       shop: { wall: '#e0cfa6', roof: '#943828', tex: 'plaster', roofTex: 'shingle', trim: '#4a2f17' },
-      tavern: { wall: '#d6c296', roof: '#8a6a2a', tex: 'plaster', roofTex: 'thatch', trim: '#3a2410' },
-      house: { wall: '#ddd0b0', roof: b.x % 2 ? '#7a3828' : '#8a7a3a', tex: 'plaster', roofTex: b.x % 2 ? 'shingle' : 'thatch', trim: '#4a2f17' },
+      tavern: { wall: '#d6c296', roof: '#6e2e22', tex: 'plaster', roofTex: 'shingle', trim: '#3a2410' },
+      house: { wall: '#ddd0b0', roof: b.x % 2 ? '#7a3828' : '#46505e', tex: 'plaster', roofTex: b.x % 2 ? 'shingle' : 'slate', trim: '#4a2f17' },
       smith: { wall: '#7e796e', roof: '#45403c', tex: 'stone', roofTex: 'shingle', trim: '#2a1e14' },
       barracks: { wall: '#928c80', roof: '#5a3a30', tex: 'stone', roofTex: 'shingle', trim: '#2a1e14' },
       stairtower: { wall: '#a29c90', roof: '#3e4a66', tex: 'stone', roofTex: 'shingle', trim: '#2a1e14' },
       castle: { wall: '#b4ad9c', roof: '#3e4a66', tex: 'stone', roofTex: 'shingle', trim: '#c9a24a' },
-      stable: { wall: '#8a6a44', roof: '#9a7a2e', tex: 'wood', roofTex: 'thatch', trim: '#3a2410' },
+      stable: { wall: '#8a6a44', roof: '#5a5048', tex: 'wood', roofTex: 'slate', trim: '#3a2410' },
     }[b.kind];
     const timber = style.tex === 'plaster';
     // sombra de contato

@@ -82,7 +82,7 @@ const BUILDINGS = TEST3D ? [] : [
   { x: C - 28, y: C - 29, ...BH('temple', 9, 8, 6.5, 5.0, 'Catedral da Aurora', { floors: 1 }) },
   { x: C + 13, y: C - 7, ...BH('shop', 5, 5, 4.0, 2.8, 'Empório do Borin') },
   { x: C + 21, y: C + 8, ...BH('smith', 6, 5, 2.6, 2.6, 'Forja de Hrodgar') },
-  { x: C - 16, y: C + 22, ...BH('tavern', 7, 6, 4.2, 3.0, 'Taverna do Javali') },
+  { x: C - 15, y: C + 8, ...BH('tavern', 6, 7, 4.2, 3.0, 'Taverna do Javali', { door: 'E' }) },   // de frente para a praça do mercado
   { x: C + 5, y: C + 22, ...BH('barracks', 8, 5, 4.0, 2.6, 'Quartel da Guarda') },
   { x: C - 28, y: C + 24, ...BH('stable', 5, 4, 2.6, 2.4, 'Estábulo', { floors: 1 }) },
   { x: C + 13, y: C + 0, ...BH('shop', 5, 4, 4.0, 2.8, 'Boticário de Elva', { v: 1 }) },
@@ -695,9 +695,10 @@ function generateWorld() {
   // a casa não pode ficar sobre ruas nem outros prédios; a margem de 1 tile em volta pode ser rua (vira a calçada), mas não outro prédio
   // faixa estreita entre a muralha norte e o castelo: margem de 1 tile
   const freeNE = (ax, ay, w, h) => { for (let y = ay - 1; y <= ay + h; y++) for (let x = ax - 1; x <= ax + w; x++) { const inner = x >= ax && x < ax + w && y >= ay && y < ay + h; if (!inb(x, y) || bld[idx(x, y)] !== -1 || (used[idx(x, y)] && (inner || rdir[idx(x, y)] === 0))) return false; if (x <= x0 + 1 || x >= x1 - 1 || y <= y0 + 1) return false; } return true; };
-  const free = (ax, ay, w, h) => { const mg = ax < C - 10 ? 4 : 3; for (let y = ay - mg; y <= ay + h + mg - 1; y++) for (let x = ax - mg; x <= ax + w + mg - 1; x++) { const inner = x >= ax && x < ax + w && y >= ay && y < ay + h; if (!inb(x, y) || bld[idx(x, y)] !== -1 || (inner && used[idx(x, y)])) return false; if (x <= x0 + 1 || x >= x1 - 1 || y <= y0 + 1 || y >= y1 - 1) return false; } return true; };
+  const free = (ax, ay, w, h, mgO) => { const mg = mgO || (ax < C - 10 ? 4 : 3); for (let y = ay - mg; y <= ay + h + mg - 1; y++) for (let x = ax - mg; x <= ax + w + mg - 1; x++) { const inner = x >= ax && x < ax + w && y >= ay && y < ay + h; if (!inb(x, y) || bld[idx(x, y)] !== -1 || (inner && used[idx(x, y)])) return false; if (x <= x0 + 1 || x >= x1 - 1 || y <= y0 + 1 || y >= y1 - 1) return false; } return true; };
   // os prédios fixos ocupam a área deles (+1 de margem) antes de sortear as casas
   for (const b of BUILDINGS) reserve(b.x - 1, b.y - 1, b.x + b.w, b.y + b.h);
+  reserve(C - 22, C + 21, C - 12, C + 29);   // pracinha do bairro sul-oeste (poço, árvores e bancos)
   const houses = [];
   const roadDist = (px, py) => { let best = 99; for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) { const xx = Math.round(px) + dx, yy = Math.round(py) + dy; if (inb(xx, yy) && rdir[idx(xx, yy)] && bld[idx(xx, yy)] < 0) best = Math.min(best, Math.abs(dx) + Math.abs(dy)); } return best; };
   // 1ª rodada: cidade toda (até 12 casas); 2ª rodada: até 3 casas extras no lado oeste (canto superior esquerdo da tela)
@@ -708,12 +709,14 @@ function generateWorld() {
     const west = k >= 12000 && k < 16000, ne = k >= 16000;
     const x = ne ? C - 14 + Math.floor(R(k, 3, 700) * 34) : west ? x0 + 3 + Math.floor(R(k, 3, 700) * (C - 16 - x0)) : x0 + 3 + Math.floor(R(k, 3, 700) * (x1 - x0 - 10)), y = ne ? y0 + 2 + Math.floor(R(k, 4, 700) * 3) : west ? C - 24 + Math.floor(R(k, 4, 700) * 30) : y0 + 3 + Math.floor(R(k, 4, 700) * (y1 - y0 - 10));
     { const km = ne ? 1 : west ? 3 : 15; if (x + 6 > KEEP.x0 - km && x < KEEP.x1 + km && y + 6 > KEEP.y0 - km && y < KEEP.y1 + km) continue; }   // praça aberta em volta do castelo
+    const sw = x < C - 4 && y > C + 12;   // bairro sul-oeste: no máximo 2 casas, bem espaçadas
+    if (sw && houses.filter(hh => hh.x < C - 4 && hh.y > C + 12).length >= 2) continue;
     const nearKeep = x + 6 > KEEP.x0 - 19 && x < KEEP.x1 + 19 && y + 6 > KEEP.y0 - 19 && y < KEEP.y1 + 19, rr = R(k, 1, 700);
     const ai = nearKeep || rr < 0.55 ? Math.floor(R(k, 8, 700) * 4) : rr < 0.93 ? 4 + Math.floor(R(k, 8, 700) * 4) : 8 + Math.floor(R(k, 8, 700) * 2), T0 = HOUSE_TYPES[ai];
     let bestHb = null, bestD = 99;
     for (const door of ['S', 'N', 'E', 'W']) {
       const w = door === 'S' || door === 'N' ? T0.A : T0.D, h = door === 'S' || door === 'N' ? T0.D : T0.A;
-      if (!(ne ? freeNE(x, y, w, h) : free(x, y, w, h))) continue;
+      if (!(ne ? freeNE(x, y, w, h) : free(x, y, w, h, sw ? 5 : 0))) continue;
       const hb = { x, y, ...BH('house', w, h, T0.H, T0.RH, '', { v: T0.v, arch: ai, door, floors: T0.floors }) };
       { const [dtx, dty] = doorTile(hb), v = DOOR_V[door]; let okF = true; for (let q = 1; q <= 2; q++) { const fx = dtx + v[0] * q, fy = dty + v[1] * q; if (!inb(fx, fy) || bld[idx(fx, fy)] !== -1 || fx <= x0 + 1 || fx >= x1 - 1 || fy <= y0 + 1 || fy >= y1 - 1) okF = false; } if (!okF) continue; }
       const d0 = doorOf(hb), dd = roadDist(d0.x, d0.y);
@@ -773,6 +776,9 @@ function generateWorld() {
   for (let x = x0 + 5; x < x1 - 4; x += 7) { if (Math.abs(x - C) > 4) { decoAny(x, C + 4, O.LAMP); } }
   // bandeiras do castelo e pátio interno
   for (const x of [KEEP.x0 + 4, KEEP.x1 - 4]) decoAny(x, KEEP.y1 + 2, O.BANNER);
+  // pracinha do sul-oeste
+  { const px = C - 17, py = C + 25; for (let yy = py - 3; yy <= py + 3; yy++) for (let xx = px - 4; xx <= px + 4; xx++) { const i = idx(xx, yy); if (bld[i] < 0 && !BLOCKING.has(obj[i])) { obj[i] = O.NONE; if (Math.hypot(xx - px, (yy - py) * 1.3) < 3.2) ground[i] = T.COBBLE; } }
+    for (const [x, y, o] of [[px, py, O.WELL], [px - 3, py - 2, O.TREE], [px + 3, py + 2, O.TREE], [px - 2, py + 2, O.BENCH], [px + 2, py - 2, O.BENCH], [px + 3, py - 1, O.FLOWERBED], [px - 3, py + 1, O.FLOWERBED], [px, py - 3, O.LAMP], [px, py + 3, O.LAMP]]) decoAny(x, y, o); }
   // cadafalso com guilhotina: em frente ao castelo, à esquerda da porta, diante da estátua e do estandarte (tablado 3x3 + 1 tile livre para a escada)
   { let best = null;
     for (let r = 0; r < 7 && !best; r++) for (let dy = -r; dy <= r && !best; dy++) for (let dx = -r; dx <= r && !best; dx++) {

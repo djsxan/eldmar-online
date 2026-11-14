@@ -1017,20 +1017,20 @@ function mStairTower(b, cut) {
 const BSTYLE = {
   temple: { wall: '#d8d0bc', roof: '#46587a', tex: 'brick', roofTex: 'slate', trim: '#c9a24a' },
   shop: { wall: '#e6d6b0', roof: '#9a3c2a', tex: 'plaster', roofTex: 'shingle', trim: '#4a2f17' },
-  tavern: { wall: '#dccaa0', roof: '#a8883a', tex: 'plaster', roofTex: 'thatch', trim: '#3a2410' },
+  tavern: { wall: '#dccaa0', roof: '#6e2e22', tex: 'plaster', roofTex: 'shingle', trim: '#3a2410' },
   smith: { wall: '#8e897e', roof: '#4e4844', tex: 'brick', roofTex: 'slate', trim: '#2a1e14' },
   barracks: { wall: '#9c968a', roof: '#5e4034', tex: 'brick', roofTex: 'shingle', trim: '#2a1e14' },
-  stable: { wall: '#9a7850', roof: '#b0903a', tex: 'wood', roofTex: 'thatch', trim: '#3a2410' },
+  stable: { wall: '#9a7850', roof: '#5a5048', tex: 'wood', roofTex: 'slate', trim: '#3a2410' },
   stairtower: { wall: '#a29c90', roof: '#3e4a66', tex: 'brick', roofTex: 'slate', trim: '#2a1e14' },
 };
 // variações de casas e lojas (cores de reboco, telhados e madeira)
 const HVAR = [
   { wall: '#e4d8bc', roof: '#8a3a2a', roofTex: 'shingle', trim: '#4a2f17' },
-  { wall: '#d8c8a0', roof: '#a8943e', roofTex: 'thatch', trim: '#3a2410' },
+  { wall: '#d8c8a0', roof: '#9a5232', roofTex: 'shingle', trim: '#3a2410' },
   { wall: '#e8e0cc', roof: '#4e5464', roofTex: 'slate', trim: '#2e2218' },
   { wall: '#d4b890', roof: '#7a3426', roofTex: 'shingle', trim: '#3a2410' },
   { wall: '#cfc4ae', roof: '#6a5a4a', roofTex: 'slate', trim: '#4a3020' },
-  { wall: '#e2cfa8', roof: '#9a8034', roofTex: 'thatch', trim: '#5a3a1e' },
+  { wall: '#e2cfa8', roof: '#3e4656', roofTex: 'slate', trim: '#5a3a1e' },
 ];
 function styleOf(b) {
   if (b.kind === 'house' || (b.kind === 'shop' && b.v)) { const h = HVAR[(b.v || 0) % HVAR.length]; return { tex: 'plaster', ...h }; }

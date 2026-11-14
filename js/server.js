@@ -181,7 +181,7 @@ function hostOnClient(from, m) {
     }
     case 'tskill': treeSkill(p, m.b | 0, m); break;
     case 'shoot': {
-      const now = now_(); if (p.cls === 'knight' || p.downed || p.carrying || p.lifted || p.atk || p.casting || p.grabbed || inSafe(p.x, p.y) || now < p.nextAtk) break;
+      const now = now_(); if (p.cls === 'knight' || p.downed || p.carrying || p.lifted || p.atk || p.casting || p.grabbed || now < p.nextAtk) break;
       const rng = CLASSES[p.cls].range + treeEff(p, 'range'), a = +m.a || 0, ok = q => q && Math.abs((q.z || 0) - (p.z || 0)) < 0.5 && (q.alt || 0) < 1.2 && dist(p.x, p.y, q.x, q.y) <= rng + (MON[q.type].rad || 0);
       let q = S.monsters[m.id]; if (!ok(q)) q = null;
       if (!q) { let best = 1e9; for (const o of Object.values(S.monsters)) { if (!ok(o)) continue; const da = Math.abs(angDiff(Math.atan2(o.y - p.y, o.x - p.x), a)); if (da > 0.5) continue; const sc = da * 4 + dist(p.x, p.y, o.x, o.y); if (sc < best) { best = sc; q = o; } } }
@@ -697,7 +697,7 @@ function useSkill(p, i) {
     if (dist(p.x, p.y, m.x, m.y) > sk.range + (MON[m.type].rad || 0)) { tell(p, 'Alvo fora de alcance.'); return; }
   }
   const offensive = sk.id !== 'heal' && sk.id !== 'wall' && sk.id !== 'agile';
-  if (offensive && inSafe(p.x, p.y)) { tell(p, 'Não se luta dentro da cidadela.'); return; }
+
   p.mp -= sk.mp; p.cds[i] = now + sk.cd;
   if (sk.cast) {
     p.casting = { i, until: now + sk.cast * (1 - Math.min(0.5, treeEff(p, 'castSpeed'))), tid: m && m.id }; p.castX = p.x; p.castY = p.y;
@@ -1014,8 +1014,20 @@ function playerStrike(p, k, a, now) {
   sendStat(p);
 }
 // duelo: só vale se os dois ligaram o modo duelo e estão fora da cidade
-const pvpOk = (a, b) => a !== b && a.duel && b.duel && !a.dev && !b.dev && !b.downed && !inSafe(a.x, a.y) && !inSafe(b.x, b.y) && Math.abs((a.z || 0) - (b.z || 0)) < 0.5 && !(a.fl > 0) && !(b.fl > 0);
+// PvP liberado em todo lugar (cidade e dentro das casas também), entre quem está no mesmo andar
+const pvpOk = (a, b) => a !== b && !a.dev && !b.dev && !b.downed && Math.abs((a.z || 0) - (b.z || 0)) < 0.5 && (a.fl || 0) === (b.fl || 0);
+// crime na cidade: se uma sentinela vê (até 10 passos, sem parede no meio), o agressor fica procurado por 5 minutos
+function sightClear(ax, ay, bx, by) { const n = Math.ceil(dist(ax, ay, bx, by) * 2); for (let i = 1; i < n; i++) { const t = tileAt(ax + (bx - ax) * i / n, ay + (by - ay) * i / n); if (WORLD.bld[t] >= 0 || WORLD.obj[t] === O.WALL || WORLD.obj[t] === O.TOWER || WORLD.ground[t] === T.CLIFF) return false; } return true; }
+function witnessCrime(p, x, y) {
+  if (!p || p.dev || !inSafe(x, y)) return false;
+  const seen = NPCS.some(n => n.kind === 'guard' && dist(n.x, n.y, x, y) <= 10 && sightClear(n.x, n.y, x, y)) || (S.guards || []).some(g => dist(g.x, g.y, x, y) <= 10 && sightClear(g.x, g.y, x, y));
+  if (!seen) return false;
+  const now = now_(), was = now < (p.wanted || 0); p.wanted = now + 300000;
+  if (!was) { sys(p.name + ' foi visto cometendo um crime na cidade! As sentinelas estão atrás dele.'); tell(p, 'Uma sentinela viu: você está PROCURADO por 5 minutos (sair da cidade limpa a ficha).'); }
+  Net.toAll({ t: 'wanted', id: p.id, ms: 300000 }); return true;
+}
 function pvpHit(p, q, A, now) {
+  witnessCrime(p, p.x, p.y);
   if (now < (q.dodgeUntil || 0)) { near(q.x, q.y, { t: 'whiff', id: q.id }); return; }
   const toP = Math.atan2(p.y - q.y, p.x - q.x);
   if (q.parry && Math.abs(angDiff(q.parry.a, toP)) <= PARRY_ARC) {
@@ -1350,7 +1362,6 @@ function treeSkill(p, b, msg) {
   if (!treeHas(p, nd.id)) { tell(p, 'Aprenda ' + nd.name + ' na árvore de talentos (K).'); return; }
   const now = now_(); p.tcd = p.tcd || {};
   if (p.downed || p.carrying || p.lifted || p.grabbed || now < (p.stunUntil || 0) || now < (p.knockUntil || 0)) return;
-  if (inSafe(p.x, p.y)) { tell(p, 'Aqui não: a cidade é um lugar seguro.'); return; }
   if (now < (p.tcd[b] || 0)) { tell(p, nd.name + ': recarregando (' + Math.ceil((p.tcd[b] - now) / 1000) + 's).'); return; }
   if (p.mp < nd.mp) { tell(p, 'Mana insuficiente.'); return; }
   const a = isFinite(+msg.a) ? +msg.a : 0, shout = { s: nd.name + '!' };
@@ -1424,7 +1435,8 @@ function hostTick() {
     S.nextSpawn = now + 1500;
   }
 
-  for (const p of players) { bodyTick(p, now, dt); survivalTick(p, now, dt); combatTick(p, now, dt); if (p.running && p.walking) { const d = dist(p._rx ?? p.x, p._ry ?? p.y, p.x, p.y); if (d < 3) useGain(p, 'run', d); } p._rx = p.x; p._ry = p.y; }
+  for (const p of players) { if (p.wanted && (now > p.wanted || !inSafe(p.x, p.y))) { p.wanted = 0; Net.toAll({ t: 'wanted', id: p.id, ms: 0 }); }
+    bodyTick(p, now, dt); survivalTick(p, now, dt); combatTick(p, now, dt); if (p.running && p.walking) { const d = dist(p._rx ?? p.x, p._ry ?? p.y, p.x, p.y); if (d < 3) useGain(p, 'run', d); } p._rx = p.x; p._ry = p.y; }
   if (!S.bslots) initBastions();
   tickBastions(now);
   if (S.fires && S.fires.length) { S.fires = S.fires.filter(f => f.until > now); for (const p of players) { if (p.downed || now < (p.burnT || 0)) continue; if (S.fires.some(f => dist(f.x, f.y, p.x, p.y) < f.r)) { p.burnT = now + 500; damagePlayer(p, 6, null, 0); if (Math.random() < 0.25) ignitePlayer(p, now); } } }

@@ -960,7 +960,7 @@ function renderWorld(ctx, now, cam, W, H, dpr) {
       if (e.carrying && G.players[e.carrying]) drawCarried(ctx, G.players[e.carrying], it.sx, it.sy);
       if (e.lifted) { const os = objSprite(e.lifted); if (os) pblit(ctx, os, it.sx, it.sy - 58); }
       G.lights.push({ x: it.sx, y: it.sy - 30, r: 34, c: '255,240,220', a: 0.4 });
-      labels.push({ sx: it.sx, sy: it.sy - (e.downed && !e.carriedBy ? 20 : (R3.ok ? 58 : 80)), name: e.name, color: e.id === G.myId ? '#f4dc8a' : '#b8d0f0', hp: e.hp / e.maxHp, mp: e.id === G.myId ? e.mp / e.maxMp : null, e, player: true });
+      labels.push({ sx: it.sx, sy: it.sy - (e.downed && !e.carriedBy ? 20 : (R3.ok ? 58 : 80)), name: e.name + (e.wantedUntil > now ? ' · PROCURADO' : ''), color: e.wantedUntil > now ? '#ff6a5a' : e.id === G.myId ? '#f4dc8a' : '#b8d0f0', hp: e.hp / e.maxHp, mp: e.id === G.myId ? e.mp / e.maxMp : null, e, player: true });
     }
     ctx.imageSmoothingEnabled = true;
   };

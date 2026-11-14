@@ -144,6 +144,7 @@ function clientOnServer(m) {
     case 'tele': G.teles.push({ ...m, t0: now }); break;
     case 'fires': for (const [x, y, r, ms] of m.l) { const t = Math.round(y) * MAP_W + Math.round(x); G.fires.push({ x, y, r, z: m.z != null ? m.z : (WORLD.ground[t] === T.CLIFF && WORLD.fl1[t] > 0 ? 1 : 0), t0: now + (m.ms || 0), until: now + ms }); } if (!m.nb) G.breaths.push({ t0: now, ms: 650 }); break;
     case 'exec': { const e = G.players[m.id]; if (e) e.exec = { t0: now, ms: m.ms }; G.bladeAt = now + m.ms; const x = G.npcs.executioner; if (x) x.anim = { a: 'execute', t0: now + m.ms - 380, ms: 720 }; break; }
+    case 'wanted': { const e = G.players[m.id]; if (e) e.wantedUntil = m.ms ? now + m.ms : 0; break; }
     case 'jet': { const e = G.monsters[m.id]; if (e) e.jet = { ...m, t0: now }; break; }
     case 'grab': { const e = G.players[m.id]; if (e) e.grab = { mid: m.mid, until: now + m.ms + 400 }; break; }
     case 'burn': { const e = G.players[m.id]; if (e) e.burnUntil = m.ms ? now + m.ms : 0; break; }
@@ -377,7 +378,7 @@ function updateLocal(now, dt) {
   const stF = (me.crouch ? 1 : 0) | (me.slide ? 2 : 0);
   if (combatFacing() && G.mouseW) { let a = Math.atan2(G.mouseW.y - me.y, G.mouseW.x - me.x);
     { let best = null, bd = 3.4; for (const id in G.monsters) { const q = G.monsters[id]; if (q.dieAt || !q.visible || Math.abs((q.z || 0) - (me.z || 0)) > 0.5) continue; const d = dist(q.rx, q.ry, me.x, me.y), aq = Math.atan2(q.ry - me.y, q.rx - me.x); let df = Math.abs(aq - a) % (Math.PI * 2); if (df > Math.PI) df = Math.PI * 2 - df; if (d < bd && df < 0.95) { bd = d; best = aq; } }
-      if (SET.duel) for (const id in G.players) { const q = G.players[id]; if (id === G.myId || !q.duel || !q.visible || q.downed) continue; const d = dist(q.rx, q.ry, me.x, me.y), aq = Math.atan2(q.ry - me.y, q.rx - me.x); let df = Math.abs(aq - a) % (Math.PI * 2); if (df > Math.PI) df = Math.PI * 2 - df; if (d < bd && df < 0.95) { bd = d; best = aq; } }
+      for (const id in G.players) { const q = G.players[id]; if (id === G.myId || !q.visible || q.downed || q.isNpc) continue; const d = dist(q.rx, q.ry, me.x, me.y), aq = Math.atan2(q.ry - me.y, q.rx - me.x); let df = Math.abs(aq - a) % (Math.PI * 2); if (df > Math.PI) df = Math.PI * 2 - df; if (d < bd && df < 0.95) { bd = d; best = aq; } }
       if (best != null) a = best; }   /* assistência de mira: o inimigo perto, na direção do cursor */
     me.fa = a; me.dir = dirFromVec(Math.cos(a), Math.sin(a), me.dir); if (G.parrying && now - (G.parryAT || 0) > 150) { G.parryAT = now; Net.send({ t: 'parrya', a }); } }
   if (now - me.sendT > 100 && (moved || me.walking !== me.sentWalk || stF !== me.sentSt || me.dir !== me.sentDir)) { me.sentDir = me.dir;
@@ -761,7 +762,7 @@ function standUp() {
 }
 canvas.addEventListener('mousedown', e => {
   if (!G.started) return;
-  if (inCombatZone() && !(G.dev && G.devPlace)) {
+  if (inCombatZone() && !(G.dev && G.devPlace) && !interactHere(e)) {
     const me = G.me; $('chat-input').blur();
     if (e.button === 3 || e.button === 4) { e.preventDefault(); strike('under'); return; }
     if (e.button === 2) { G.parrying = true; Net.send({ t: 'parry', on: 1, a: me.fa ?? 0 }); return; }
@@ -822,7 +823,15 @@ canvas.addEventListener('wheel', e => {
 // ---------- combate direcional (estilo Chivalry) ----------
 // clique esquerdo = lateral (lado pelo movimento do mouse) · roda: cima = de cima, baixo = estocada · botão lateral ou Z = de baixo
 // botão direito = aparar · Espaço = esquiva · F (sem nada para interagir) = chute · trocar de golpe na preparação = finta
-function inCombatZone() { const me = G.me; return me && !inSafe(me.x, me.y) && !(me.fl > 0) && !G.paused && !G.dialog && !G.mapOpen; }
+function inCombatZone() { const me = G.me; return me && !G.paused && !G.dialog && !G.mapOpen; }   // combate em todo lugar
+// clique em NPC, assento ou cama por perto: conversa/senta/deita em vez de golpear
+function interactHere(e) {
+  const me = G.me; if (e.button !== 0 || !me) return false; const ok = (x, y) => dist(me.x, me.y, x, y) <= 3;
+  const n = npcUnderMouse(e.clientX, e.clientY); if (n && ok(G.npcs[n.id].x, G.npcs[n.id].y)) return true;
+  const s = seatUnderMouse(e.clientX, e.clientY); if (s >= 0 && WORLD.seats[s] && ok(WORLD.seats[s].x, WORLD.seats[s].y)) return true;
+  const b = typeof bedUnderMouse === 'function' ? bedUnderMouse(e.clientX, e.clientY) : -1; if (b >= 0 && ok(BEDS[b].x, BEDS[b].y)) return true;
+  return false;
+}
 function combatFacing() { return inCombatZone() && !G.me.running && !G.climbing; }
 function strike(k) {
   const me = G.me; if (!me || me.downed || me.carrying || me.lifted || performance.now() < (G.stunUntil || 0)) return;
